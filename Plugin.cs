@@ -39,11 +39,14 @@ public class EspBehaviour : MonoBehaviour
 
     private const float MoveThreshold = 0.01f;
     private const float ScanInterval = 1f;
+    private const float AutoSaveInterval = 15f;
     private float _scanTimer;
+    private float _autoSaveTimer;
 
     private bool _menuOpen;
     private Rect _menuRect = new Rect(20, 20, 350, 500);
     private Vector2 _scroll;
+    private string _lastSaveStatus = "";
 
     private static MethodInfo _getKeyDownMethod;
     private static bool _inputInitialized;
@@ -54,7 +57,7 @@ public class EspBehaviour : MonoBehaviour
     void Awake()
     {
         string gameRoot = Path.GetDirectoryName(Application.dataPath);
-        _cachePath = Path.Combine(gameRoot, "cache.txt");
+        _cachePath = Path.Combine(gameRoot, "cache-ДАТА.txt");
 
         if (File.Exists(_cachePath))
         {
@@ -62,12 +65,28 @@ public class EspBehaviour : MonoBehaviour
                 if (!string.IsNullOrWhiteSpace(line))
                     _loggedNames.Add(line.Trim());
         }
-        else
-        {
-            File.WriteAllText(_cachePath, "");
-        }
 
-        Debug.Log($"[ESP] cache.txt: {_cachePath}");
+        Debug.Log($"[ESP] cache path: {_cachePath}");
+    }
+
+    void OnApplicationQuit()
+    {
+        SaveCache();
+    }
+
+    private void SaveCache()
+    {
+        try
+        {
+            File.WriteAllLines(_cachePath, _loggedNames);
+            _lastSaveStatus = $"Автосохранение: {_loggedNames.Count} записей";
+            Debug.Log($"[ESP] Cache saved to {_cachePath} ({_loggedNames.Count} entries)");
+        }
+        catch (Exception e)
+        {
+            _lastSaveStatus = $"Ошибка: {e.Message}";
+            Debug.LogWarning($"[ESP] Cache save failed: {e.Message}");
+        }
     }
 
     private static void InitInput()
@@ -140,6 +159,14 @@ public class EspBehaviour : MonoBehaviour
         if (IsKeyDown(KeyCode.Insert))
             _menuOpen = !_menuOpen;
 
+        // Автосохранение кэша раз в 15 секунд
+        _autoSaveTimer += Time.deltaTime;
+        if (_autoSaveTimer >= AutoSaveInterval)
+        {
+            _autoSaveTimer = 0f;
+            SaveCache();
+        }
+
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
@@ -167,11 +194,9 @@ public class EspBehaviour : MonoBehaviour
                 if (obj.Enabled)
                     _toDraw.Add((currentPos, obj.Name));
 
-                if (!obj.LoggedToFile && !_loggedNames.Contains(obj.Name))
+                if (!obj.LoggedToFile)
                 {
                     _loggedNames.Add(obj.Name);
-                    try { File.AppendAllText(_cachePath, obj.Name + Environment.NewLine); }
-                    catch (Exception e) { Debug.LogWarning($"[ESP] cache write failed: {e.Message}"); }
                     obj.LoggedToFile = true;
                 }
             }
@@ -288,9 +313,28 @@ public class EspBehaviour : MonoBehaviour
         GUILayout.EndHorizontal();
 
         GUILayout.Space(5);
-        GUILayout.Label($"Обнаружено объектов: {_tracked.Count}");
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Сохранить кэш"))
+        {
+            SaveCache();
+        }
+        if (GUILayout.Button("Очистить кэш"))
+        {
+            _loggedNames.Clear();
+            foreach (var o in _tracked.Values) o.LoggedToFile = false;
+            _lastSaveStatus = "Кэш очищен (не сохранён)";
+        }
+        GUILayout.EndHorizontal();
 
-        _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(_menuRect.height - 100));
+        if (!string.IsNullOrEmpty(_lastSaveStatus))
+            GUILayout.Label(_lastSaveStatus);
+
+        GUILayout.Space(5);
+        GUILayout.Label($"Обнаружено объектов: {_tracked.Count}");
+        GUILayout.Label($"Записей в кэше: {_loggedNames.Count}");
+        GUILayout.Label($"До автосохранения: {(int)(AutoSaveInterval - _autoSaveTimer)} сек");
+
+        _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(_menuRect.height - 160));
 
         var movingList = new List<KeyValuePair<int, TrackedObj>>();
         foreach (var kvp in _tracked)
