@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
 {
     public override void Load()
     {
-        Log.LogInfo("Dynamic ESP loaded");
+        Log.LogInfo("Player ESP loaded");
         AddComponent<EspBehaviour>();
     }
 }
@@ -67,7 +67,7 @@ public class EspBehaviour : MonoBehaviour
             ScanAllObjects();
         }
 
-        // 2. Проверка движения каждый кадр (только для известных объектов)
+        // 2. Проверка движения каждый кадр
         _toDraw.Clear();
         foreach (var kvp in _tracked)
         {
@@ -86,18 +86,11 @@ public class EspBehaviour : MonoBehaviour
                 obj.LastPos = currentPos;
                 _toDraw.Add((currentPos, obj.Name));
 
-                // Записываем имя в файл один раз при первом обнаружении движения
                 if (!obj.LoggedToFile && !_loggedNames.Contains(obj.Name))
                 {
                     _loggedNames.Add(obj.Name);
-                    try
-                    {
-                        File.AppendAllText(_cachePath, obj.Name + Environment.NewLine);
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning($"[ESP] cache write failed: {e.Message}");
-                    }
+                    try { File.AppendAllText(_cachePath, obj.Name + Environment.NewLine); }
+                    catch (Exception e) { Debug.LogWarning($"[ESP] cache write failed: {e.Message}"); }
                     obj.LoggedToFile = true;
                 }
             }
@@ -117,6 +110,12 @@ public class EspBehaviour : MonoBehaviour
             if (go.hideFlags == HideFlags.NotEditable || go.hideFlags == HideFlags.HideAndDontSave)
                 continue;
 
+            // ФИЛЬТР: только TrPlayer* и CtPlayer*
+            string goName = go.name;
+            if (goName == null) continue;
+            if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer"))
+                continue;
+
             Transform tr;
             try { tr = go.transform; }
             catch { continue; }
@@ -128,7 +127,7 @@ public class EspBehaviour : MonoBehaviour
             if (_tracked.TryGetValue(id, out var tracked))
             {
                 tracked.Transform = tr;
-                tracked.Name = go.name;
+                tracked.Name = goName;
             }
             else
             {
@@ -136,7 +135,7 @@ public class EspBehaviour : MonoBehaviour
                 {
                     Transform = tr,
                     LastPos = tr.position,
-                    Name = go.name,
+                    Name = goName,
                     IsMoving = false,
                     LoggedToFile = false
                 };
@@ -163,7 +162,7 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            GUI.color = Color.yellow;
+            GUI.color = name.StartsWith("TrPlayer") ? Color.red : Color.cyan;
             GUI.Box(new Rect(x - 25, y - 25, 50, 50), "");
 
             GUI.color = Color.white;
