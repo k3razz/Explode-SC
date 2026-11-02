@@ -9,7 +9,7 @@ using System.Reflection;
 
 namespace MyDynamicESP;
 
-[BepInPlugin("de.nuke.explode", "Explode", "1.0.0.0")]
+[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
     public override void Load()
@@ -48,7 +48,6 @@ public class EspBehaviour : MonoBehaviour
     private static MethodInfo _getKeyDownMethod;
     private static bool _inputInitialized;
 
-    // Кэш типа PlayerController
     private static Il2CppSystem.Type _playerIl2CppType;
     private static bool _typeResolved;
 
@@ -107,7 +106,6 @@ public class EspBehaviour : MonoBehaviour
 
         try
         {
-            // Ищем тип PlayerController по полному имени среди загруженных сборок
             Type playerType = null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -319,6 +317,6 @@ public class EspBehaviour : MonoBehaviour
 
         GUILayout.EndScrollView();
 
-        GUI.DragWindow(new Rect(0, 0, _menuRect.Width, 20));
+        GUI.DragWindow(new Rect(0, 0, _menuRect.width, 20));
     }
 }
