@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <AssemblyName>MyDynamicESP</AssemblyName>
+    <AssemblyName>WeaponDumper</AssemblyName>
     <Version>1.0.0</Version>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -26,21 +26,13 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Unity interop + Il2Cppmscorlib — скопируйте из <Игра>/BepInEx/interop/ -->
-    <Reference Include="Il2Cppmscorlib">
-      <HintPath>libs/interop/Il2Cppmscorlib.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <!-- Unity interop -->
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>libs/interop/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>libs/interop/UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>libs/interop/UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
