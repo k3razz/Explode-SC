@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
+using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using System.IO;
 using System;
@@ -8,7 +9,7 @@ using System.Reflection;
 
 namespace MyDynamicESP;
 
-[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
+[BepInPlugin("de.nuke.explode", "Explode", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
     public override void Load()
@@ -37,7 +38,7 @@ public class EspBehaviour : MonoBehaviour
     private string _cachePath;
 
     private const float MoveThreshold = 0.01f;
-    private const float ScanInterval = 1f; // временно 1 сек для проверки ФПС
+    private const float ScanInterval = 1f;
     private float _scanTimer;
 
     private bool _menuOpen;
@@ -46,6 +47,10 @@ public class EspBehaviour : MonoBehaviour
 
     private static MethodInfo _getKeyDownMethod;
     private static bool _inputInitialized;
+
+    // Кэш типа PlayerController
+    private static Il2CppSystem.Type _playerIl2CppType;
+    private static bool _typeResolved;
 
     void Awake()
     {
@@ -95,6 +100,42 @@ public class EspBehaviour : MonoBehaviour
         catch { return false; }
     }
 
+    private static void ResolvePlayerType()
+    {
+        if (_typeResolved) return;
+        _typeResolved = true;
+
+        try
+        {
+            // Ищем тип PlayerController по полному имени среди загруженных сборок
+            Type playerType = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                playerType = asm.GetType("Chillow.StandChillow.Player.PlayerController");
+                if (playerType != null) break;
+            }
+
+            if (playerType == null)
+            {
+                Debug.LogError("[ESP] PlayerController type not found in loaded assemblies.");
+                return;
+            }
+
+            _playerIl2CppType = Il2CppType.From(playerType);
+            if (_playerIl2CppType == null)
+            {
+                Debug.LogError("[ESP] Il2CppType.From returned null for PlayerController.");
+                return;
+            }
+
+            Debug.Log("[ESP] PlayerController type resolved.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[ESP] ResolvePlayerType failed: {e.Message}");
+        }
+    }
+
     void Update()
     {
         InitInput();
@@ -141,15 +182,39 @@ public class EspBehaviour : MonoBehaviour
 
     void ScanAllObjects()
     {
-        // ЗАМЕНИТЕ PlayerView на реальное имя класса компонента игрока из UnityExplorer.
-        // Если не знаете — попробуйте Player, BasePlayer, PlayerController и т.д.
-        var players = FindObjectsOfType<PlayerView>();
+        ResolvePlayerType();
+        if (_playerIl2CppType == null) return;
+
+        Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<UnityEngine.Object> players;
+        try
+        {
+            players = FindObjectsOfType(_playerIl2CppType, false);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[ESP] FindObjectsOfType failed: {e.Message}");
+            return;
+        }
+
+        if (players == null) return;
+
         var seen = new HashSet<int>();
 
-        foreach (var p in players)
+        for (int i = 0; i < players.Length; i++)
         {
-            if (p == null) continue;
-            GameObject go = p.gameObject;
+            var obj = players[i];
+            if (obj == null) continue;
+
+            Component component;
+            try { component = obj.TryCast<Component>(); }
+            catch { continue; }
+            if (component == null) continue;
+
+            GameObject go;
+            try { go = component.gameObject; }
+            catch { continue; }
+            if (go == null) continue;
+
             string goName = go.name;
             if (goName == null) continue;
             if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer")) continue;
@@ -159,15 +224,15 @@ public class EspBehaviour : MonoBehaviour
 
             if (_tracked.TryGetValue(id, out var tracked))
             {
-                tracked.Transform = p.transform;
+                tracked.Transform = component.transform;
                 tracked.Name = goName;
             }
             else
             {
                 _tracked[id] = new TrackedObj
                 {
-                    Transform = p.transform,
-                    LastPos = p.transform.position,
+                    Transform = component.transform,
+                    LastPos = component.transform.position,
                     Name = goName,
                     IsMoving = false,
                     LoggedToFile = false,
@@ -254,6 +319,6 @@ public class EspBehaviour : MonoBehaviour
 
         GUILayout.EndScrollView();
 
-        GUI.DragWindow(new Rect(0, 0, _menuRect.width, 20));
+        GUI.DragWindow(new Rect(0, 0, _menuRect.Width, 20));
     }
 }
