@@ -1,0 +1,43 @@
+name: Create Test Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Имя новой ветки (например, test-weapon-dumper)'
+        required: true
+        type: string
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push branch
+        run: |
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          echo "Creating branch: $BRANCH_NAME"
+
+          # Проверка, что ветка не существует
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "::error::Branch '$BRANCH_NAME' already exists remotely"
+            exit 1
+          fi
+
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
+
+          echo "Branch '$BRANCH_NAME' created successfully"
+          echo "### Branch Created: \`$BRANCH_NAME\`" >> $GITHUB_STEP_SUMMARY
