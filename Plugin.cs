@@ -5,7 +5,6 @@ using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using System.Collections.Generic;
 using System;
-using System.Reflection;
 
 namespace MyDynamicESP;
 
@@ -16,6 +15,7 @@ public class Plugin : BasePlugin
     {
         Log.LogInfo("ESP loading...");
         AddComponent<EspBehaviour>();
+        Log.LogInfo("ESP component added via BasePlugin.AddComponent");
     }
 }
 
@@ -33,24 +33,41 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
-    // Для локального игрока
-    private static object _localPlayer;
-    private static PropertyInfo _localPlayerProp;
-    private static bool _localPlayerResolved;
+    private int _awakeCount;
+    private int _startCount;
+    private int _updateCount;
+    private int _guiCount;
 
     void Awake()
     {
+        _awakeCount++;
+        Debug.Log($"[ESP] Awake called (count={_awakeCount})");
         _boxTexture = new Texture2D(1, 1);
         _boxTexture.SetPixel(0, 0, Color.white);
         _boxTexture.Apply();
-        Debug.Log("[ESP] Awake done");
+        Debug.Log("[ESP] Awake done, texture created");
     }
 
     void Start()
     {
-        Debug.Log("[ESP] Start called");
+        _startCount++;
+        Debug.Log($"[ESP] Start called (count={_startCount})");
         ResolveTypes();
-        ResolveLocalPlayer();
+    }
+
+    void OnEnable()
+    {
+        Debug.Log("[ESP] OnEnable called");
+    }
+
+    void OnDisable()
+    {
+        Debug.Log("[ESP] OnDisable called");
+    }
+
+    void OnDestroy()
+    {
+        Debug.Log("[ESP] OnDestroy called");
     }
 
     private static void ResolveTypes()
@@ -71,7 +88,7 @@ public class EspBehaviour : MonoBehaviour
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
 
-            Debug.Log($"[ESP] Types: Bot={(_botType != null ? "OK" : "NULL")}, Player={(_playerType != null ? "OK" : "NULL")}");
+            Debug.Log($"[ESP] ResolveTypes: Bot={(_botType != null ? "OK" : "NULL")}, Player={(_playerType != null ? "OK" : "NULL")}");
         }
         catch (Exception e)
         {
@@ -79,70 +96,12 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    private static void ResolveLocalPlayer()
-    {
-        if (_localPlayerResolved) return;
-        _localPlayerResolved = true;
-
-        try
-        {
-            Type pmType = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                pmType = asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
-                if (pmType != null) break;
-            }
-
-            if (pmType == null)
-            {
-                Debug.Log("[ESP] LocalPlayer: PlayerManager type not found");
-                return;
-            }
-
-            // Ищем статическое свойство Instance (LazySingleton)
-            PropertyInfo inst = null;
-            foreach (var name in new[] { "Instance", "instance" })
-            {
-                inst = pmType.GetProperty(name, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-                if (inst != null) break;
-            }
-            if (inst == null)
-            {
-                foreach (var p in pmType.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
-                    if (p.PropertyType == pmType) { inst = p; break; }
-            }
-            if (inst == null)
-            {
-                Debug.Log("[ESP] LocalPlayer: Instance property not found");
-                return;
-            }
-
-            var mgr = inst.GetValue(null);
-            if (mgr == null)
-            {
-                Debug.Log("[ESP] LocalPlayer: PlayerManager.Instance is null");
-                return;
-            }
-
-            // Свойство DEEBDAFCBHCGFBA (локальный PlayerController)
-            _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (_localPlayerProp == null)
-            {
-                Debug.Log("[ESP] LocalPlayer: DEEBDAFCBHCGFBA property not found");
-                return;
-            }
-
-            _localPlayer = _localPlayerProp.GetValue(mgr);
-            Debug.Log($"[ESP] LocalPlayer: {(_localPlayer != null ? "found" : "null")}");
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"[ESP] ResolveLocalPlayer EX: {e}");
-        }
-    }
-
     void Update()
     {
+        _updateCount++;
+        if (_updateCount <= 3 || _updateCount % 300 == 0)
+            Debug.Log($"[ESP] Update tick #{_updateCount}");
+
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
@@ -166,34 +125,18 @@ public class EspBehaviour : MonoBehaviour
     void DoScan()
     {
         ResolveTypes();
-        ResolveLocalPlayer();
 
         if (_botType == null && _playerType == null)
         {
-            Debug.LogWarning("[ESP] Scan: no types, skip");
+            Debug.LogWarning("[ESP] DoScan: no types resolved");
             return;
         }
 
         _botTransforms.Clear();
         _playerTransforms.Clear();
 
-        // Обновляем локального игрока (мог появиться позже)
-        try
-        {
-            if (_localPlayer == null && _localPlayerProp != null)
-            {
-                // пере-резолвим Instance и локального
-                _localPlayerResolved = false;
-                ResolveLocalPlayer();
-            }
-        }
-        catch { }
-
         int botCount = 0, playerCount = 0;
-        int otherBots = 0, otherPlayers = 0;
-        bool hasLocal = _localPlayer != null;
 
-        // Боты
         if (_botType != null)
         {
             try
@@ -211,14 +154,12 @@ public class EspBehaviour : MonoBehaviour
                         if (tr == null) continue;
                         _botTransforms.Add(tr);
                         botCount++;
-                        otherBots++;
                     }
                 }
             }
             catch (Exception e) { Debug.LogError($"[ESP] Bot Find EX: {e}"); }
         }
 
-        // Игроки
         if (_playerType != null)
         {
             try
@@ -230,55 +171,35 @@ public class EspBehaviour : MonoBehaviour
                     {
                         var o = arr[i];
                         if (o == null) continue;
-
-                        // Пропускаем локального игрока
-                        bool isLocal = false;
-                        if (hasLocal && _localPlayer != null)
-                        {
-                            try
-                            {
-                                var localComp = _localPlayer as Il2CppObjectBase;
-                                var thisComp = o as Il2CppObjectBase;
-                                if (localComp != null && thisComp != null)
-                                {
-                                    // Сравниваем указатели IL2CPP
-                                    if (localComp.Pointer == thisComp.Pointer) isLocal = true;
-                                }
-                            }
-                            catch { }
-                        }
-
                         var c = o.TryCast<Component>();
                         if (c == null) continue;
                         var tr = c.transform;
                         if (tr == null) continue;
-
-                        if (isLocal)
-                        {
-                            // локального не добавляем в отрисовку, но считаем
-                            continue;
-                        }
-
                         _playerTransforms.Add(tr);
                         playerCount++;
-                        otherPlayers++;
                     }
                 }
             }
             catch (Exception e) { Debug.LogError($"[ESP] Player Find EX: {e}"); }
         }
 
-        // Итоговая статистика в консоль
-        string localStatus = hasLocal ? "LOCAL: yes" : "LOCAL: no";
-        Debug.Log($"[ESP] Scan: {localStatus} | bots total={botCount}, players total={playerCount} | others: bots={otherBots}, players={otherPlayers}");
+        Debug.Log($"[ESP] Scan: bots={botCount}, players={playerCount}");
     }
 
     void OnGUI()
     {
-        if (_cam == null) _cam = Camera.main;
-        if (_cam == null) { GUI.Label(new Rect(10, 10, 300, 20), "ESP: Camera.main is null"); return; }
+        _guiCount++;
+        if (_guiCount <= 3 || _guiCount % 300 == 0)
+            Debug.Log($"[ESP] OnGUI tick #{_guiCount}, _toDraw={_toDraw.Count}");
 
-        GUI.Label(new Rect(10, 10, 500, 20), $"ESP: drawing {_toDraw.Count} (bots+others)");
+        if (_cam == null) _cam = Camera.main;
+        if (_cam == null)
+        {
+            GUI.Label(new Rect(10, 10, 400, 20), "ESP: Camera.main is null");
+            return;
+        }
+
+        GUI.Label(new Rect(10, 10, 400, 20), $"ESP: drawing {_toDraw.Count}");
 
         foreach (var (worldPos, isBot) in _toDraw)
         {
