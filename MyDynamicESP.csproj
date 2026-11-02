@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- BepInEx core -->
     <Reference Include="BepInEx.Core">
       <HintPath>libs/core/BepInEx.Core.dll</HintPath>
       <Private>false</Private>
@@ -22,6 +23,16 @@
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>libs/core/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Unity interop — скопируйте из <Игра>/BepInEx/interop/ -->
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>libs/interop/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>libs/interop/UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
