@@ -2,10 +2,8 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using Il2CppInterop.Runtime;
-using Il2CppInterop.Runtime.InteropTypes;
 using System.Collections.Generic;
 using System;
-using System.Reflection;
 
 namespace MyDynamicESP;
 
@@ -15,65 +13,61 @@ public class Plugin : BasePlugin
     public override void Load()
     {
         Log.LogInfo("ESP loading...");
-
-        // Создаём отдельный GameObject, чтобы Unity точно его тикала
-        var go = new GameObject("ESP_Behaviour_Object");
-        UnityEngine.Object.DontDestroyOnLoad(go);
-        go.AddComponent<EspBehaviour>();
-        Log.LogInfo("ESP GameObject created with EspBehaviour");
+        EspRenderer.Init();
+        Log.LogInfo("ESP hooked to Camera.onPostRender");
     }
 }
 
-public class EspBehaviour : MonoBehaviour
+public static class EspRenderer
 {
     private class Tracked
     {
         public Transform Transform;
         public bool IsBot;
-        public string Name; // ник, если удалось получить
+        public string Name;
     }
 
-    private readonly Dictionary<int, Tracked> _tracked = new();
-    private readonly List<(Vector3 pos, bool isBot, string name)> _toDraw = new();
-    private Camera _cam;
-    private Texture2D _boxTexture;
-    private float _scanTimer;
+    private static readonly Dictionary<int, Tracked> _tracked = new();
+    private static readonly List<(Vector3 pos, bool isBot, string name)> _toDraw = new();
+    private static Texture2D _boxTexture;
+    private static float _scanTimer;
     private const float ScanInterval = 1.0f;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
+    private static bool _hooked;
 
-    private int _updateCount;
-    private int _guiCount;
-
-    void Awake()
+    public static void Init()
     {
-        Debug.Log("[ESP] Awake");
+        if (_hooked) return;
+        _hooked = true;
+
         _boxTexture = new Texture2D(1, 1);
         _boxTexture.SetPixel(0, 0, Color.white);
         _boxTexture.Apply();
+
+        Camera.onPostRender += OnPostRender;
+        Debug.Log("[ESP] EspRenderer.Init, onPostRender subscribed");
     }
 
-    void Update()
+    private static void OnPostRender(Camera cam)
     {
-        _updateCount++;
-        if (_updateCount <= 3 || _updateCount % 300 == 0)
-            Debug.Log($"[ESP] Update tick #{_updateCount}");
-
-        _scanTimer += Time.deltaTime;
-        if (_scanTimer >= ScanInterval)
+        try
         {
-            _scanTimer = 0f;
-            DoScan();
+            _scanTimer += Time.deltaTime;
+            if (_scanTimer >= ScanInterval)
+            {
+                _scanTimer = 0f;
+                DoScan();
+            }
+
+            UpdateDrawList();
+            DrawBoxes(cam);
         }
-
-        _toDraw.Clear();
-        foreach (var kvp in _tracked)
+        catch (Exception e)
         {
-            var t = kvp.Value;
-            if (t.Transform == null) continue;
-            try { _toDraw.Add((t.Transform.position, t.IsBot, t.Name)); } catch { }
+            Debug.LogError($"[ESP] OnPostRender EX: {e}");
         }
     }
 
@@ -97,7 +91,7 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Debug.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
 
-    void DoScan()
+    private static void DoScan()
     {
         ResolveTypes();
         if (_botType == null && _playerType == null) return;
@@ -116,12 +110,12 @@ public class EspBehaviour : MonoBehaviour
         Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}");
     }
 
-    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
+    private static void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
     {
         if (type == null) return;
         try
         {
-            var arr = FindObjectsOfType(type, false);
+            var arr = UnityEngine.Object.FindObjectsOfType(type, false);
             if (arr == null) return;
             for (int i = 0; i < arr.Length; i++)
             {
@@ -142,63 +136,54 @@ public class EspBehaviour : MonoBehaviour
                 _tracked[id] = new Tracked { Transform = tr, IsBot = isBot, Name = name };
             }
         }
-        catch (Exception e) { Debug.LogError($"[ESP] ScanType({(isBot ? "bot" : "player")}) EX: {e}"); }
+        catch (Exception e) { Debug.LogError($"[ESP] ScanType EX: {e}"); }
     }
 
-    // Пытаемся получить ник: сначала через свойство HBBBCEFBCFEFBBA (PhotonPlayer) → NickName,
-    // затем через GameObject.name как fallback.
-    string TryGetName(Component c, bool isBot)
+    private static string TryGetName(Component c, bool isBot)
     {
         try
         {
-            // PhotonPlayer HBBBCEFBCFEFBBA — есть и у Controller, и у PlayerController
-            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (prop != null)
             {
-                var photonPlayer = prop.GetValue(c);
-                if (photonPlayer != null)
+                var pp = prop.GetValue(c);
+                if (pp != null)
                 {
-                    var nickProp = photonPlayer.GetType().GetProperty("NickName", BindingFlags.Public | BindingFlags.Instance);
+                    var nickProp = pp.GetType().GetProperty("NickName", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                     if (nickProp != null)
                     {
-                        var nick = nickProp.GetValue(photonPlayer) as string;
+                        var nick = nickProp.GetValue(pp) as string;
                         if (!string.IsNullOrEmpty(nick)) return nick;
                     }
                 }
             }
         }
         catch { }
-
-        // Fallback — имя GameObject
-        try
-        {
-            var goName = c.gameObject.name;
-            if (!string.IsNullOrEmpty(goName)) return goName;
-        }
-        catch { }
-
+        try { var n = c.gameObject.name; if (!string.IsNullOrEmpty(n)) return n; } catch { }
         return isBot ? "BOT" : "PLAYER";
     }
 
-    void OnGUI()
+    private static void UpdateDrawList()
     {
-        _guiCount++;
-        if (_guiCount <= 3 || _guiCount % 300 == 0)
-            Debug.Log($"[ESP] OnGUI tick #{_guiCount}, draw={_toDraw.Count}");
+        _toDraw.Clear();
+        foreach (var t in _tracked.Values)
+        {
+            if (t.Transform == null) continue;
+            try { _toDraw.Add((t.Transform.position, t.IsBot, t.Name)); } catch { }
+        }
+    }
 
-        if (_cam == null) _cam = Camera.main;
-        if (_cam == null) { GUI.Label(new Rect(10, 10, 400, 20), "ESP: no camera"); return; }
-
-        GUI.Label(new Rect(10, 10, 400, 20), $"ESP: {_toDraw.Count}");
+    private static void DrawBoxes(Camera cam)
+    {
+        if (cam == null || _boxTexture == null) return;
 
         foreach (var (worldPos, isBot, name) in _toDraw)
         {
-            Vector3 screen = _cam.WorldToScreenPoint(worldPos);
+            Vector3 screen = cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
 
             float x = screen.x;
             float y = Screen.height - screen.y;
-
             float bw = 60f, bh = 100f;
             float left = x - bw / 2;
             float top = y - bh;
@@ -210,7 +195,6 @@ public class EspBehaviour : MonoBehaviour
             string label = string.IsNullOrEmpty(name) ? (isBot ? "BOT" : "PLAYER") : name;
             GUI.Label(new Rect(left, top - 18, 200, 20), label);
         }
-
         GUI.color = Color.white;
     }
 }
