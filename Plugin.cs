@@ -47,7 +47,8 @@ public static class EspRenderer
         _boxTexture.SetPixel(0, 0, Color.white);
         _boxTexture.Apply();
 
-        Camera.onPostRender += OnPostRender;
+        // Явное приведение method group к типу делегата
+        Camera.onPostRender = (Camera.CameraCallback)OnPostRender;
         Debug.Log("[ESP] EspRenderer.Init, onPostRender subscribed");
     }
 
