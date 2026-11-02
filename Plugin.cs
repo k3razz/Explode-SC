@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
 using System.Collections.Generic;
 using System.IO;
 using System;
@@ -29,9 +30,11 @@ public class EspBehaviour : MonoBehaviour
     private const float ScanInterval = 0.25f;
     private float _scanTimer;
 
-    // Рефлексия для PlayerManager
     private static object _playerManagerInstance;
     private static PropertyInfo _playersProperty;
+    private static MethodInfo _playersMethod;
+    private static PropertyInfo _instanceProperty;
+    private static Type _managerType;
     private static bool _managerResolved;
     private static bool _managerFailed;
 
@@ -51,77 +54,58 @@ public class EspBehaviour : MonoBehaviour
 
         try
         {
-            // 1. Ищем тип PlayerManager
-            Type managerType = null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
-                managerType = asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
-                if (managerType != null) break;
+                _managerType = asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
+                if (_managerType != null) break;
             }
 
-            if (managerType == null)
+            if (_managerType == null)
             {
                 Debug.LogError("[ESP] PlayerManager type not found.");
                 _managerFailed = true;
                 return;
             }
 
-            // 2. Ищем свойство Instance в базовом классе LazySingleton (или в самом PlayerManager)
-            //    Пробуем разные варианты, т.к. имя может быть обфусцировано.
-            PropertyInfo instanceProp = null;
-            string[] possibleNames = { "Instance", "instance", "dpkt", "HGGHFBCAGEEGBDH" }; // dpkt из дампа PlayerMainCamera, но LazySingleton может иметь своё
-
+            // Ищем статическое свойство, возвращающее PlayerManager (Instance из LazySingleton)
+            string[] possibleNames = { "Instance", "instance", "dpkt" };
             foreach (var name in possibleNames)
             {
-                instanceProp = managerType.GetProperty(name, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-                if (instanceProp != null) break;
+                _instanceProperty = _managerType.GetProperty(name, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+                if (_instanceProperty != null) break;
             }
 
-            // Если не нашли по имени, пробуем найти любое статическое свойство, возвращающее PlayerManager
-            if (instanceProp == null)
+            if (_instanceProperty == null)
             {
-                foreach (var prop in managerType.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
+                foreach (var prop in _managerType.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
                 {
-                    if (prop.PropertyType == managerType)
+                    if (prop.PropertyType == _managerType)
                     {
-                        instanceProp = prop;
+                        _instanceProperty = prop;
                         break;
                     }
                 }
             }
 
-            if (instanceProp == null)
+            if (_instanceProperty == null)
             {
                 Debug.LogError("[ESP] Could not find static Instance property on PlayerManager.");
                 _managerFailed = true;
                 return;
             }
 
-            _playerManagerInstance = instanceProp.GetValue(null);
-            if (_playerManagerInstance == null)
-            {
-                Debug.LogWarning("[ESP] PlayerManager.Instance is null (not initialized yet).");
-                return;
-            }
+            // Свойство CEADFCHEEGGGDHC (HashSet<PlayerController>)
+            _playersProperty = _managerType.GetProperty("CEADFCHEEGGGDHC", BindingFlags.Public | BindingFlags.Instance);
 
-            // 3. Ищем свойство CEADFCHEEGGGDHC (HashSet<PlayerController>) из дампа
-            _playersProperty = managerType.GetProperty("CEADFCHEEGGGDHC", BindingFlags.Public | BindingFlags.Instance);
+            // Fallback: метод BDDEGCBCFDGBEBH()
             if (_playersProperty == null)
+                _playersMethod = _managerType.GetMethod("BDDEGCBCFDGBEBH", BindingFlags.Public | BindingFlags.Instance);
+
+            if (_playersProperty == null && _playersMethod == null)
             {
-                // Альтернатива: метод BDDEGCBCFDGBEBH()
-                var method = managerType.GetMethod("BDDEGCBCFDGBEBH", BindingFlags.Public | BindingFlags.Instance);
-                if (method != null)
-                {
-                    Debug.Log("[ESP] Found method BDDEGCBCFDGBEBH, will invoke it to get players.");
-                    // Сохраним MethodInfo отдельно, если свойство не найдено
-                    // (упрощённо: используем рефлексию для вызова метода в Scan)
-                }
-                else
-                {
-                    Debug.LogError("[ESP] Could not find players property/method on PlayerManager.");
-                    _managerFailed = true;
-                    return;
-                }
+                Debug.LogError("[ESP] Could not find players property/method on PlayerManager.");
+                _managerFailed = true;
+                return;
             }
 
             Debug.Log("[ESP] PlayerManager resolved successfully.");
@@ -152,40 +136,33 @@ public class EspBehaviour : MonoBehaviour
 
         try
         {
-            // Обновляем Instance, если он был null
-            if (_playerManagerInstance == null)
-            {
-                ResolvePlayerManager();
-                if (_playerManagerInstance == null) return;
-            }
+            if (_playerManagerInstance == null && _instanceProperty != null)
+                _playerManagerInstance = _instanceProperty.GetValue(null);
 
-            // Получаем HashSet<PlayerController>
+            if (_playerManagerInstance == null) return;
+
             object playersObj = null;
             if (_playersProperty != null)
-            {
                 playersObj = _playersProperty.GetValue(_playerManagerInstance);
-            }
-            else
-            {
-                // Fallback: вызываем метод BDDEGCBCFDGBEBH()
-                var method = _playerManagerInstance.GetType().GetMethod("BDDEGCBCFDGBEBH", BindingFlags.Public | BindingFlags.Instance);
-                if (method != null)
-                    playersObj = method.Invoke(_playerManagerInstance, null);
-            }
+            else if (_playersMethod != null)
+                playersObj = _playersMethod.Invoke(_playerManagerInstance, null);
 
             if (playersObj == null) return;
 
-            // Приводим к IEnumerable (Il2Cpp HashSet)
             var enumerable = playersObj as System.Collections.IEnumerable;
             if (enumerable == null) return;
 
+            int total = 0, filtered = 0;
+
             foreach (var item in enumerable)
             {
+                total++;
                 if (item == null) continue;
 
-                // item — это PlayerController (Il2CppObject)
-                // Приводим к Component, чтобы получить transform
-                var component = item.TryCast<Component>();
+                var il2cppObj = item as Il2CppObjectBase;
+                if (il2cppObj == null) continue;
+
+                var component = il2cppObj.TryCast<Component>();
                 if (component == null) continue;
 
                 var transform = component.transform;
@@ -194,12 +171,15 @@ public class EspBehaviour : MonoBehaviour
                 Vector3 pos = transform.position;
                 string goName = component.gameObject.name;
 
-                // Фильтр по имени GameObject (TrPlayer / CtPlayer)
                 if (goName == null) continue;
                 if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer")) continue;
 
+                filtered++;
                 _toDraw.Add((pos, goName));
             }
+
+            if (total > 0 && filtered == 0)
+                Debug.Log($"[ESP] {total} players, 0 matching TrPlayer/CtPlayer filter.");
         }
         catch (Exception e)
         {
@@ -220,11 +200,9 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            // Рисуем рамку через DrawTexture (цвет через GUI.color)
             GUI.color = name.StartsWith("TrPlayer") ? Color.red : Color.cyan;
             GUI.DrawTexture(new Rect(x - 25, y - 25, 50, 50), _boxTexture);
 
-            // Текст
             GUI.color = Color.white;
             GUI.Label(new Rect(x + 30, y - 10, 250, 20), name);
         }
