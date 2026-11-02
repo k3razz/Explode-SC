@@ -4,7 +4,6 @@ using UnityEngine;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using System.Collections.Generic;
-using System.IO;
 using System;
 using System.Reflection;
 
@@ -15,33 +14,29 @@ public class Plugin : BasePlugin
 {
     public override void Load()
     {
-        Log.LogInfo("Bot+Player ESP loaded (boxes only)");
+        Log.LogInfo("ESP loading...");
         AddComponent<EspBehaviour>();
     }
 }
 
 public class EspBehaviour : MonoBehaviour
 {
-    private class Tracked
-    {
-        public Transform Transform;
-        public bool IsBot;
-        public float Height;
-        public float Width;
-    }
-
-    private readonly Dictionary<int, Tracked> _tracked = new();
-    private readonly List<(Vector3 pos, bool isBot, float h, float w)> _toDraw = new();
-    private readonly List<int> _seenList = new(); // НЕ HashSet — IL2CPP не любит HashSet в параметрах
+    private readonly List<(Vector3 pos, bool isBot)> _toDraw = new();
+    private readonly List<Transform> _botTransforms = new();
+    private readonly List<Transform> _playerTransforms = new();
     private Camera _cam;
     private Texture2D _boxTexture;
-
-    private const float ScanInterval = 0.5f;
     private float _scanTimer;
+    private const float ScanInterval = 1.0f;
 
-    private static Il2CppSystem.Type _botControllerType;
-    private static Il2CppSystem.Type _playerControllerType;
-    private static bool _typesResolved;
+    private static Il2CppSystem.Type _botType;
+    private static Il2CppSystem.Type _playerType;
+    private static bool _resolved;
+
+    // Для локального игрока
+    private static object _localPlayer;
+    private static PropertyInfo _localPlayerProp;
+    private static bool _localPlayerResolved;
 
     void Awake()
     {
@@ -51,145 +46,241 @@ public class EspBehaviour : MonoBehaviour
         Debug.Log("[ESP] Awake done");
     }
 
+    void Start()
+    {
+        Debug.Log("[ESP] Start called");
+        ResolveTypes();
+        ResolveLocalPlayer();
+    }
+
     private static void ResolveTypes()
     {
-        if (_typesResolved) return;
-        _typesResolved = true;
+        if (_resolved) return;
+        _resolved = true;
 
         try
         {
-            Type botType = null, playerType = null;
+            Type bt = null, pt = null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
-                botType ??= asm.GetType("Chillow.StandChillow.Bots.Core.BotPlayerController");
-                playerType ??= asm.GetType("Axlebolt.Standoff.Player.PlayerController");
-                if (botType != null && playerType != null) break;
+                bt ??= asm.GetType("Chillow.StandChillow.Bots.Core.BotPlayerController");
+                pt ??= asm.GetType("Axlebolt.Standoff.Player.PlayerController");
+                if (bt != null && pt != null) break;
             }
 
-            if (botType != null) _botControllerType = Il2CppType.From(botType);
-            if (playerType != null) _playerControllerType = Il2CppType.From(playerType);
+            if (bt != null) _botType = Il2CppType.From(bt);
+            if (pt != null) _playerType = Il2CppType.From(pt);
 
-            Debug.Log($"[ESP] BotPlayerController: {(botType != null ? "OK" : "NULL")}, PlayerController: {(playerType != null ? "OK" : "NULL")}");
+            Debug.Log($"[ESP] Types: Bot={(_botType != null ? "OK" : "NULL")}, Player={(_playerType != null ? "OK" : "NULL")}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[ESP] ResolveTypes failed: {e.Message}");
+            Debug.LogError($"[ESP] ResolveTypes EX: {e}");
+        }
+    }
+
+    private static void ResolveLocalPlayer()
+    {
+        if (_localPlayerResolved) return;
+        _localPlayerResolved = true;
+
+        try
+        {
+            Type pmType = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                pmType = asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
+                if (pmType != null) break;
+            }
+
+            if (pmType == null)
+            {
+                Debug.Log("[ESP] LocalPlayer: PlayerManager type not found");
+                return;
+            }
+
+            // Ищем статическое свойство Instance (LazySingleton)
+            PropertyInfo inst = null;
+            foreach (var name in new[] { "Instance", "instance" })
+            {
+                inst = pmType.GetProperty(name, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+                if (inst != null) break;
+            }
+            if (inst == null)
+            {
+                foreach (var p in pmType.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
+                    if (p.PropertyType == pmType) { inst = p; break; }
+            }
+            if (inst == null)
+            {
+                Debug.Log("[ESP] LocalPlayer: Instance property not found");
+                return;
+            }
+
+            var mgr = inst.GetValue(null);
+            if (mgr == null)
+            {
+                Debug.Log("[ESP] LocalPlayer: PlayerManager.Instance is null");
+                return;
+            }
+
+            // Свойство DEEBDAFCBHCGFBA (локальный PlayerController)
+            _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (_localPlayerProp == null)
+            {
+                Debug.Log("[ESP] LocalPlayer: DEEBDAFCBHCGFBA property not found");
+                return;
+            }
+
+            _localPlayer = _localPlayerProp.GetValue(mgr);
+            Debug.Log($"[ESP] LocalPlayer: {(_localPlayer != null ? "found" : "null")}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[ESP] ResolveLocalPlayer EX: {e}");
         }
     }
 
     void Update()
     {
-        ResolveTypes();
-
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
             _scanTimer = 0f;
-            ScanScene();
+            DoScan();
         }
 
         _toDraw.Clear();
-        foreach (var kvp in _tracked)
+        foreach (var t in _botTransforms)
         {
-            var t = kvp.Value;
-            if (t.Transform == null) continue;
-
-            Vector3 pos;
-            try { pos = t.Transform.position; }
-            catch { continue; }
-
-            _toDraw.Add((pos, t.IsBot, t.Height, t.Width));
+            if (t == null) continue;
+            try { _toDraw.Add((t.position, true)); } catch { }
+        }
+        foreach (var t in _playerTransforms)
+        {
+            if (t == null) continue;
+            try { _toDraw.Add((t.position, false)); } catch { }
         }
     }
 
-    void ScanScene()
+    void DoScan()
     {
-        _seenList.Clear();
+        ResolveTypes();
+        ResolveLocalPlayer();
 
-        ScanType(_botControllerType, true);
-        ScanType(_playerControllerType, false);
-
-        // Удаляем мёртвых
-        var dead = new List<int>();
-        foreach (var id in _tracked.Keys)
-            if (!_seenList.Contains(id)) dead.Add(id);
-        foreach (var id in dead) _tracked.Remove(id);
-    }
-
-    void ScanType(Il2CppSystem.Type type, bool isBot)
-    {
-        if (type == null) return;
-
-        Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<UnityEngine.Object> objects;
-        try { objects = FindObjectsOfType(type, false); }
-        catch (Exception e) { Debug.LogWarning($"[ESP] FindObjectsOfType failed: {e.Message}"); return; }
-        if (objects == null) return;
-
-        for (int i = 0; i < objects.Length; i++)
+        if (_botType == null && _playerType == null)
         {
-            var obj = objects[i];
-            if (obj == null) continue;
+            Debug.LogWarning("[ESP] Scan: no types, skip");
+            return;
+        }
 
-            Component component;
-            try { component = obj.TryCast<Component>(); }
-            catch { continue; }
-            if (component == null) continue;
+        _botTransforms.Clear();
+        _playerTransforms.Clear();
 
-            Transform transform;
-            try { transform = component.transform; }
-            catch { continue; }
-            if (transform == null) continue;
+        // Обновляем локального игрока (мог появиться позже)
+        try
+        {
+            if (_localPlayer == null && _localPlayerProp != null)
+            {
+                // пере-резолвим Instance и локального
+                _localPlayerResolved = false;
+                ResolveLocalPlayer();
+            }
+        }
+        catch { }
 
-            GameObject go;
-            try { go = component.gameObject; }
-            catch { continue; }
-            if (go == null) continue;
+        int botCount = 0, playerCount = 0;
+        int otherBots = 0, otherPlayers = 0;
+        bool hasLocal = _localPlayer != null;
 
-            int id = go.GetInstanceID();
-            if (_seenList.Contains(id)) continue;
-            _seenList.Add(id);
-
-            float h = 1.8f, w = 0.6f;
+        // Боты
+        if (_botType != null)
+        {
             try
             {
-                var cc = go.GetComponent<CharacterController>();
-                if (cc != null)
+                var arr = FindObjectsOfType(_botType, false);
+                if (arr != null)
                 {
-                    h = cc.height;
-                    w = cc.radius * 2f;
-                }
-                else
-                {
-                    var smr = go.GetComponentInChildren<SkinnedMeshRenderer>();
-                    if (smr != null)
+                    for (int i = 0; i < arr.Length; i++)
                     {
-                        var b = smr.bounds;
-                        h = b.size.y;
-                        w = b.size.x;
+                        var o = arr[i];
+                        if (o == null) continue;
+                        var c = o.TryCast<Component>();
+                        if (c == null) continue;
+                        var tr = c.transform;
+                        if (tr == null) continue;
+                        _botTransforms.Add(tr);
+                        botCount++;
+                        otherBots++;
                     }
                 }
             }
-            catch { }
-
-            _tracked[id] = new Tracked
-            {
-                Transform = transform,
-                IsBot = isBot,
-                Height = h,
-                Width = w
-            };
+            catch (Exception e) { Debug.LogError($"[ESP] Bot Find EX: {e}"); }
         }
 
-        if (objects.Length > 0)
-            Debug.Log($"[ESP] {(isBot ? "Bot" : "Player")} count: {objects.Length}");
+        // Игроки
+        if (_playerType != null)
+        {
+            try
+            {
+                var arr = FindObjectsOfType(_playerType, false);
+                if (arr != null)
+                {
+                    for (int i = 0; i < arr.Length; i++)
+                    {
+                        var o = arr[i];
+                        if (o == null) continue;
+
+                        // Пропускаем локального игрока
+                        bool isLocal = false;
+                        if (hasLocal && _localPlayer != null)
+                        {
+                            try
+                            {
+                                var localComp = _localPlayer as Il2CppObjectBase;
+                                var thisComp = o as Il2CppObjectBase;
+                                if (localComp != null && thisComp != null)
+                                {
+                                    // Сравниваем указатели IL2CPP
+                                    if (localComp.Pointer == thisComp.Pointer) isLocal = true;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        var c = o.TryCast<Component>();
+                        if (c == null) continue;
+                        var tr = c.transform;
+                        if (tr == null) continue;
+
+                        if (isLocal)
+                        {
+                            // локального не добавляем в отрисовку, но считаем
+                            continue;
+                        }
+
+                        _playerTransforms.Add(tr);
+                        playerCount++;
+                        otherPlayers++;
+                    }
+                }
+            }
+            catch (Exception e) { Debug.LogError($"[ESP] Player Find EX: {e}"); }
+        }
+
+        // Итоговая статистика в консоль
+        string localStatus = hasLocal ? "LOCAL: yes" : "LOCAL: no";
+        Debug.Log($"[ESP] Scan: {localStatus} | bots total={botCount}, players total={playerCount} | others: bots={otherBots}, players={otherPlayers}");
     }
 
     void OnGUI()
     {
         if (_cam == null) _cam = Camera.main;
-        if (_cam == null) return;
+        if (_cam == null) { GUI.Label(new Rect(10, 10, 300, 20), "ESP: Camera.main is null"); return; }
 
-        foreach (var (worldPos, isBot, h, w) in _toDraw)
+        GUI.Label(new Rect(10, 10, 500, 20), $"ESP: drawing {_toDraw.Count} (bots+others)");
+
+        foreach (var (worldPos, isBot) in _toDraw)
         {
             Vector3 screen = _cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
@@ -197,20 +288,10 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            float distance = screen.z;
-            float pixelsPerUnit = Screen.height / (2f * distance * Mathf.Tan(_cam.fieldOfView * 0.5f * Mathf.Deg2Rad));
-
-            float boxHeight = h * pixelsPerUnit;
-            float boxWidth = w * pixelsPerUnit;
-
-            // CharacterController pivot — в ногах. Поднимаем рамку так, чтобы она охватывала модель:
-            // низ рамки = позиция ног, верх = ноги + h.
-            float bottomY = y;
-            float topY = y - boxHeight;
-            float leftX = x - boxWidth * 0.5f;
+            float bw = 60f, bh = 100f;
 
             GUI.color = isBot ? Color.yellow : Color.cyan;
-            GUI.DrawTexture(new Rect(leftX, topY, boxWidth, boxHeight), _boxTexture);
+            GUI.DrawTexture(new Rect(x - bw / 2, y - bh, bw, bh), _boxTexture);
         }
 
         GUI.color = Color.white;
