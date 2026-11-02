@@ -4,6 +4,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.IO;
 using System;
+using System.Reflection;
 
 namespace MyDynamicESP;
 
@@ -42,12 +43,13 @@ public class EspBehaviour : MonoBehaviour
     private bool _menuOpen;
     private Rect _menuRect = new Rect(20, 20, 350, 500);
     private Vector2 _scroll;
-    private GUI.WindowFunction _drawMenuDelegate;
+
+    // Для рефлексии ввода
+    private static MethodInfo _getKeyDownMethod;
+    private static bool _inputInitialized;
 
     void Awake()
     {
-        _drawMenuDelegate = new GUI.WindowFunction(DrawMenu);
-
         string gameRoot = Path.GetDirectoryName(Application.dataPath);
         _cachePath = Path.Combine(gameRoot, "cache.txt");
 
@@ -65,10 +67,40 @@ public class EspBehaviour : MonoBehaviour
         Debug.Log($"[ESP] cache.txt: {_cachePath}");
     }
 
+    private static void InitInput()
+    {
+        if (_inputInitialized) return;
+        _inputInitialized = true;
+
+        try
+        {
+            // Ищем UnityEngine.Input среди загруженных сборок
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var inputType = asm.GetType("UnityEngine.Input");
+                if (inputType != null)
+                {
+                    _getKeyDownMethod = inputType.GetMethod("GetKeyDown", new[] { typeof(KeyCode) });
+                    if (_getKeyDownMethod != null) return;
+                }
+            }
+        }
+        catch { }
+
+        Debug.LogWarning("[ESP] Could not find UnityEngine.Input.GetKeyDown via reflection.");
+    }
+
+    private static bool IsKeyDown(KeyCode key)
+    {
+        if (_getKeyDownMethod == null) return false;
+        try { return (bool)_getKeyDownMethod.Invoke(null, new object[] { key }); }
+        catch { return false; }
+    }
+
     void Update()
     {
-        // Используем UnityInput от BepInEx для автоматической адаптации к старой/новой системе ввода
-        if (UnityInput.Current.GetKeyDown(KeyCode.Insert))
+        InitInput();
+        if (IsKeyDown(KeyCode.Insert))
             _menuOpen = !_menuOpen;
 
         _scanTimer += Time.deltaTime;
@@ -184,7 +216,8 @@ public class EspBehaviour : MonoBehaviour
         if (!_menuOpen) return;
 
         GUI.color = Color.white;
-        _menuRect = GUI.Window(0, _menuRect, _drawMenuDelegate, "Dynamic ESP — Insert to toggle");
+        // Лямбда устраняет ошибку "cannot convert from 'method group' to 'System.IntPtr'"
+        _menuRect = GUI.Window(0, _menuRect, (GUI.WindowFunction)(id => DrawMenu(id)), "Dynamic ESP — Insert to toggle");
     }
 
     void DrawMenu(int windowId)
