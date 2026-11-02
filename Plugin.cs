@@ -13,61 +13,63 @@ public class Plugin : BasePlugin
     public override void Load()
     {
         Log.LogInfo("ESP loading...");
-        EspRenderer.Init();
-        Log.LogInfo("ESP hooked");
+        IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
+        Log.LogInfo("ESP component added");
     }
 }
 
-public static class EspRenderer
+public class EspBehaviour : MonoBehaviour
 {
     private class Tracked
     {
         public Transform Transform;
         public bool IsBot;
-        public float Height;
+        public string Name;
     }
 
-    private static readonly Dictionary<int, Tracked> _tracked = new();
-    private static readonly List<(Vector3 pos, bool isBot, float h)> _toDraw = new();
-    private static Texture2D _dotTexture;
-    private static float _scanTimer;
+    private readonly Dictionary<int, Tracked> _tracked = new();
+    private readonly List<(Vector3 pos, bool isBot, string name)> _toDraw = new();
+    private Camera _cam;
+    private float _scanTimer;
     private const float ScanInterval = 1.0f;
+    private const float VerticalOffset = 1.8f;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
-    private static bool _hooked;
 
-    public static void Init()
+    private int _updateCount;
+    private int _guiCount;
+
+    void Awake()
     {
-        if (_hooked) return;
-        _hooked = true;
-
-        _dotTexture = new Texture2D(4, 4);
-        for (int y = 0; y < 4; y++)
-            for (int x = 0; x < 4; x++)
-                _dotTexture.SetPixel(x, y, Color.white);
-        _dotTexture.Apply();
-
-        Camera.onPostRender = (Camera.CameraCallback)OnPostRender;
-        Debug.Log("[ESP] EspRenderer.Init");
+        Debug.Log("[ESP] Awake");
     }
 
-    private static void OnPostRender(Camera cam)
+    void Update()
     {
-        try
-        {
-            _scanTimer += Time.deltaTime;
-            if (_scanTimer >= ScanInterval)
-            {
-                _scanTimer = 0f;
-                DoScan();
-            }
+        _updateCount++;
+        if (_updateCount <= 3 || _updateCount % 300 == 0)
+            Debug.Log($"[ESP] Update tick #{_updateCount}");
 
-            UpdateDrawList();
-            Draw(cam);
+        _scanTimer += Time.deltaTime;
+        if (_scanTimer >= ScanInterval)
+        {
+            _scanTimer = 0f;
+            DoScan();
         }
-        catch (Exception e) { Debug.LogError($"[ESP] EX: {e}"); }
+
+        _toDraw.Clear();
+        foreach (var t in _tracked.Values)
+        {
+            if (t.Transform == null) continue;
+            try
+            {
+                Vector3 head = t.Transform.position + Vector3.up * VerticalOffset;
+                _toDraw.Add((head, t.IsBot, t.Name));
+            }
+            catch { }
+        }
     }
 
     private static void ResolveTypes()
@@ -90,7 +92,7 @@ public static class EspRenderer
         catch (Exception e) { Debug.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
 
-    private static void DoScan()
+    void DoScan()
     {
         ResolveTypes();
         if (_botType == null && _playerType == null) return;
@@ -104,15 +106,17 @@ public static class EspRenderer
             if (!seen.Contains(id)) dead.Add(id);
         foreach (var id in dead) _tracked.Remove(id);
 
-        Debug.Log($"[ESP] Scan: {_tracked.Count} tracked");
+        int botN = 0, playerN = 0;
+        foreach (var t in _tracked.Values) { if (t.IsBot) botN++; else playerN++; }
+        Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}");
     }
 
-    private static void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
+    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
     {
         if (type == null) return;
         try
         {
-            var arr = UnityEngine.Object.FindObjectsOfType(type, false);
+            var arr = FindObjectsOfType(type, false);
             if (arr == null) return;
             for (int i = 0; i < arr.Length; i++)
             {
@@ -129,58 +133,57 @@ public static class EspRenderer
                 if (seen.Contains(id)) continue;
                 seen.Add(id);
 
-                float h = 1.8f;
-                try
-                {
-                    var cc = go.GetComponent<CharacterController>();
-                    if (cc != null) h = cc.height;
-                }
-                catch { }
-
-                _tracked[id] = new Tracked { Transform = tr, IsBot = isBot, Height = h };
+                string name = TryGetName(c, isBot);
+                _tracked[id] = new Tracked { Transform = tr, IsBot = isBot, Name = name };
             }
         }
         catch (Exception e) { Debug.LogError($"[ESP] ScanType EX: {e}"); }
     }
 
-    private static void UpdateDrawList()
+    string TryGetName(Component c, bool isBot)
     {
-        _toDraw.Clear();
-        foreach (var t in _tracked.Values)
+        try
         {
-            if (t.Transform == null) continue;
-            try
+            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (prop != null)
             {
-                Vector3 feet = t.Transform.position;
-                Vector3 head = feet + Vector3.up * t.Height;
-                _toDraw.Add((head, t.IsBot, t.Height));
+                var pp = prop.GetValue(c);
+                if (pp != null)
+                {
+                    var nickProp = pp.GetType().GetProperty("NickName", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                    if (nickProp != null)
+                    {
+                        var nick = nickProp.GetValue(pp) as string;
+                        if (!string.IsNullOrEmpty(nick)) return nick;
+                    }
+                }
             }
-            catch { }
         }
+        catch { }
+        try { var n = c.gameObject.name; if (!string.IsNullOrEmpty(n)) return n; } catch { }
+        return isBot ? "BOT" : "PLAYER";
     }
 
-    private static void Draw(Camera cam)
+    void OnGUI()
     {
-        if (cam == null || _dotTexture == null) return;
+        _guiCount++;
+        if (_guiCount <= 3 || _guiCount % 300 == 0)
+            Debug.Log($"[ESP] OnGUI tick #{_guiCount}, draw={_toDraw.Count}");
 
-        foreach (var (headPos, isBot, h) in _toDraw)
+        if (_cam == null) _cam = Camera.main;
+        if (_cam == null) return;
+
+        foreach (var (worldPos, isBot, name) in _toDraw)
         {
-            Vector3 screen = cam.WorldToScreenPoint(headPos);
+            Vector3 screen = _cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
-
-            // Простая эвристика: если точка слишком близко к камере — вероятно, локальный игрок
-            if (screen.z < 1.0f) continue;
 
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            // Рисуем точку (квадрат 10x10)
+            string label = string.IsNullOrEmpty(name) ? (isBot ? "BOT" : "PLAYER") : name;
             GUI.color = isBot ? Color.yellow : Color.cyan;
-            Graphics.DrawTexture(new Rect(x - 5, y - 5, 10, 10), _dotTexture);
-
-            // Текст под точкой (на экране, а не в мире)
-            GUI.color = Color.white;
-            GUI.Label(new Rect(x - 50, y + 8, 100, 20), isBot ? "BOT" : "PLAYER");
+            GUI.Label(new Rect(x - 50, y - 10, 200, 20), label);
         }
         GUI.color = Color.white;
     }
