@@ -26,7 +26,11 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Unity interop — скопируйте из <Игра>/BepInEx/interop/ -->
+    <!-- Unity interop + Il2Cppmscorlib — скопируйте из <Игра>/BepInEx/interop/ -->
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>libs/interop/Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>libs/interop/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
