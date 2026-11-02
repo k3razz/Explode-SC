@@ -2,8 +2,8 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.Events;
 using Il2CppInterop.Runtime;
-using Il2CppInterop.Runtime.InteropTypes;
 using System.Collections.Generic;
 using System;
 
@@ -17,7 +17,7 @@ public class Plugin : BasePlugin
     public override void Load()
     {
         Log.LogInfo("ESP loading...");
-        SceneManager.sceneLoaded += OnSceneLoaded;
+        SceneManager.sceneLoaded = (UnityAction<Scene, LoadSceneMode>)OnSceneLoaded;
         Log.LogInfo("ESP subscribed to sceneLoaded");
     }
 
