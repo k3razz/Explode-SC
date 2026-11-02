@@ -20,25 +20,6 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      # Скачиваем BepInEx 6 IL2CPP и извлекаем нужные DLL
-      - name: Download BepInEx IL2CPP
-        shell: pwsh
-        run: |
-          $url = "https://builds.bepinex.dev/projects/bepinex_be/733/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.733%2B995f049.zip"
-          Invoke-WebRequest -Uri $url -OutFile bepinex.zip
-          Expand-Archive -Path bepinex.zip -DestinationPath bepinex_temp -Force
-
-          New-Item -ItemType Directory -Force -Path libs/core
-          New-Item -ItemType Directory -Force -Path libs/interop
-
-          Copy-Item "bepinex_temp/BepInEx/core/BepInEx.Core.dll" -Destination libs/core/
-          Copy-Item "bepinex_temp/BepInEx/core/BepInEx.Unity.IL2CPP.dll" -Destination libs/core/
-          Copy-Item "bepinex_temp/BepInEx/core/0Harmony.dll" -Destination libs/core/
-          Copy-Item "bepinex_temp/BepInEx/core/Il2CppInterop.Runtime.dll" -Destination libs/core/
-
-          Copy-Item "bepinex_temp/BepInEx/interop/UnityEngine.CoreModule.dll" -Destination libs/interop/
-          Copy-Item "bepinex_temp/BepInEx/interop/UnityEngine.IMGUIModule.dll" -Destination libs/interop/
-
       - name: Restore dependencies
         run: dotnet restore
 
