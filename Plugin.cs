@@ -1,7 +1,9 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
 using System.Collections.Generic;
 using System;
 
@@ -10,15 +12,28 @@ namespace MyDynamicESP;
 [BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
+    private static bool _created;
+
     public override void Load()
     {
         Log.LogInfo("ESP loading...");
-        EspRenderer.Init();
-        Log.LogInfo("ESP hooked to Camera.onPostRender");
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        Log.LogInfo("ESP subscribed to sceneLoaded");
+    }
+
+    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (_created) return;
+        _created = true;
+
+        var go = new GameObject("ESP_Behaviour_Object");
+        UnityEngine.Object.DontDestroyOnLoad(go);
+        go.AddComponent<EspBehaviour>();
+        Debug.Log("[ESP] EspBehaviour created on scene load");
     }
 }
 
-public static class EspRenderer
+public class EspBehaviour : MonoBehaviour
 {
     private class Tracked
     {
@@ -27,48 +42,39 @@ public static class EspRenderer
         public string Name;
     }
 
-    private static readonly Dictionary<int, Tracked> _tracked = new();
-    private static readonly List<(Vector3 pos, bool isBot, string name)> _toDraw = new();
-    private static Texture2D _boxTexture;
-    private static float _scanTimer;
+    private readonly Dictionary<int, Tracked> _tracked = new();
+    private readonly List<(Vector3 pos, bool isBot, string name)> _toDraw = new();
+    private Camera _cam;
+    private Texture2D _boxTexture;
+    private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
-    private static bool _hooked;
 
-    public static void Init()
+    void Awake()
     {
-        if (_hooked) return;
-        _hooked = true;
-
+        Debug.Log("[ESP] EspBehaviour Awake");
         _boxTexture = new Texture2D(1, 1);
         _boxTexture.SetPixel(0, 0, Color.white);
         _boxTexture.Apply();
-
-        // Явное приведение method group к типу делегата
-        Camera.onPostRender = (Camera.CameraCallback)OnPostRender;
-        Debug.Log("[ESP] EspRenderer.Init, onPostRender subscribed");
     }
 
-    private static void OnPostRender(Camera cam)
+    void Update()
     {
-        try
+        _scanTimer += Time.deltaTime;
+        if (_scanTimer >= ScanInterval)
         {
-            _scanTimer += Time.deltaTime;
-            if (_scanTimer >= ScanInterval)
-            {
-                _scanTimer = 0f;
-                DoScan();
-            }
-
-            UpdateDrawList();
-            DrawBoxes(cam);
+            _scanTimer = 0f;
+            DoScan();
         }
-        catch (Exception e)
+
+        _toDraw.Clear();
+        foreach (var t in _tracked.Values)
         {
-            Debug.LogError($"[ESP] OnPostRender EX: {e}");
+            if (t.Transform == null) continue;
+            try { _toDraw.Add((t.Transform.position, t.IsBot, t.Name)); } catch { }
         }
     }
 
@@ -92,7 +98,7 @@ public static class EspRenderer
         catch (Exception e) { Debug.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
 
-    private static void DoScan()
+    void DoScan()
     {
         ResolveTypes();
         if (_botType == null && _playerType == null) return;
@@ -111,12 +117,12 @@ public static class EspRenderer
         Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}");
     }
 
-    private static void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
+    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
     {
         if (type == null) return;
         try
         {
-            var arr = UnityEngine.Object.FindObjectsOfType(type, false);
+            var arr = FindObjectsOfType(type, false);
             if (arr == null) return;
             for (int i = 0; i < arr.Length; i++)
             {
@@ -140,7 +146,7 @@ public static class EspRenderer
         catch (Exception e) { Debug.LogError($"[ESP] ScanType EX: {e}"); }
     }
 
-    private static string TryGetName(Component c, bool isBot)
+    string TryGetName(Component c, bool isBot)
     {
         try
         {
@@ -164,23 +170,16 @@ public static class EspRenderer
         return isBot ? "BOT" : "PLAYER";
     }
 
-    private static void UpdateDrawList()
+    void OnGUI()
     {
-        _toDraw.Clear();
-        foreach (var t in _tracked.Values)
-        {
-            if (t.Transform == null) continue;
-            try { _toDraw.Add((t.Transform.position, t.IsBot, t.Name)); } catch { }
-        }
-    }
+        if (_cam == null) _cam = Camera.main;
+        if (_cam == null) { GUI.Label(new Rect(10, 10, 300, 20), "ESP: no camera"); return; }
 
-    private static void DrawBoxes(Camera cam)
-    {
-        if (cam == null || _boxTexture == null) return;
+        GUI.Label(new Rect(10, 10, 300, 20), $"ESP: {_toDraw.Count}");
 
         foreach (var (worldPos, isBot, name) in _toDraw)
         {
-            Vector3 screen = cam.WorldToScreenPoint(worldPos);
+            Vector3 screen = _cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
 
             float x = screen.x;
