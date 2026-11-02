@@ -22,12 +22,23 @@ public class Plugin : BasePlugin
 
 public class EspBehaviour : MonoBehaviour
 {
-    private readonly List<(Vector3 pos, string label, bool isBot)> _toDraw = new();
+    private class Tracked
+    {
+        public Transform Transform;
+        public string Label;
+        public bool IsBot;
+        public float Height; // для bounding box
+        public float Width;  // для bounding box
+    }
+
+    private readonly Dictionary<int, Tracked> _tracked = new();
+    private readonly List<(Vector3 pos, string label, bool isBot, float h, float w)> _toDraw = new();
     private Camera _cam;
     private Texture2D _boxTexture;
     private string _gameRoot;
 
-    private const float ScanInterval = 0.25f;
+    // Сканируем сцену редко (поиск новых), позиции читаем каждый кадр
+    private const float ScanInterval = 0.5f;
     private float _scanTimer;
 
     private static Il2CppSystem.Type _botControllerType;
@@ -71,38 +82,52 @@ public class EspBehaviour : MonoBehaviour
 
     void Update()
     {
+        ResolveTypes();
+
+        // 1. Редко сканируем сцену — ищем новых / удаляем мёртвых
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
             _scanTimer = 0f;
-            ScanAll();
+            ScanScene();
+        }
+
+        // 2. Каждый кадр — читаем актуальные позиции и размеры
+        _toDraw.Clear();
+        foreach (var kvp in _tracked)
+        {
+            var t = kvp.Value;
+            if (t.Transform == null) continue;
+
+            Vector3 pos;
+            try { pos = t.Transform.position; }
+            catch { continue; }
+
+            _toDraw.Add((pos, t.Label, t.IsBot, t.Height, t.Width));
         }
     }
 
-    void ScanAll()
+    void ScanScene()
     {
-        ResolveTypes();
-        _toDraw.Clear();
+        var seen = new HashSet<int>();
 
-        ScanType(_botControllerType, true);
-        ScanType(_playerControllerType, false);
+        ScanType(_botControllerType, true, seen);
+        ScanType(_playerControllerType, false, seen);
+
+        // Удаляем объекты, которых больше нет
+        var dead = new List<int>();
+        foreach (var id in _tracked.Keys)
+            if (!seen.Contains(id)) dead.Add(id);
+        foreach (var id in dead) _tracked.Remove(id);
     }
 
-    void ScanType(Il2CppSystem.Type type, bool isBot)
+    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
     {
         if (type == null) return;
 
         Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<UnityEngine.Object> objects;
-        try
-        {
-            objects = FindObjectsOfType(type, false);
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning($"[ESP] FindObjectsOfType({(isBot ? "bot" : "player")}) failed: {e.Message}");
-            return;
-        }
-
+        try { objects = FindObjectsOfType(type, false); }
+        catch (Exception e) { Debug.LogWarning($"[ESP] FindObjectsOfType failed: {e.Message}"); return; }
         if (objects == null) return;
 
         for (int i = 0; i < objects.Length; i++)
@@ -120,20 +145,50 @@ public class EspBehaviour : MonoBehaviour
             catch { continue; }
             if (transform == null) continue;
 
-            Vector3 pos;
-            try { pos = transform.position; }
+            GameObject go;
+            try { go = component.gameObject; }
             catch { continue; }
+            if (go == null) continue;
 
-            string goName;
-            try { goName = component.gameObject.name; }
-            catch { goName = "unknown"; }
+            int id = go.GetInstanceID();
+            if (seen.Contains(id)) continue;
+            seen.Add(id);
 
-            string label = $"{(isBot ? "BOT" : "PLR")}: {goName}";
-            _toDraw.Add((pos, label, isBot));
+            // Размеры: берём из CharacterController или из SkinnedMeshRenderer.bounds
+            float h = 1.8f, w = 0.6f;
+            try
+            {
+                var cc = go.GetComponent<CharacterController>();
+                if (cc != null)
+                {
+                    h = cc.height;
+                    w = cc.radius * 2f;
+                }
+                else
+                {
+                    var smr = go.GetComponentInChildren<SkinnedMeshRenderer>();
+                    if (smr != null)
+                    {
+                        var b = smr.bounds;
+                        h = b.size.y;
+                        w = b.size.x;
+                    }
+                }
+            }
+            catch { }
+
+            string goName = "unknown";
+            try { goName = go.name; } catch { }
+
+            _tracked[id] = new Tracked
+            {
+                Transform = transform,
+                Label = $"{(isBot ? "BOT" : "PLR")}: {goName}",
+                IsBot = isBot,
+                Height = h,
+                Width = w
+            };
         }
-
-        if (objects.Length > 0)
-            Debug.Log($"[ESP] {(isBot ? "Bot" : "Player")} count: {objects.Length}");
     }
 
     void OnGUI()
@@ -141,7 +196,7 @@ public class EspBehaviour : MonoBehaviour
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
 
-        foreach (var (worldPos, label, isBot) in _toDraw)
+        foreach (var (worldPos, label, isBot, h, w) in _toDraw)
         {
             Vector3 screen = _cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
@@ -149,11 +204,25 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            GUI.color = isBot ? Color.yellow : Color.cyan;
-            GUI.DrawTexture(new Rect(x - 25, y - 25, 50, 50), _boxTexture);
+            // Высота рамки в пикселях: масштабируем по расстоянию до камеры
+            float distance = screen.z;
+            float pixelsPerUnit = Screen.height / (2f * distance * Mathf.Tan(_cam.fieldOfView * 0.5f * Mathf.Deg2Rad));
 
+            float boxHeight = h * pixelsPerUnit;
+            float boxWidth = w * pixelsPerUnit;
+
+            // Центр экрана для верха головы: worldPos + height/2 (грубо)
+            float topY = y - boxHeight * 0.5f;
+            float bottomY = y + boxHeight * 0.5f;
+            float leftX = x - boxWidth * 0.5f;
+
+            // Рамка
+            GUI.color = isBot ? Color.yellow : Color.cyan;
+            GUI.DrawTexture(new Rect(leftX, topY, boxWidth, boxHeight), _boxTexture);
+
+            // Подпись чуть выше рамки и левее (ближе к центру)
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + 30, y - 10, 300, 20), label);
+            GUI.Label(new Rect(leftX, topY - 18, 250, 20), label);
         }
     }
 }
