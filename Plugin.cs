@@ -1,8 +1,6 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.Events;
 using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using System;
@@ -12,24 +10,11 @@ namespace MyDynamicESP;
 [BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
-    private static bool _created;
-
     public override void Load()
     {
         Log.LogInfo("ESP loading...");
-        SceneManager.sceneLoaded = (UnityAction<Scene, LoadSceneMode>)OnSceneLoaded;
-        Log.LogInfo("ESP subscribed to sceneLoaded");
-    }
-
-    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    {
-        if (_created) return;
-        _created = true;
-
-        var go = new GameObject("ESP_Behaviour_Object");
-        UnityEngine.Object.DontDestroyOnLoad(go);
-        go.AddComponent<EspBehaviour>();
-        Debug.Log("[ESP] EspBehaviour created on scene load");
+        IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
+        Log.LogInfo("ESP component added via IL2CPPChainloader");
     }
 }
 
@@ -53,6 +38,8 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
+    private int _updateCount;
+
     void Awake()
     {
         Debug.Log("[ESP] EspBehaviour Awake");
@@ -63,6 +50,10 @@ public class EspBehaviour : MonoBehaviour
 
     void Update()
     {
+        _updateCount++;
+        if (_updateCount <= 3 || _updateCount % 300 == 0)
+            Debug.Log($"[ESP] Update tick #{_updateCount}");
+
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
