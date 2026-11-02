@@ -13,7 +13,7 @@ public class Plugin : BasePlugin
 {
     public override void Load()
     {
-        Log.LogInfo("ESP loading");
+        Log.LogInfo("ESP loading...");
         IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
         Log.LogInfo("ESP component added");
     }
@@ -35,8 +35,9 @@ public class EspBehaviour : MonoBehaviour
     private Camera _cam;
     private Texture2D _whiteTex;
     private float _scanTimer;
-    private const float ScanInterval = 1.0f
+    private const float ScanInterval = 1.0f;
 
+    // Настройки бокса
     private const float BoxWidth = 60f;
     private const float BoxHeight = 120f;
     private const float OutlineThickness = 2f;
@@ -72,10 +73,10 @@ public class EspBehaviour : MonoBehaviour
         {
             if (t.Transform == null) continue;
             
-            
+            // 1. Применяем чамсы (перекрашиваем модель)
             ApplyChams(t);
 
-            
+            // 2. Фильтруем для отрисовки боксов (только враги)
             if (_localTeam != -1 && t.Team == _localTeam) continue;
             _toDraw.Add(t);
         }
@@ -85,7 +86,7 @@ public class EspBehaviour : MonoBehaviour
     {
         if (t.Renderers == null || t.Renderers.Length == 0) return;
 
-        
+        // Выбираем цвет чамсов: враги - красные, свои - синие
         Color chamColor = t.Team == 1 ? Color.red : new Color(0f, 0.5f, 1f);
 
         foreach (var r in t.Renderers)
@@ -93,13 +94,13 @@ public class EspBehaviour : MonoBehaviour
             if (r == null) continue;
             try
             {
-                
+                // Берем экземпляр материала (создает копию для этого объекта)
                 var mat = r.material;
                 if (mat != null)
                 {
-                    
+                    // Стандартный шейдер Unity
                     if (mat.HasProperty("_Color")) mat.color = chamColor;
-                   
+                    // Шейдер URP (если игра на URP)
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", chamColor);
                 }
             }
@@ -211,7 +212,7 @@ public class EspBehaviour : MonoBehaviour
                 }
                 catch { }
 
-                
+                // Для чамсов берем ВСЕ рендереры, чтобы оружие и руки тоже красились
                 var allRenderers = go.GetComponentsInChildren<Renderer>();
 
                 _tracked[id] = new Tracked
@@ -279,17 +280,18 @@ public class EspBehaviour : MonoBehaviour
             Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.15f) : new Color(0f, 0.5f, 1f, 0.15f);
             Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
 
+            // Заливка
             GUI.color = fillColor;
             GUI.DrawTexture(new Rect(left, top, bw, bh), _whiteTex);
 
-           
+            // Обводка
             GUI.color = outlineColor;
             GUI.DrawTexture(new Rect(left, top, bw, th), _whiteTex);
             GUI.DrawTexture(new Rect(left, bottom - th, bw, th), _whiteTex);
             GUI.DrawTexture(new Rect(left, top, th, bh), _whiteTex);
             GUI.DrawTexture(new Rect(left + bw - th, top, th, bh), _whiteTex);
 
-            
+            // Текст
             GUI.color = Color.white;
             string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
             GUI.Label(new Rect(left, top - 18f, bw + 60f, 20f), label);
