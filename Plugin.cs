@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
+using UnityEngine.InputSystem; // Исправление 1: используем новую систему ввода
 using System.Collections.Generic;
 using System.IO;
 using System;
@@ -42,12 +43,9 @@ public class EspBehaviour : MonoBehaviour
     private bool _menuOpen;
     private Rect _menuRect = new Rect(20, 20, 350, 500);
     private Vector2 _scroll;
-    private GUI.WindowFunction _drawMenuDelegate;
 
     void Awake()
     {
-        _drawMenuDelegate = new GUI.WindowFunction(DrawMenu);
-
         string gameRoot = Path.GetDirectoryName(Application.dataPath);
         _cachePath = Path.Combine(gameRoot, "cache.txt");
 
@@ -67,7 +65,8 @@ public class EspBehaviour : MonoBehaviour
 
     void Update()
     {
-        if (UnityEngine.Input.GetKeyDown(KeyCode.Insert))
+        // Исправление 1: используем новую систему ввода и добавляем проверку на null
+        if (Keyboard.current != null && Keyboard.current.insertKey.wasPressedThisFrame)
             _menuOpen = !_menuOpen;
 
         _scanTimer += Time.deltaTime;
@@ -183,7 +182,8 @@ public class EspBehaviour : MonoBehaviour
         if (!_menuOpen) return;
 
         GUI.color = Color.white;
-        _menuRect = GUI.Window(0, _menuRect, _drawMenuDelegate, "Dynamic ESP — Insert to toggle");
+        // Исправление 2: используем лямбда-выражение и приводим тип к GUI.WindowFunction
+        _menuRect = GUI.Window(0, _menuRect, (GUI.WindowFunction)(id => DrawMenu(id)), "Dynamic ESP — Insert to toggle");
     }
 
     void DrawMenu(int windowId)
