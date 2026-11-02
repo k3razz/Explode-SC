@@ -25,33 +25,33 @@ public class EspBehaviour : MonoBehaviour
         public Transform Transform;
         public bool IsBot;
         public string Name;
+        public Renderer[] BodyRenderers;
     }
 
     private readonly Dictionary<int, Tracked> _tracked = new();
-    private readonly List<(Vector3 pos, bool isBot, string name)> _toDraw = new();
+    private readonly List<Tracked> _toDraw = new();
     private Camera _cam;
+    private Texture2D _whiteTexture;
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
-    private const float VerticalOffset = 1.8f;
+    private const float HeadOffset = 1.8f;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
-    private int _updateCount;
     private int _guiCount;
 
     void Awake()
     {
         Debug.Log("[ESP] Awake");
+        _whiteTexture = new Texture2D(1, 1);
+        _whiteTexture.SetPixel(0, 0, Color.white);
+        _whiteTexture.Apply();
     }
 
     void Update()
     {
-        _updateCount++;
-        if (_updateCount <= 3 || _updateCount % 300 == 0)
-            Debug.Log($"[ESP] Update tick #{_updateCount}");
-
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
@@ -63,12 +63,7 @@ public class EspBehaviour : MonoBehaviour
         foreach (var t in _tracked.Values)
         {
             if (t.Transform == null) continue;
-            try
-            {
-                Vector3 head = t.Transform.position + Vector3.up * VerticalOffset;
-                _toDraw.Add((head, t.IsBot, t.Name));
-            }
-            catch { }
+            _toDraw.Add(t);
         }
     }
 
@@ -106,9 +101,13 @@ public class EspBehaviour : MonoBehaviour
             if (!seen.Contains(id)) dead.Add(id);
         foreach (var id in dead) _tracked.Remove(id);
 
-        int botN = 0, playerN = 0;
-        foreach (var t in _tracked.Values) { if (t.IsBot) botN++; else playerN++; }
-        Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}");
+        int botN = 0, playerN = 0, withRenderers = 0;
+        foreach (var t in _tracked.Values)
+        {
+            if (t.IsBot) botN++; else playerN++;
+            if (t.BodyRenderers != null && t.BodyRenderers.Length > 0) withRenderers++;
+        }
+        Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}, withRenderers={withRenderers}");
     }
 
     void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
@@ -133,11 +132,49 @@ public class EspBehaviour : MonoBehaviour
                 if (seen.Contains(id)) continue;
                 seen.Add(id);
 
+                var bodyRenderers = GetBodyRenderers(go);
                 string name = TryGetName(c, isBot);
-                _tracked[id] = new Tracked { Transform = tr, IsBot = isBot, Name = name };
+                _tracked[id] = new Tracked
+                {
+                    Transform = tr,
+                    IsBot = isBot,
+                    Name = name,
+                    BodyRenderers = bodyRenderers
+                };
             }
         }
         catch (Exception e) { Debug.LogError($"[ESP] ScanType EX: {e}"); }
+    }
+
+    static Renderer[] GetBodyRenderers(GameObject go)
+    {
+        var list = new List<Renderer>();
+        try
+        {
+            var comps = go.GetComponentsInChildren<SkinnedMeshRenderer>();
+            if (comps != null)
+            {
+                for (int i = 0; i < comps.Length; i++)
+                {
+                    var smr = comps[i];
+                    if (smr == null) continue;
+                    var n = smr.gameObject.name;
+                    if (n == null) continue;
+
+                    if (n.Contains("Arms")) continue;
+                    if (n.Contains("Weapon")) continue;
+                    if (n.Contains("Tool")) continue;
+                    if (n.Contains("Knife")) continue;
+                    if (n.Contains("Gun")) continue;
+                    if (n.Contains("Ragdoll")) continue;
+
+                    if (n.Contains("PlayerCharacter") || n.Contains("Character") || n.Contains("Body"))
+                        list.Add(smr);
+                }
+            }
+        }
+        catch { }
+        return list.ToArray();
     }
 
     string TryGetName(Component c, bool isBot)
@@ -164,6 +201,58 @@ public class EspBehaviour : MonoBehaviour
         return isBot ? "BOT" : "PLAYER";
     }
 
+    static bool GetBoundsScreenRect(Renderer[] renderers, Camera cam, out Rect screenRect)
+    {
+        screenRect = default;
+        if (renderers == null || renderers.Length == 0 || cam == null) return false;
+
+        Bounds b = default;
+        bool has = false;
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            var r = renderers[i];
+            if (r == null) continue;
+            if (!has) { b = r.bounds; has = true; }
+            else b.Encapsulate(r.bounds);
+        }
+        if (!has) return false;
+
+        Vector3 min = b.min, max = b.max;
+        Vector3[] corners =
+        {
+            new Vector3(min.x, min.y, min.z),
+            new Vector3(max.x, min.y, min.z),
+            new Vector3(min.x, max.y, min.z),
+            new Vector3(max.x, max.y, min.z),
+            new Vector3(min.x, min.y, max.z),
+            new Vector3(max.x, min.y, max.z),
+            new Vector3(min.x, max.y, max.z),
+            new Vector3(max.x, max.y, max.z),
+        };
+
+        float minX = float.MaxValue, minY = float.MaxValue;
+        float maxX = float.MinValue, maxY = float.MinValue;
+        int valid = 0;
+
+        for (int i = 0; i < 8; i++)
+        {
+            Vector3 sp = cam.WorldToScreenPoint(corners[i]);
+            if (sp.z <= 0f) continue;
+            if (sp.x < minX) minX = sp.x;
+            if (sp.y < minY) minY = sp.y;
+            if (sp.x > maxX) maxX = sp.x;
+            if (sp.y > maxY) maxY = sp.y;
+            valid++;
+        }
+
+        if (valid < 2) return false;
+        float w = maxX - minX, h = maxY - minY;
+        if (w <= 1f || h <= 1f) return false;
+
+        screenRect = new Rect(minX, Screen.height - maxY, w, h);
+        return true;
+    }
+
     void OnGUI()
     {
         _guiCount++;
@@ -173,17 +262,46 @@ public class EspBehaviour : MonoBehaviour
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
 
-        foreach (var (worldPos, isBot, name) in _toDraw)
+        foreach (var t in _toDraw)
         {
-            Vector3 screen = _cam.WorldToScreenPoint(worldPos);
+            // --- Бокс: только если реально получился ---
+            bool boxDrawn = false;
+            if (GetBoundsScreenRect(t.BodyRenderers, _cam, out var rect))
+            {
+                boxDrawn = true;
+
+                // Заливка
+                GUI.color = t.IsBot ? new Color(1f, 1f, 0f, 0.15f) : new Color(0f, 1f, 1f, 0.15f);
+                GUI.DrawTexture(rect, _whiteTexture);
+
+                // Границы
+                GUI.color = t.IsBot ? Color.yellow : Color.cyan;
+                const float th = 2f;
+                GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, th), _whiteTexture);
+                GUI.DrawTexture(new Rect(rect.x, rect.yMax - th, rect.width, th), _whiteTexture);
+                GUI.DrawTexture(new Rect(rect.x, rect.y, th, rect.height), _whiteTexture);
+                GUI.DrawTexture(new Rect(rect.xMax - th, rect.y, th, rect.height), _whiteTexture);
+            }
+
+            // --- Текст: рисуется ВСЕГДА, независимо от бокса ---
+            Vector3 headWorld;
+            try { headWorld = t.Transform.position + Vector3.up * HeadOffset; }
+            catch { continue; }
+
+            Vector3 screen = _cam.WorldToScreenPoint(headWorld);
             if (screen.z < 0) continue;
 
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            string label = string.IsNullOrEmpty(name) ? (isBot ? "BOT" : "PLAYER") : name;
-            GUI.color = isBot ? Color.yellow : Color.cyan;
-            GUI.Label(new Rect(x - 50, y - 10, 200, 20), label);
+            string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
+
+            // Если бокс был — текст над ним; иначе — на уровне головы
+            float labelY = boxDrawn ? (y - 18f) : (y - 20f);
+            float labelX = boxDrawn ? (x - 50f) : (x - 50f);
+
+            GUI.color = t.IsBot ? Color.yellow : Color.cyan;
+            GUI.Label(new Rect(labelX, labelY, 200, 20), label);
         }
         GUI.color = Color.white;
     }
