@@ -15,14 +15,14 @@ public class Plugin : BasePlugin
 {
     public override void Load()
     {
-        Log.LogInfo("PlayerManager ESP loaded");
+        Log.LogInfo("Bot+Player ESP loaded");
         AddComponent<EspBehaviour>();
     }
 }
 
 public class EspBehaviour : MonoBehaviour
 {
-    private readonly List<(Vector3 pos, string name)> _toDraw = new();
+    private readonly List<(Vector3 pos, string label, bool isBot)> _toDraw = new();
     private Camera _cam;
     private Texture2D _boxTexture;
     private string _gameRoot;
@@ -30,13 +30,9 @@ public class EspBehaviour : MonoBehaviour
     private const float ScanInterval = 0.25f;
     private float _scanTimer;
 
-    private static object _playerManagerInstance;
-    private static PropertyInfo _playersProperty;
-    private static MethodInfo _playersMethod;
-    private static PropertyInfo _instanceProperty;
-    private static Type _managerType;
-    private static bool _managerResolved;
-    private static bool _managerFailed;
+    private static Il2CppSystem.Type _botControllerType;
+    private static Il2CppSystem.Type _playerControllerType;
+    private static bool _typesResolved;
 
     void Awake()
     {
@@ -47,144 +43,97 @@ public class EspBehaviour : MonoBehaviour
         Debug.Log($"[ESP] game root: {_gameRoot}");
     }
 
-    private static void ResolvePlayerManager()
+    private static void ResolveTypes()
     {
-        if (_managerResolved || _managerFailed) return;
-        _managerResolved = true;
+        if (_typesResolved) return;
+        _typesResolved = true;
 
         try
         {
+            Type botType = null, playerType = null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
-                _managerType = asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
-                if (_managerType != null) break;
+                botType ??= asm.GetType("Chillow.StandChillow.Bots.Core.BotPlayerController");
+                playerType ??= asm.GetType("Axlebolt.Standoff.Player.PlayerController");
+                if (botType != null && playerType != null) break;
             }
 
-            if (_managerType == null)
-            {
-                Debug.LogError("[ESP] PlayerManager type not found.");
-                _managerFailed = true;
-                return;
-            }
+            if (botType != null) _botControllerType = Il2CppType.From(botType);
+            if (playerType != null) _playerControllerType = Il2CppType.From(playerType);
 
-            // Ищем статическое свойство, возвращающее PlayerManager (Instance из LazySingleton)
-            string[] possibleNames = { "Instance", "instance", "dpkt" };
-            foreach (var name in possibleNames)
-            {
-                _instanceProperty = _managerType.GetProperty(name, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-                if (_instanceProperty != null) break;
-            }
-
-            if (_instanceProperty == null)
-            {
-                foreach (var prop in _managerType.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
-                {
-                    if (prop.PropertyType == _managerType)
-                    {
-                        _instanceProperty = prop;
-                        break;
-                    }
-                }
-            }
-
-            if (_instanceProperty == null)
-            {
-                Debug.LogError("[ESP] Could not find static Instance property on PlayerManager.");
-                _managerFailed = true;
-                return;
-            }
-
-            // Свойство CEADFCHEEGGGDHC (HashSet<PlayerController>)
-            _playersProperty = _managerType.GetProperty("CEADFCHEEGGGDHC", BindingFlags.Public | BindingFlags.Instance);
-
-            // Fallback: метод BDDEGCBCFDGBEBH()
-            if (_playersProperty == null)
-                _playersMethod = _managerType.GetMethod("BDDEGCBCFDGBEBH", BindingFlags.Public | BindingFlags.Instance);
-
-            if (_playersProperty == null && _playersMethod == null)
-            {
-                Debug.LogError("[ESP] Could not find players property/method on PlayerManager.");
-                _managerFailed = true;
-                return;
-            }
-
-            Debug.Log("[ESP] PlayerManager resolved successfully.");
+            Debug.Log($"[ESP] BotPlayerController: {(botType != null ? "OK" : "NULL")}, PlayerController: {(playerType != null ? "OK" : "NULL")}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[ESP] ResolvePlayerManager failed: {e.Message}");
-            _managerFailed = true;
+            Debug.LogError($"[ESP] ResolveTypes failed: {e.Message}");
         }
     }
 
     void Update()
     {
-        ResolvePlayerManager();
-        if (_managerFailed) return;
-
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
             _scanTimer = 0f;
-            ScanPlayers();
+            ScanAll();
         }
     }
 
-    void ScanPlayers()
+    void ScanAll()
     {
+        ResolveTypes();
         _toDraw.Clear();
 
+        ScanType(_botControllerType, true);
+        ScanType(_playerControllerType, false);
+    }
+
+    void ScanType(Il2CppSystem.Type type, bool isBot)
+    {
+        if (type == null) return;
+
+        Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<UnityEngine.Object> objects;
         try
         {
-            if (_playerManagerInstance == null && _instanceProperty != null)
-                _playerManagerInstance = _instanceProperty.GetValue(null);
-
-            if (_playerManagerInstance == null) return;
-
-            object playersObj = null;
-            if (_playersProperty != null)
-                playersObj = _playersProperty.GetValue(_playerManagerInstance);
-            else if (_playersMethod != null)
-                playersObj = _playersMethod.Invoke(_playerManagerInstance, null);
-
-            if (playersObj == null) return;
-
-            var enumerable = playersObj as System.Collections.IEnumerable;
-            if (enumerable == null) return;
-
-            int total = 0, filtered = 0;
-
-            foreach (var item in enumerable)
-            {
-                total++;
-                if (item == null) continue;
-
-                var il2cppObj = item as Il2CppObjectBase;
-                if (il2cppObj == null) continue;
-
-                var component = il2cppObj.TryCast<Component>();
-                if (component == null) continue;
-
-                var transform = component.transform;
-                if (transform == null) continue;
-
-                Vector3 pos = transform.position;
-                string goName = component.gameObject.name;
-
-                if (goName == null) continue;
-                if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer")) continue;
-
-                filtered++;
-                _toDraw.Add((pos, goName));
-            }
-
-            if (total > 0 && filtered == 0)
-                Debug.Log($"[ESP] {total} players, 0 matching TrPlayer/CtPlayer filter.");
+            objects = FindObjectsOfType(type, false);
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[ESP] ScanPlayers failed: {e.Message}");
+            Debug.LogWarning($"[ESP] FindObjectsOfType({(isBot ? "bot" : "player")}) failed: {e.Message}");
+            return;
         }
+
+        if (objects == null) return;
+
+        for (int i = 0; i < objects.Length; i++)
+        {
+            var obj = objects[i];
+            if (obj == null) continue;
+
+            Component component;
+            try { component = obj.TryCast<Component>(); }
+            catch { continue; }
+            if (component == null) continue;
+
+            Transform transform;
+            try { transform = component.transform; }
+            catch { continue; }
+            if (transform == null) continue;
+
+            Vector3 pos;
+            try { pos = transform.position; }
+            catch { continue; }
+
+            string goName;
+            try { goName = component.gameObject.name; }
+            catch { goName = "unknown"; }
+
+            string label = $"{(isBot ? "BOT" : "PLR")}: {goName}";
+            _toDraw.Add((pos, label, isBot));
+        }
+
+        if (objects.Length > 0)
+            Debug.Log($"[ESP] {(isBot ? "Bot" : "Player")} count: {objects.Length}");
     }
 
     void OnGUI()
@@ -192,7 +141,7 @@ public class EspBehaviour : MonoBehaviour
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
 
-        foreach (var (worldPos, name) in _toDraw)
+        foreach (var (worldPos, label, isBot) in _toDraw)
         {
             Vector3 screen = _cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
@@ -200,11 +149,11 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            GUI.color = name.StartsWith("TrPlayer") ? Color.red : Color.cyan;
+            GUI.color = isBot ? Color.yellow : Color.cyan;
             GUI.DrawTexture(new Rect(x - 25, y - 25, 50, 50), _boxTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + 30, y - 10, 250, 20), name);
+            GUI.Label(new Rect(x + 30, y - 10, 300, 20), label);
         }
     }
 }
