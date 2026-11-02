@@ -15,7 +15,7 @@ public class Plugin : BasePlugin
 {
     public override void Load()
     {
-        Log.LogInfo("Bot+Player ESP loaded");
+        Log.LogInfo("Bot+Player ESP loaded (boxes only)");
         AddComponent<EspBehaviour>();
     }
 }
@@ -25,19 +25,17 @@ public class EspBehaviour : MonoBehaviour
     private class Tracked
     {
         public Transform Transform;
-        public string Label;
         public bool IsBot;
-        public float Height; // для bounding box
-        public float Width;  // для bounding box
+        public float Height;
+        public float Width;
     }
 
     private readonly Dictionary<int, Tracked> _tracked = new();
-    private readonly List<(Vector3 pos, string label, bool isBot, float h, float w)> _toDraw = new();
+    private readonly List<(Vector3 pos, bool isBot, float h, float w)> _toDraw = new();
+    private readonly List<int> _seenList = new(); // НЕ HashSet — IL2CPP не любит HashSet в параметрах
     private Camera _cam;
     private Texture2D _boxTexture;
-    private string _gameRoot;
 
-    // Сканируем сцену редко (поиск новых), позиции читаем каждый кадр
     private const float ScanInterval = 0.5f;
     private float _scanTimer;
 
@@ -47,11 +45,10 @@ public class EspBehaviour : MonoBehaviour
 
     void Awake()
     {
-        _gameRoot = Path.GetDirectoryName(Application.dataPath);
         _boxTexture = new Texture2D(1, 1);
         _boxTexture.SetPixel(0, 0, Color.white);
         _boxTexture.Apply();
-        Debug.Log($"[ESP] game root: {_gameRoot}");
+        Debug.Log("[ESP] Awake done");
     }
 
     private static void ResolveTypes()
@@ -84,7 +81,6 @@ public class EspBehaviour : MonoBehaviour
     {
         ResolveTypes();
 
-        // 1. Редко сканируем сцену — ищем новых / удаляем мёртвых
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
@@ -92,7 +88,6 @@ public class EspBehaviour : MonoBehaviour
             ScanScene();
         }
 
-        // 2. Каждый кадр — читаем актуальные позиции и размеры
         _toDraw.Clear();
         foreach (var kvp in _tracked)
         {
@@ -103,25 +98,25 @@ public class EspBehaviour : MonoBehaviour
             try { pos = t.Transform.position; }
             catch { continue; }
 
-            _toDraw.Add((pos, t.Label, t.IsBot, t.Height, t.Width));
+            _toDraw.Add((pos, t.IsBot, t.Height, t.Width));
         }
     }
 
     void ScanScene()
     {
-        var seen = new HashSet<int>();
+        _seenList.Clear();
 
-        ScanType(_botControllerType, true, seen);
-        ScanType(_playerControllerType, false, seen);
+        ScanType(_botControllerType, true);
+        ScanType(_playerControllerType, false);
 
-        // Удаляем объекты, которых больше нет
+        // Удаляем мёртвых
         var dead = new List<int>();
         foreach (var id in _tracked.Keys)
-            if (!seen.Contains(id)) dead.Add(id);
+            if (!_seenList.Contains(id)) dead.Add(id);
         foreach (var id in dead) _tracked.Remove(id);
     }
 
-    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
+    void ScanType(Il2CppSystem.Type type, bool isBot)
     {
         if (type == null) return;
 
@@ -151,10 +146,9 @@ public class EspBehaviour : MonoBehaviour
             if (go == null) continue;
 
             int id = go.GetInstanceID();
-            if (seen.Contains(id)) continue;
-            seen.Add(id);
+            if (_seenList.Contains(id)) continue;
+            _seenList.Add(id);
 
-            // Размеры: берём из CharacterController или из SkinnedMeshRenderer.bounds
             float h = 1.8f, w = 0.6f;
             try
             {
@@ -177,18 +171,17 @@ public class EspBehaviour : MonoBehaviour
             }
             catch { }
 
-            string goName = "unknown";
-            try { goName = go.name; } catch { }
-
             _tracked[id] = new Tracked
             {
                 Transform = transform,
-                Label = $"{(isBot ? "BOT" : "PLR")}: {goName}",
                 IsBot = isBot,
                 Height = h,
                 Width = w
             };
         }
+
+        if (objects.Length > 0)
+            Debug.Log($"[ESP] {(isBot ? "Bot" : "Player")} count: {objects.Length}");
     }
 
     void OnGUI()
@@ -196,7 +189,7 @@ public class EspBehaviour : MonoBehaviour
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
 
-        foreach (var (worldPos, label, isBot, h, w) in _toDraw)
+        foreach (var (worldPos, isBot, h, w) in _toDraw)
         {
             Vector3 screen = _cam.WorldToScreenPoint(worldPos);
             if (screen.z < 0) continue;
@@ -204,25 +197,22 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            // Высота рамки в пикселях: масштабируем по расстоянию до камеры
             float distance = screen.z;
             float pixelsPerUnit = Screen.height / (2f * distance * Mathf.Tan(_cam.fieldOfView * 0.5f * Mathf.Deg2Rad));
 
             float boxHeight = h * pixelsPerUnit;
             float boxWidth = w * pixelsPerUnit;
 
-            // Центр экрана для верха головы: worldPos + height/2 (грубо)
-            float topY = y - boxHeight * 0.5f;
-            float bottomY = y + boxHeight * 0.5f;
+            // CharacterController pivot — в ногах. Поднимаем рамку так, чтобы она охватывала модель:
+            // низ рамки = позиция ног, верх = ноги + h.
+            float bottomY = y;
+            float topY = y - boxHeight;
             float leftX = x - boxWidth * 0.5f;
 
-            // Рамка
             GUI.color = isBot ? Color.yellow : Color.cyan;
             GUI.DrawTexture(new Rect(leftX, topY, boxWidth, boxHeight), _boxTexture);
-
-            // Подпись чуть выше рамки и левее (ближе к центру)
-            GUI.color = Color.white;
-            GUI.Label(new Rect(leftX, topY - 18, 250, 20), label);
         }
+
+        GUI.color = Color.white;
     }
 }
