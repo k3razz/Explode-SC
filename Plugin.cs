@@ -35,7 +35,7 @@ public class EspBehaviour : MonoBehaviour
     private readonly List<(Vector3 pos, string name)> _toDraw = new();
     private readonly HashSet<string> _loggedNames = new();
     private Camera _cam;
-    private string _cachePath;
+    private string _gameRoot;
 
     private const float MoveThreshold = 0.01f;
     private const float ScanInterval = 1f;
@@ -44,9 +44,10 @@ public class EspBehaviour : MonoBehaviour
     private float _autoSaveTimer;
 
     private bool _menuOpen;
-    private Rect _menuRect = new Rect(20, 20, 350, 500);
+    private Rect _menuRect = new Rect(20, 20, 350, 520);
     private Vector2 _scroll;
     private string _lastSaveStatus = "";
+    private string _lastSavedFile = "";
 
     private static MethodInfo _getKeyDownMethod;
     private static bool _inputInitialized;
@@ -56,17 +57,8 @@ public class EspBehaviour : MonoBehaviour
 
     void Awake()
     {
-        string gameRoot = Path.GetDirectoryName(Application.dataPath);
-        _cachePath = Path.Combine(gameRoot, "cache-ДАТА.txt");
-
-        if (File.Exists(_cachePath))
-        {
-            foreach (var line in File.ReadAllLines(_cachePath))
-                if (!string.IsNullOrWhiteSpace(line))
-                    _loggedNames.Add(line.Trim());
-        }
-
-        Debug.Log($"[ESP] cache path: {_cachePath}");
+        _gameRoot = Path.GetDirectoryName(Application.dataPath);
+        Debug.Log($"[ESP] game root: {_gameRoot}");
     }
 
     void OnApplicationQuit()
@@ -78,9 +70,15 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            File.WriteAllLines(_cachePath, _loggedNames);
-            _lastSaveStatus = $"Автосохранение: {_loggedNames.Count} записей";
-            Debug.Log($"[ESP] Cache saved to {_cachePath} ({_loggedNames.Count} entries)");
+            string stamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            string fileName = $"cache-{stamp}.txt";
+            string fullPath = Path.Combine(_gameRoot, fileName);
+
+            File.WriteAllLines(fullPath, _loggedNames);
+
+            _lastSavedFile = fileName;
+            _lastSaveStatus = $"Сохранено: {_loggedNames.Count} записей";
+            Debug.Log($"[ESP] Cache saved to {fullPath} ({_loggedNames.Count} entries)");
         }
         catch (Exception e)
         {
@@ -159,7 +157,6 @@ public class EspBehaviour : MonoBehaviour
         if (IsKeyDown(KeyCode.Insert))
             _menuOpen = !_menuOpen;
 
-        // Автосохранение кэша раз в 15 секунд
         _autoSaveTimer += Time.deltaTime;
         if (_autoSaveTimer >= AutoSaveInterval)
         {
@@ -314,7 +311,7 @@ public class EspBehaviour : MonoBehaviour
 
         GUILayout.Space(5);
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Сохранить кэш"))
+        if (GUILayout.Button("Сохранить кэш сейчас"))
         {
             SaveCache();
         }
@@ -328,13 +325,15 @@ public class EspBehaviour : MonoBehaviour
 
         if (!string.IsNullOrEmpty(_lastSaveStatus))
             GUILayout.Label(_lastSaveStatus);
+        if (!string.IsNullOrEmpty(_lastSavedFile))
+            GUILayout.Label($"Файл: {_lastSavedFile}");
 
         GUILayout.Space(5);
         GUILayout.Label($"Обнаружено объектов: {_tracked.Count}");
         GUILayout.Label($"Записей в кэше: {_loggedNames.Count}");
-        GUILayout.Label($"До автосохранения: {(int)(AutoSaveInterval - _autoSaveTimer)} сек");
+        GUILayout.Label($"До автосохранения: {Math.Max(0, (int)(AutoSaveInterval - _autoSaveTimer))} сек");
 
-        _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(_menuRect.height - 160));
+        _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(_menuRect.height - 200));
 
         var movingList = new List<KeyValuePair<int, TrackedObj>>();
         foreach (var kvp in _tracked)
