@@ -26,7 +26,7 @@ public class EspBehaviour : MonoBehaviour
         public string Name;
         public bool IsMoving;
         public bool LoggedToFile;
-        public bool Enabled; // включена ли подсветка в меню
+        public bool Enabled;
     }
 
     private readonly Dictionary<int, TrackedObj> _tracked = new();
@@ -39,13 +39,15 @@ public class EspBehaviour : MonoBehaviour
     private const float ScanInterval = 0.25f;
     private float _scanTimer;
 
-    // Меню
     private bool _menuOpen;
     private Rect _menuRect = new Rect(20, 20, 350, 500);
     private Vector2 _scroll;
+    private GUI.WindowFunction _drawMenuDelegate;
 
     void Awake()
     {
+        _drawMenuDelegate = new GUI.WindowFunction(DrawMenu);
+
         string gameRoot = Path.GetDirectoryName(Application.dataPath);
         _cachePath = Path.Combine(gameRoot, "cache.txt");
 
@@ -65,11 +67,9 @@ public class EspBehaviour : MonoBehaviour
 
     void Update()
     {
-        // Переключение меню на Insert
-        if (Input.GetKeyDown(KeyCode.Insert))
+        if (UnityEngine.Input.GetKeyDown(KeyCode.Insert))
             _menuOpen = !_menuOpen;
 
-        // 1. Полное сканирование (редко)
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
@@ -77,7 +77,6 @@ public class EspBehaviour : MonoBehaviour
             ScanAllObjects();
         }
 
-        // 2. Проверка движения каждый кадр
         _toDraw.Clear();
         foreach (var kvp in _tracked)
         {
@@ -95,11 +94,9 @@ public class EspBehaviour : MonoBehaviour
             {
                 obj.LastPos = currentPos;
 
-                // В список отрисовки попадают только включённые в меню
                 if (obj.Enabled)
                     _toDraw.Add((currentPos, obj.Name));
 
-                // Запись в cache.txt при первом обнаружении движения
                 if (!obj.LoggedToFile && !_loggedNames.Contains(obj.Name))
                 {
                     _loggedNames.Add(obj.Name);
@@ -124,7 +121,6 @@ public class EspBehaviour : MonoBehaviour
             if (go.hideFlags == HideFlags.NotEditable || go.hideFlags == HideFlags.HideAndDontSave)
                 continue;
 
-            // Фильтр только TrPlayer / CtPlayer
             string goName = go.name;
             if (goName == null) continue;
             if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer"))
@@ -152,12 +148,11 @@ public class EspBehaviour : MonoBehaviour
                     Name = goName,
                     IsMoving = false,
                     LoggedToFile = false,
-                    Enabled = true // по умолчанию включено
+                    Enabled = true
                 };
             }
         }
 
-        // Удаляем объекты, которых больше нет
         var dead = new List<int>();
         foreach (var id in _tracked.Keys)
             if (!seen.Contains(id)) dead.Add(id);
@@ -166,7 +161,6 @@ public class EspBehaviour : MonoBehaviour
 
     void OnGUI()
     {
-        // Отрисовка ESP
         if (_cam == null) _cam = Camera.main;
         if (_cam != null)
         {
@@ -186,11 +180,10 @@ public class EspBehaviour : MonoBehaviour
             }
         }
 
-        // Отрисовка меню
         if (!_menuOpen) return;
 
         GUI.color = Color.white;
-        _menuRect = GUI.Window(0, _menuRect, DrawMenu, "Dynamic ESP — Insert to toggle");
+        _menuRect = GUI.Window(0, _menuRect, _drawMenuDelegate, "Dynamic ESP — Insert to toggle");
     }
 
     void DrawMenu(int windowId)
@@ -198,13 +191,13 @@ public class EspBehaviour : MonoBehaviour
         GUILayout.Space(5);
 
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Включить все")) 
-        { 
-            foreach (var o in _tracked.Values) o.Enabled = true; 
+        if (GUILayout.Button("Включить все"))
+        {
+            foreach (var o in _tracked.Values) o.Enabled = true;
         }
-        if (GUILayout.Button("Выключить все")) 
-        { 
-            foreach (var o in _tracked.Values) o.Enabled = false; 
+        if (GUILayout.Button("Выключить все"))
+        {
+            foreach (var o in _tracked.Values) o.Enabled = false;
         }
         GUILayout.EndHorizontal();
 
@@ -213,7 +206,6 @@ public class EspBehaviour : MonoBehaviour
 
         _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(_menuRect.height - 100));
 
-        // Собираем список для отображения: только движущиеся
         var movingList = new List<KeyValuePair<int, TrackedObj>>();
         foreach (var kvp in _tracked)
             if (kvp.Value.IsMoving && kvp.Value.Transform != null)
