@@ -37,14 +37,13 @@ public class EspBehaviour : MonoBehaviour
     private string _cachePath;
 
     private const float MoveThreshold = 0.01f;
-    private const float ScanInterval = 0.25f;
+    private const float ScanInterval = 1f; // временно 1 сек для проверки ФПС
     private float _scanTimer;
 
     private bool _menuOpen;
     private Rect _menuRect = new Rect(20, 20, 350, 500);
     private Vector2 _scroll;
 
-    // Для рефлексии ввода
     private static MethodInfo _getKeyDownMethod;
     private static bool _inputInitialized;
 
@@ -74,7 +73,6 @@ public class EspBehaviour : MonoBehaviour
 
         try
         {
-            // Ищем UnityEngine.Input среди загруженных сборок
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 var inputType = asm.GetType("UnityEngine.Input");
@@ -143,41 +141,33 @@ public class EspBehaviour : MonoBehaviour
 
     void ScanAllObjects()
     {
-        var allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
-        if (allObjects == null) return;
-
+        // ЗАМЕНИТЕ PlayerView на реальное имя класса компонента игрока из UnityExplorer.
+        // Если не знаете — попробуйте Player, BasePlayer, PlayerController и т.д.
+        var players = FindObjectsOfType<PlayerView>();
         var seen = new HashSet<int>();
 
-        foreach (var go in allObjects)
+        foreach (var p in players)
         {
-            if (go == null) continue;
-            if (go.hideFlags == HideFlags.NotEditable || go.hideFlags == HideFlags.HideAndDontSave)
-                continue;
-
+            if (p == null) continue;
+            GameObject go = p.gameObject;
             string goName = go.name;
             if (goName == null) continue;
-            if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer"))
-                continue;
-
-            Transform tr;
-            try { tr = go.transform; }
-            catch { continue; }
-            if (tr == null) continue;
+            if (!goName.StartsWith("TrPlayer") && !goName.StartsWith("CtPlayer")) continue;
 
             int id = go.GetInstanceID();
             seen.Add(id);
 
             if (_tracked.TryGetValue(id, out var tracked))
             {
-                tracked.Transform = tr;
+                tracked.Transform = p.transform;
                 tracked.Name = goName;
             }
             else
             {
                 _tracked[id] = new TrackedObj
                 {
-                    Transform = tr,
-                    LastPos = tr.position,
+                    Transform = p.transform,
+                    LastPos = p.transform.position,
                     Name = goName,
                     IsMoving = false,
                     LoggedToFile = false,
@@ -216,7 +206,6 @@ public class EspBehaviour : MonoBehaviour
         if (!_menuOpen) return;
 
         GUI.color = Color.white;
-        // Лямбда устраняет ошибку "cannot convert from 'method group' to 'System.IntPtr'"
         _menuRect = GUI.Window(0, _menuRect, (GUI.WindowFunction)(id => DrawMenu(id)), "Dynamic ESP — Insert to toggle");
     }
 
