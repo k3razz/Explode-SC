@@ -2,300 +2,160 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using Il2CppInterop.Runtime;
-using System.Collections.Generic;
 using System;
 using System.Reflection;
+using System.Collections.Generic;
 
-namespace MyDynamicESP;
+namespace WeaponDumper;
 
-[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
+[BepInPlugin("com.you.weapondumper", "WeaponDumper", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
     public override void Load()
     {
-        Log.LogInfo("ESP loading...");
-        IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
-        Log.LogInfo("ESP component added");
+        Log.LogInfo("WeaponDumper loaded. Press J in game to dump current weapon.");
+        IL2CPPChainloader.AddUnityComponent<DumperBehaviour>();
     }
 }
 
-public class EspBehaviour : MonoBehaviour
+public class DumperBehaviour : MonoBehaviour
 {
-    private class Tracked
-    {
-        public Transform Transform;
-        public bool IsBot;
-        public int Team;
-        public string Name;
-        public Renderer[] Renderers;
-    }
-
-    private readonly Dictionary<int, Tracked> _tracked = new();
-    private readonly List<Tracked> _toDraw = new();
-    private Camera _cam;
-    private Texture2D _whiteTex;
-    private float _scanTimer;
-    private const float ScanInterval = 1.0f;
-
-    // Настройки бокса
-    private const float BoxWidth = 60f;
-    private const float BoxHeight = 120f;
-    private const float OutlineThickness = 2f;
-    private const float HeadOffset = 1.8f;
-
-    private static Il2CppSystem.Type _botType;
-    private static Il2CppSystem.Type _playerType;
-    private static bool _resolved;
-
-    private static PropertyInfo _localPlayerProp;
-    private static PropertyInfo _teamProp;
-    private int _localTeam = -1;
-
-    void Awake()
-    {
-        Debug.Log("[ESP] Awake");
-        _whiteTex = new Texture2D(1, 1);
-        _whiteTex.SetPixel(0, 0, Color.white);
-        _whiteTex.Apply();
-    }
+    private bool _jWasPressed;
 
     void Update()
     {
-        _scanTimer += Time.deltaTime;
-        if (_scanTimer >= ScanInterval)
-        {
-            _scanTimer = 0f;
-            DoScan();
-        }
-
-        _toDraw.Clear();
-        foreach (var t in _tracked.Values)
-        {
-            if (t.Transform == null) continue;
-            
-            // 1. Применяем чамсы (перекрашиваем модель)
-            ApplyChams(t);
-
-            // 2. Фильтруем для отрисовки боксов (только враги)
-            if (_localTeam != -1 && t.Team == _localTeam) continue;
-            _toDraw.Add(t);
-        }
-    }
-
-    void ApplyChams(Tracked t)
-    {
-        if (t.Renderers == null || t.Renderers.Length == 0) return;
-
-        // Выбираем цвет чамсов: враги - красные, свои - синие
-        Color chamColor = t.Team == 1 ? Color.red : new Color(0f, 0.5f, 1f);
-
-        foreach (var r in t.Renderers)
-        {
-            if (r == null) continue;
-            try
-            {
-                // Берем экземпляр материала (создает копию для этого объекта)
-                var mat = r.material;
-                if (mat != null)
-                {
-                    // Стандартный шейдер Unity
-                    if (mat.HasProperty("_Color")) mat.color = chamColor;
-                    // Шейдер URP (если игра на URP)
-                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", chamColor);
-                }
-            }
-            catch { }
-        }
-    }
-
-    private static void ResolveTypes()
-    {
-        if (_resolved) return;
-        _resolved = true;
-        try
-        {
-            Type bt = null, pt = null, pmType = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                bt ??= asm.GetType("Chillow.StandChillow.Bots.Core.BotPlayerController");
-                pt ??= asm.GetType("Axlebolt.Standoff.Player.PlayerController");
-                pmType ??= asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
-                if (bt != null && pt != null && pmType != null) break;
-            }
-
-            if (bt != null) _botType = Il2CppType.From(bt);
-            if (pt != null) _playerType = Il2CppType.From(pt);
-
-            if (pmType != null && pt != null)
-            {
-                _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-                _teamProp = pt.GetProperty("CGGHFHCAFFBBCBB", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            }
-
-            Debug.Log($"[ESP] Types: Bot={(_botType != null)}, Player={(_playerType != null)}, LocalProp={(_localPlayerProp != null)}");
-        }
-        catch (Exception e) { Debug.LogError($"[ESP] ResolveTypes EX: {e.Message}"); }
-    }
-
-    void DoScan()
-    {
-        ResolveTypes();
-        if (_botType == null && _playerType == null) return;
-
-        UpdateLocalTeam();
-
-        var seen = new HashSet<int>();
-        ScanType(_botType, true, seen);
-        ScanType(_playerType, false, seen);
-
-        var dead = new List<int>();
-        foreach (var id in _tracked.Keys)
-            if (!seen.Contains(id)) dead.Add(id);
-        foreach (var id in dead) _tracked.Remove(id);
-
-        int botN = 0, playerN = 0;
-        foreach (var t in _tracked.Values) { if (t.IsBot) botN++; else playerN++; }
-        Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}, localTeam={_localTeam}");
-    }
-
-    void UpdateLocalTeam()
-    {
-        try
-        {
-            if (_localPlayerProp == null || _teamProp == null) return;
-
-            var pmType = _localPlayerProp.DeclaringType;
-            object pmInstance = null;
-            var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            if (instProp != null) pmInstance = instProp.GetValue(null);
-
-            var localPlayer = _localPlayerProp.GetValue(pmInstance);
-            if (localPlayer != null)
-            {
-                var teamObj = _teamProp.GetValue(localPlayer);
-                if (teamObj != null) _localTeam = Convert.ToInt32(teamObj);
-            }
-        }
-        catch { }
-    }
-
-    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
-    {
-        if (type == null) return;
-        try
-        {
-            var arr = FindObjectsOfType(type, false);
-            if (arr == null) return;
-            for (int i = 0; i < arr.Length; i++)
-            {
-                var o = arr[i];
-                if (o == null) continue;
-                var c = o.TryCast<Component>();
-                if (c == null) continue;
-                var tr = c.transform;
-                if (tr == null) continue;
-                var go = c.gameObject;
-                if (go == null) continue;
-
-                int id = go.GetInstanceID();
-                if (seen.Contains(id)) continue;
-                seen.Add(id);
-
-                int targetTeam = -1;
-                try
-                {
-                    if (_teamProp != null)
-                    {
-                        var teamObj = _teamProp.GetValue(c);
-                        if (teamObj != null) targetTeam = Convert.ToInt32(teamObj);
-                    }
-                }
-                catch { }
-
-                // Для чамсов берем ВСЕ рендереры, чтобы оружие и руки тоже красились
-                var allRenderers = go.GetComponentsInChildren<Renderer>();
-
-                _tracked[id] = new Tracked
-                {
-                    Transform = tr,
-                    IsBot = isBot,
-                    Team = targetTeam,
-                    Name = TryGetName(c, isBot),
-                    Renderers = allRenderers
-                };
-            }
-        }
-        catch (Exception e) { Debug.LogError($"[ESP] ScanType EX: {e.Message}"); }
-    }
-
-    string TryGetName(Component c, bool isBot)
-    {
-        try
-        {
-            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (prop != null)
-            {
-                var pp = prop.GetValue(c);
-                if (pp != null)
-                {
-                    var nickProp = pp.GetType().GetProperty("NickName", BindingFlags.Public | BindingFlags.Instance);
-                    if (nickProp != null)
-                    {
-                        var nick = nickProp.GetValue(pp) as string;
-                        if (!string.IsNullOrEmpty(nick)) return nick;
-                    }
-                }
-            }
-        }
-        catch { }
-        try { var n = c.gameObject.name; if (!string.IsNullOrEmpty(n)) return n; } catch { }
-        return isBot ? "BOT" : "PLAYER";
+        // Ловим J через OnGUI, так как Input может не работать напрямую
     }
 
     void OnGUI()
     {
-        if (_cam == null) _cam = Camera.main;
-        if (_cam == null) return;
-
-        foreach (var t in _toDraw)
+        var e = Event.current;
+        if (e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.J)
         {
-            Vector3 headWorld;
-            try { headWorld = t.Transform.position + Vector3.up * HeadOffset; }
-            catch { continue; }
-
-            Vector3 screen = _cam.WorldToScreenPoint(headWorld);
-            if (screen.z < 0) continue;
-
-            float x = screen.x;
-            float y = Screen.height - screen.y;
-
-            float bw = BoxWidth;
-            float bh = BoxHeight;
-            float th = OutlineThickness;
-
-            float left = x - bw / 2f;
-            float top = y;
-            float bottom = y + bh;
-
-            Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.15f) : new Color(0f, 0.5f, 1f, 0.15f);
-            Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
-
-            // Заливка
-            GUI.color = fillColor;
-            GUI.DrawTexture(new Rect(left, top, bw, bh), _whiteTex);
-
-            // Обводка
-            GUI.color = outlineColor;
-            GUI.DrawTexture(new Rect(left, top, bw, th), _whiteTex);
-            GUI.DrawTexture(new Rect(left, bottom - th, bw, th), _whiteTex);
-            GUI.DrawTexture(new Rect(left, top, th, bh), _whiteTex);
-            GUI.DrawTexture(new Rect(left + bw - th, top, th, bh), _whiteTex);
-
-            // Текст
-            GUI.color = Color.white;
-            string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
-            GUI.Label(new Rect(left, top - 18f, bw + 60f, 20f), label);
+            if (!_jWasPressed)
+            {
+                _jWasPressed = true;
+                DumpCurrentWeapon();
+            }
         }
-        GUI.color = Color.white;
+        else if (e != null && e.type == EventType.KeyUp && e.keyCode == KeyCode.J)
+        {
+            _jWasPressed = false;
+        }
+    }
+
+    void DumpCurrentWeapon()
+    {
+        Debug.Log("[Dumper] ========================================");
+        Debug.Log("[Dumper] J pressed! Looking for local player's weapon...");
+
+        try
+        {
+            // 1. Ищем PlayerManager
+            Type pmType = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                pmType = asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
+                if (pmType != null) break;
+            }
+            if (pmType == null) { Debug.LogError("[Dumper] PlayerManager not found"); return; }
+
+            // 2. Достаем Instance
+            object pmInstance = null;
+            var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            if (instProp != null) pmInstance = instProp.GetValue(null);
+            if (pmInstance == null) { Debug.LogError("[Dumper] PlayerManager.Instance is null"); return; }
+
+            // 3. Достаем локального игрока (DEEBDAFCBHCGFBA)
+            var localProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (localProp == null) { Debug.LogError("[Dumper] Local player property not found"); return; }
+            var localPlayer = localProp.GetValue(pmInstance);
+            if (localPlayer == null) { Debug.LogError("[Dumper] Local player is null"); return; }
+
+            // 4. Достаем WeaponryController (HDFDDHHEAGCFFFG)
+            var weaponryProp = localPlayer.GetType().GetProperty("HDFDDHHEAGCFFFG", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (weaponryProp == null) { Debug.LogError("[Dumper] WeaponryController property not found"); return; }
+            var weaponry = weaponryProp.GetValue(localPlayer);
+            if (weaponry == null) { Debug.LogError("[Dumper] WeaponryController is null"); return; }
+
+            // 5. Достаем текущий WeaponController (ADFFFAGDHFAHEBE)
+            var currentWeaponProp = weaponry.GetType().GetProperty("ADFFFAGDHFAHEBE", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (currentWeaponProp == null) { Debug.LogError("[Dumper] Current weapon property not found"); return; }
+            var currentWeapon = currentWeaponProp.GetValue(weaponry);
+            if (currentWeapon == null) { Debug.LogError("[Dumper] Current weapon is null (nothing in hands?)"); return; }
+
+            Debug.Log($"[Dumper] Found weapon: {currentWeapon.GetType().Name}");
+            
+            // 6. Выводим все поля и свойства оружия
+            DumpObjectFields(currentWeapon, "Weapon");
+
+            // 7. Пытаемся достать AccuracyData из WeaponController
+            // Метод AEFAEGGFADGCEFE() возвращает AccuracyData
+            var accMethod = currentWeapon.GetType().GetMethod("AEFAEGGFADGCEFE", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (accMethod != null)
+            {
+                var accuracyData = accMethod.Invoke(currentWeapon, null);
+                if (accuracyData != null)
+                {
+                    Debug.Log($"[Dumper] --- AccuracyData Found ---");
+                    DumpObjectFields(accuracyData, "AccuracyData");
+                }
+                else
+                {
+                    Debug.Log("[Dumper] AccuracyData is null");
+                }
+            }
+            else
+            {
+                Debug.Log("[Dumper] AccuracyData method not found on weapon");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Dumper] Exception: {e}");
+        }
+        Debug.Log("[Dumper] ========================================");
+    }
+
+    void DumpObjectFields(object obj, string prefix)
+    {
+        var type = obj.GetType();
+        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        
+        foreach (var f in fields)
+        {
+            try
+            {
+                object val = f.GetValue(obj);
+                string valStr = val != null ? val.ToString() : "null";
+                
+                // Если это структура или класс, не примитив, выводим только тип
+                if (val != null && !f.FieldType.IsPrimitive && !(val is string))
+                {
+                    valStr = $"[{f.FieldType.Name}]";
+                }
+                
+                Debug.Log($"[Dumper] {prefix}.{f.Name} ({f.FieldType.Name}) = {valStr}");
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"[Dumper] {prefix}.{f.Name} = <error: {e.Message}>");
+            }
+        }
+
+        var props = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        foreach (var p in props)
+        {
+            try
+            {
+                object val = p.GetValue(obj);
+                string valStr = val != null ? val.ToString() : "null";
+                Debug.Log($"[Dumper] {prefix}.get_{p.Name} ({p.PropertyType.Name}) = {valStr}");
+            }
+            catch
+            {
+                // Игнорируем свойства, которые кидают исключения (например, требующие аргументов)
+            }
+        }
     }
 }
