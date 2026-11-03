@@ -120,8 +120,7 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
-    private static PropertyInfo _localPlayerProp;
-    private static PropertyInfo _teamProp;
+    private static MemberInfo _teamMember; // Может быть свойством, методом или полем
     private int _localTeam = -1;
 
     private readonly Dictionary<string, float> _lastLogTime = new();
@@ -207,7 +206,6 @@ public class EspBehaviour : MonoBehaviour
         _watchdogTicks++;
         try
         {
-            bool localPlayerOk = CheckLocalPlayer();
             bool cameraOk = _cam != null;
             bool typesOk = _botType != null || _playerType != null;
 
@@ -224,48 +222,27 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    bool CheckLocalPlayer()
+    int ReadTeam(object controllerObj)
     {
+        if (controllerObj == null || _teamMember == null) return -1;
         try
         {
-            if (_localPlayerProp == null) return false;
-            var pmType = _localPlayerProp.DeclaringType;
-            if (pmType == null) return false;
+            object val = null;
+            if (_teamMember is PropertyInfo prop)
+                val = prop.GetValue(controllerObj);
+            else if (_teamMember is MethodInfo method)
+                val = method.Invoke(controllerObj, null);
+            else if (_teamMember is FieldInfo field)
+                val = field.GetValue(controllerObj);
 
-            object pmInstance = null;
-            var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            if (instProp != null) pmInstance = instProp.GetValue(null);
-
-            if (pmInstance == null)
+            if (val != null)
             {
-                var pmObj = FindObjectOfType(Il2CppType.From(pmType).TryCast<Il2CppSystem.Type>(), false);
-                if (pmObj != null) pmInstance = pmObj;
+                if (val is Enum en) return Convert.ToInt32(en);
+                return Convert.ToInt32(val);
             }
-            if (pmInstance == null) return false;
-
-            var localPlayer = _localPlayerProp.GetValue(pmInstance);
-            if (localPlayer == null) return false;
-
-            if (_teamProp != null)
-            {
-                var teamObj = _teamProp.GetValue(localPlayer);
-                if (teamObj != null)
-                {
-                    int newTeam = Convert.ToInt32(teamObj);
-                    if (newTeam != _localTeam)
-                    {
-                        _localTeam = newTeam;
-                        Plugin.LogSource?.LogInfo($"[ESP] Local team updated: {_localTeam}");
-                    }
-                }
-            }
-            return true;
         }
-        catch (Exception e)
-        {
-            LogThrottled("checklocal_ex", $"[ESP] CheckLocalPlayer EX: {e.Message}", true);
-            return false;
-        }
+        catch { }
+        return -1;
     }
 
     void Update()
@@ -309,14 +286,14 @@ public class EspBehaviour : MonoBehaviour
 
     private bool IsTeamVisible(int team)
     {
-        if (team < 0) return true;
+        if (team < 0) return true; // Если команда не определена — показываем
 
         switch (team)
         {
             case 0: return true;
-            case 1: return TeamFilter.ShowTr;
-            case 2: return TeamFilter.ShowCt;
-            case 3: return TeamFilter.ShowSpectator;
+            case 1: return TeamFilter.ShowTr;      // TR (Terrorists)
+            case 2: return TeamFilter.ShowCt;      // CT (Counter-Terrorists)
+            case 3: return TeamFilter.ShowSpectator; // Spectator
             default: return true;
         }
     }
@@ -327,42 +304,47 @@ public class EspBehaviour : MonoBehaviour
         _resolved = true;
         try
         {
-            Type bt = null, pt = null, pmType = null;
+            Type bt = null, pt = null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 try
                 {
-                    bt ??= asm.GetType("Chillow.StandChillow.Bots.Core.BotPlayerController");
-                    pt ??= asm.GetType("Axlebolt.Standoff.Player.PlayerController");
-                    pmType ??= asm.GetType("Axlebolt.Standoff.Player.PlayerManager");
+                    bt ??= asm.GetType("BotPlayerController");
+                    pt ??= asm.GetType("PlayerController");
                 }
                 catch { }
-                if (bt != null && pt != null && pmType != null) break;
+                if (bt != null && pt != null) break;
             }
 
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
 
-            if (pmType != null && pt != null)
+            // Ищем метод или свойство команды в PlayerController
+            if (pt != null)
             {
-                _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-
-                PropertyInfo foundTeam = null;
-                foreach (var targetT in new[] { pt, bt })
+                foreach (var m in pt.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                 {
-                    if (targetT == null) continue;
-                    var searchType = targetT;
-                    while (searchType != null && searchType != typeof(object))
+                    if (m.Name.StartsWith("bcbi") || m.Name.StartsWith("bcbl") || (m.ReturnType.Name.Contains("Team") && m.GetParameters().Length == 0))
                     {
-                        foundTeam = searchType.GetProperty("CGGHFHCAFFBBCBB", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (foundTeam != null) break;
-                        searchType = searchType.BaseType;
+                        _teamMember = m;
+                        break;
                     }
-                    if (foundTeam != null) break;
                 }
-                _teamProp = foundTeam;
-                Plugin.LogSource?.LogInfo($"[ESP] Types Resolved. TeamProp found: {_teamProp != null}");
+
+                if (_teamMember == null)
+                {
+                    foreach (var p in pt.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                    {
+                        if (p.Name.Contains("Team") || p.PropertyType.Name.Contains("Team"))
+                        {
+                            _teamMember = p;
+                            break;
+                        }
+                    }
+                }
             }
+
+            Plugin.LogSource?.LogInfo($"[ESP] Types Resolved. Team Member found: {_teamMember != null}");
         }
         catch (Exception e)
         {
@@ -376,8 +358,6 @@ public class EspBehaviour : MonoBehaviour
         {
             ResolveTypes();
             if (_botType == null && _playerType == null) return;
-
-            CheckLocalPlayer();
 
             _seenList.Clear();
             ScanTypeInternal(_botType, true, "Bot");
@@ -419,16 +399,7 @@ public class EspBehaviour : MonoBehaviour
                     if (_seenList.Contains(id)) continue;
                     _seenList.Add(id);
 
-                    int targetTeam = -1;
-                    if (_teamProp != null)
-                    {
-                        try
-                        {
-                            var teamObj = _teamProp.GetValue(c);
-                            if (teamObj != null) targetTeam = Convert.ToInt32(teamObj);
-                        }
-                        catch { }
-                    }
+                    int targetTeam = ReadTeam(c);
 
                     string name = TryGetName(c, isBot);
                     bool isNew = !_tracked.ContainsKey(id);
@@ -451,31 +422,25 @@ public class EspBehaviour : MonoBehaviour
 
     string TryGetName(Component c, bool isBot)
     {
-        // 1. Пытаемся получить имя через обфусцированное свойство HBBBCEFBCFEFBBA
+        // 1. Ищем строковые свойства (никнеймы) внутри компонента
         try
         {
-            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (prop != null)
+            var props = c.GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            foreach (var p in props)
             {
-                var pp = prop.GetValue(c);
-                if (pp != null)
+                if (p.PropertyType == typeof(string))
                 {
-                    var nickProp = pp.GetType().GetProperty("NickName", BindingFlags.Public | BindingFlags.Instance) 
-                                ?? pp.GetType().GetProperty("Name", BindingFlags.Public | BindingFlags.Instance);
-                    if (nickProp != null)
+                    var val = p.GetValue(c) as string;
+                    if (!string.IsNullOrEmpty(val) && val.Length < 25 && !val.Contains("Clone") && !val.Contains("Player") && !val.Contains("Bot"))
                     {
-                        var nick = nickProp.GetValue(pp) as string;
-                        if (!string.IsNullOrEmpty(nick)) return nick;
+                        return val;
                     }
-                    // Если свойство вернуло объект профиля, пробуем ToString()
-                    string strVal = pp.ToString();
-                    if (!string.IsNullOrEmpty(strVal) && !strVal.Contains("Namespace")) return strVal;
                 }
             }
         }
         catch { }
 
-        // 2. Проверяем имя GameObject, если оно уникальное (не клон и не дефолт)
+        // 2. Проверяем уникальное имя GameObject (fallback)
         try
         {
             string n = c.gameObject.name;
@@ -486,7 +451,7 @@ public class EspBehaviour : MonoBehaviour
         }
         catch { }
 
-        // 3. Fallback: для ботов возвращаем "Bot", для игроков "Player"
+        // 3. Финальный fallback (чтобы боты не назывались одинаково везде)
         return isBot ? "Bot" : "Player";
     }
 
