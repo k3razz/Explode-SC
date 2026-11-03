@@ -263,7 +263,7 @@ public class EspBehaviour : MonoBehaviour
 
         if (isBot)
         {
-            // 1) Пробуем botTeamMember напрямую (обычно не работает — оставляем на всякий)
+            // 1) botTeamMember напрямую (обычно null)
             int team = ReadTeamFromMember(_botTeamMember, component);
             if (team >= 0) return team;
 
@@ -272,29 +272,85 @@ public class EspBehaviour : MonoBehaviour
             {
                 var t = component.GetType();
                 object playerCtrl = null;
+                bool found = false;
 
+                // property crvs
                 var crvsProp = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (crvsProp != null) playerCtrl = crvsProp.GetValue(component);
+                if (crvsProp != null)
+                {
+                    playerCtrl = crvsProp.GetValue(component);
+                    found = true;
+                    LogThrottled($"bot_crvs_prop", $"[ESP] bot.crvs (prop) = {playerCtrl?.GetType().Name ?? "null"}", false);
+                }
 
+                // get_crvs метод
+                if (playerCtrl == null)
+                {
+                    var crvsGetter = t.GetMethod("get_crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (crvsGetter != null)
+                    {
+                        playerCtrl = crvsGetter.Invoke(component, null);
+                        found = true;
+                        LogThrottled($"bot_crvs_getter", $"[ESP] bot.get_crvs() = {playerCtrl?.GetType().Name ?? "null"}", false);
+                    }
+                }
+
+                // field crvs
                 if (playerCtrl == null)
                 {
                     var crvsField = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (crvsField != null) playerCtrl = crvsField.GetValue(component);
+                    if (crvsField != null)
+                    {
+                        playerCtrl = crvsField.GetValue(component);
+                        found = true;
+                        LogThrottled($"bot_crvs_field", $"[ESP] bot.crvs (field) = {playerCtrl?.GetType().Name ?? "null"}", false);
+                    }
+                }
+
+                if (!found)
+                {
+                    LogThrottled($"bot_crvs_missing", $"[ESP] bot.crvs NOT FOUND (prop/getter/field all null)", true);
                 }
 
                 if (playerCtrl != null)
                 {
                     team = ReadTeamFromMember(_playerTeamMember, playerCtrl);
-                    if (team >= 0)
-                    {
-                        return team;
-                    }
+                    LogThrottled($"bot_team_via_crvs", $"[ESP] bot team via crvs = {team}", false);
+                    if (team >= 0) return team;
                 }
             }
             catch (Exception e)
             {
-                LogThrottled($"bot_crvs_ex_{component.GetInstanceID()}", $"[ESP] Bot crvs EX: {e.Message}", true);
+                LogThrottled($"bot_crvs_ex", $"[ESP] Bot crvs EX: {e.Message}", true);
             }
+
+            // 3) Fallback: Controller.cfkc (field) — читаем team напрямую из Controller
+            try
+            {
+                Type search = component.GetType();
+                int depth = 0;
+                while (search != null && search != typeof(object) && depth < 10)
+                {
+                    var cfkcField = search.GetField("cfkc", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (cfkcField != null)
+                    {
+                        var val = cfkcField.GetValue(component);
+                        if (val != null)
+                        {
+                            int t2 = Convert.ToInt32(val is Enum en ? (object)en : val);
+                            LogThrottled($"bot_cfkc", $"[ESP] bot team via cfkc = {t2} (owner={search.Name})", false);
+                            return t2;
+                        }
+                    }
+                    search = search.BaseType;
+                    depth++;
+                }
+            }
+            catch (Exception e)
+            {
+                LogThrottled($"bot_cfkc_ex", $"[ESP] Bot cfkc EX: {e.Message}", true);
+            }
+
             return -1;
         }
         else
