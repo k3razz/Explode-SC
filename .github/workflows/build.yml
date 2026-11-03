@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -33,6 +31,34 @@ jobs:
           path: bin/Release/net6.0/MyDynamicESP.dll
           if-no-files-found: error
 
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MyDynamicESP
+          path: artifacts
+
+      - name: Extract zip if present
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          for z in artifacts/**/*.zip; do
+            echo "Extracting $z"
+            unzip -o "$z" -d artifacts/extracted
+          done
+
+      - name: List files to release
+        shell: bash
+        run: |
+          echo "DLLs found:"
+          find artifacts -name '*.dll' -type f
+
       - name: Create or Update Release
         uses: softprops/action-gh-release@v2
         with:
@@ -41,7 +67,7 @@ jobs:
           body: Testing release dll
           prerelease: true
           files: |
-            bin/Release/net6.0/MyDynamicESP.dll
+            artifacts/**/*.dll
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
