@@ -60,7 +60,6 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgShowCt;
     public static ConfigEntry<bool> CfgShowSpectator;
 
-    // Keybind state (читается KeybindListener)
     public static KeyCode AimbotToggleKey = KeyCode.Mouse1;
     public static bool AimbotToggleMode = false;
     public static bool IsMenuOpen = false;
@@ -100,16 +99,15 @@ public class Plugin : BasePlugin
             if (Enum.TryParse(CfgAimbotKey.Value, out KeyCode kc))
                 AimbotToggleKey = kc;
 
+            Log.LogInfo($"[ESP] Aimbot key: {AimbotToggleKey}, mode: {AimbotToggleMode}");
+
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
             SceneManager.sceneLoaded += (Action<Scene, LoadSceneMode>)OnSceneLoaded;
             EspManager.EnsureBehaviour();
             KeybindListener.EnsureBehaviour();
         }
-        catch (Exception e)
-        {
-            Log.LogError($"[ESP] Load EX: {e}");
-        }
+        catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
     }
 
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -126,6 +124,7 @@ public class Plugin : BasePlugin
 public class KeybindListener : MonoBehaviour
 {
     private static KeybindListener _instance;
+    private float _lastLog;
 
     public static void EnsureBehaviour()
     {
@@ -159,7 +158,6 @@ public class KeybindListener : MonoBehaviour
         {
             if (Plugin.IsMenuOpen) return;
             if (IsTypingInChat()) return;
-
             if (Plugin.AimbotToggleKey == KeyCode.None) return;
 
             if (Plugin.AimbotToggleMode)
@@ -172,7 +170,14 @@ public class KeybindListener : MonoBehaviour
             }
             else
             {
-                EspBehaviour.SetAimbotActive(Input.GetKey(Plugin.AimbotToggleKey));
+                bool kd = Input.GetKey(Plugin.AimbotToggleKey);
+                EspBehaviour.SetAimbotActive(kd);
+
+                if (kd && Time.realtimeSinceStartup - _lastLog > 2f)
+                {
+                    _lastLog = Time.realtimeSinceStartup;
+                    Plugin.LogSource?.LogInfo($"[ESP] Aimbot active (hold) key={Plugin.AimbotToggleKey}");
+                }
             }
         }
         catch (Exception e) { Debug.LogError($"[ESP] KeybindListener EX: {e.Message}"); }
@@ -194,13 +199,6 @@ public class KeybindListener : MonoBehaviour
                 if (hudType != null) break;
             }
             if (hudType == null) return false;
-
-            var existsProp = hudType.GetProperty("InstanceExists", BindingFlags.Public | BindingFlags.Static);
-            if (existsProp != null)
-            {
-                var ex = existsProp.GetValue(null);
-                if (ex is bool b && !b) return false;
-            }
 
             var instProp = hudType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
             if (instProp == null) return false;
@@ -241,10 +239,10 @@ public class EspBehaviour : MonoBehaviour
 
     private Camera _cam;
     private Texture2D _whiteTex;
-    private Texture2D _circleTex;
-    private Texture2D _ringTex;
+    private static Texture2D _circleTex;
+    private static Texture2D _ringTex;
     private float _scanTimer;
-    private const float ScanInterval = 0.5f;
+    private const float ScanInterval = 1.0f;
 
     private float _watchdogTimer;
     private const float WatchdogInterval = 3.0f;
@@ -266,7 +264,8 @@ public class EspBehaviour : MonoBehaviour
     private const float MenuOffset = 30f;
     private const float TabWidth = 120f;
 
-    private const float ButtonRadius = 22f;
+    // Кнопка меню — квадрат, не круг
+    private const float ButtonSize = 44f;
     private Vector2 _buttonCenter = new Vector2(-1f, -1f);
     private bool _buttonInitialized = false;
     private bool _isDragging = false;
@@ -290,7 +289,6 @@ public class EspBehaviour : MonoBehaviour
     private static bool _resolved;
 
     private static MemberInfo _playerTeamMember;
-    private static MemberInfo _localPlayerMember;
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
 
@@ -313,8 +311,10 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex = new Texture2D(1, 1);
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
-            _circleTex = CreateCircleTexture(256);
-            _ringTex = CreateRingTexture(256, 4f);
+
+            GetCircleTex();
+            GetRingTex();
+
             enabled = true;
             gameObject.SetActive(true);
 
@@ -330,44 +330,55 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
     }
 
-    private Texture2D CreateCircleTexture(int size)
+    private static Texture2D GetCircleTex()
     {
+        if (_circleTex != null) return _circleTex;
+        int size = 128;
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         tex.filterMode = FilterMode.Bilinear;
         tex.wrapMode = TextureWrapMode.Clamp;
+        var pixels = new Color32[size * size];
         float center = size / 2f;
-        float radius = size / 2f - 2f;
-        for (int x = 0; x < size; x++)
-            for (int y = 0; y < size; y++)
+        float radius = size / 2f - 1f;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
             {
                 float dx = x - center + 0.5f, dy = y - center + 0.5f;
                 float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                float alpha = Mathf.Clamp01((radius - dist) / 2f);
-                tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                byte a = (byte)(Mathf.Clamp01((radius - dist) / 1.5f) * 255);
+                pixels[y * size + x] = new Color32(255, 255, 255, a);
             }
+        tex.SetPixels32(pixels);
         tex.Apply();
+        _circleTex = tex;
         return tex;
     }
 
-    private Texture2D CreateRingTexture(int size, float thickness)
+    private static Texture2D GetRingTex()
     {
+        if (_ringTex != null) return _ringTex;
+        int size = 128;
+        float thickness = 2f;
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         tex.filterMode = FilterMode.Bilinear;
         tex.wrapMode = TextureWrapMode.Clamp;
+        var pixels = new Color32[size * size];
         float center = size / 2f;
-        float outer = size / 2f - 2f;
+        float outer = size / 2f - 1f;
         float inner = outer - thickness;
-        for (int x = 0; x < size; x++)
-            for (int y = 0; y < size; y++)
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
             {
                 float dx = x - center + 0.5f, dy = y - center + 0.5f;
                 float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                float alpha = 0f;
+                float a = 0f;
                 if (dist <= outer && dist >= inner)
-                    alpha = Mathf.Clamp01(Mathf.Min(outer - dist, dist - inner) / 1.5f);
-                tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                    a = Mathf.Clamp01(Mathf.Min(outer - dist, dist - inner) / 1.5f);
+                pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255));
             }
+        tex.SetPixels32(pixels);
         tex.Apply();
+        _ringTex = tex;
         return tex;
     }
 
@@ -382,8 +393,7 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_whiteTex != null) Destroy(_whiteTex);
-            if (_circleTex != null) Destroy(_circleTex);
-            if (_ringTex != null) Destroy(_ringTex);
+            // _circleTex и _ringTex — статические, не Destroy
         }
         catch { }
     }
@@ -468,12 +478,14 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (_localPlayerMember == null || _playerManagerType == null) return;
+            if (_playerManagerType == null) return;
+
             object pmInstance = null;
-            var pmType = _localPlayerMember.DeclaringType;
+            var pmType = _playerManagerType;
 
             var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (instProp != null) pmInstance = instProp.GetValue(null);
+
             if (pmInstance == null)
             {
                 foreach (var n in new[] { "_instance", "s_Instance", "m_Instance", "instance" })
@@ -484,13 +496,29 @@ public class EspBehaviour : MonoBehaviour
                     if (p != null) { pmInstance = p.GetValue(null); break; }
                 }
             }
-            if (pmInstance == null) { var pmc = FindObjectOfType(_playerManagerType); if (pmc != null) pmInstance = pmc; }
+
+            if (pmInstance == null)
+            {
+                var pmc = FindObjectOfType(pmType);
+                if (pmc != null) pmInstance = pmc;
+            }
+
             if (pmInstance == null) { LogThrottled("pm_null", "[ESP] PlayerManager not found", true); return; }
 
+            // Читаем _cfog напрямую с pmInstance
             object localPlayer = null;
-            if (_localPlayerMember is PropertyInfo lp) localPlayer = lp.GetValue(pmInstance);
-            else if (_localPlayerMember is FieldInfo lf) localPlayer = lf.GetValue(pmInstance);
-            if (localPlayer == null) return;
+            var pmManagedType = pmInstance.GetType();
+
+            var cfogProp = pmManagedType.GetProperty("cfog", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (cfogProp != null) localPlayer = cfogProp.GetValue(pmInstance);
+
+            if (localPlayer == null)
+            {
+                var cfogField = pmManagedType.GetField("_cfog_k__BackingField", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (cfogField != null) localPlayer = cfogField.GetValue(pmInstance);
+            }
+
+            if (localPlayer == null) { LogThrottled("cfog_null", "[ESP] localPlayer is null", true); return; }
 
             int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
             if (newTeam != _localTeam && newTeam >= 0)
@@ -659,21 +687,10 @@ public class EspBehaviour : MonoBehaviour
             if (pmType != null) _playerManagerType = Il2CppType.From(pmType);
 
             _playerTeamMember = null;
-            _localPlayerMember = null;
             string owner = null;
             _playerTeamMember = FindTeamMember(pt, out owner);
             Plugin.LogSource?.LogInfo($"[ESP] Team member: {owner ?? "null"}");
-
-            if (pmType != null && pt != null)
-            {
-                foreach (var p in pmType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                    if (p.PropertyType == pt) { _localPlayerMember = p; break; }
-                if (_localPlayerMember == null)
-                    foreach (var f in pmType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                        if (f.FieldType == pt) { _localPlayerMember = f; break; }
-            }
-
-            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, Team={_playerTeamMember != null}, LocalPlayer={_localPlayerMember != null}");
+            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, Team={_playerTeamMember != null}");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
@@ -754,8 +771,6 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
-            if (_circleTex == null) _circleTex = CreateCircleTexture(256);
-            if (_ringTex == null) _ringTex = CreateRingTexture(256, 4f);
             if (_cam == null) { _cam = Camera.main; if (_cam == null) return; }
 
             if (_espBoxesEnabled || _espNamesEnabled)
@@ -811,13 +826,15 @@ public class EspBehaviour : MonoBehaviour
 
             if (_aimbotEnabled)
             {
+                var circ = GetCircleTex();
+                var ring = GetRingTex();
                 float fovScreen = _aimbotFov * (Screen.height / 90f);
                 if (fovScreen > 0)
                 {
                     GUI.color = new Color(1f, 1f, 1f, 0.04f);
-                    GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
+                    GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), circ);
                     GUI.color = new Color(1f, 1f, 1f, 0.7f);
-                    GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _ringTex);
+                    GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), ring);
                     GUI.color = Color.white;
                 }
             }
@@ -832,8 +849,9 @@ public class EspBehaviour : MonoBehaviour
     private void DrawFloatingButton()
     {
         if (!_buttonInitialized) { _buttonCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); _buttonInitialized = true; }
-        float r = ButtonRadius;
-        Rect btnRect = new Rect(_buttonCenter.x - r, _buttonCenter.y - r, r * 2f, r * 2f);
+        float s = ButtonSize;
+        Rect btnRect = new Rect(_buttonCenter.x - s / 2f, _buttonCenter.y - s / 2f, s, s);
+
         Event e = Event.current;
         if (e != null)
         {
@@ -846,8 +864,8 @@ public class EspBehaviour : MonoBehaviour
             {
                 if ((m - _dragStartMouse).sqrMagnitude > 9f) _dragMoved = true;
                 _buttonCenter = m - _dragOffset;
-                _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, r, Screen.width - r);
-                _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, r, Screen.height - r);
+                _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, s / 2f, Screen.width - s / 2f);
+                _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, s / 2f, Screen.height - s / 2f);
                 e.Use();
             }
             else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
@@ -855,10 +873,14 @@ public class EspBehaviour : MonoBehaviour
                 _isDragging = false; if (!_dragMoved) _menuVisible = true; e.Use();
             }
         }
+
+        // Простой квадрат вместо круга — намного дешевле
         GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
-        GUI.DrawTexture(btnRect, _circleTex);
+        GUI.DrawTexture(btnRect, _whiteTex);
+
         GUI.color = Color.white;
-        GUI.Label(new Rect(_buttonCenter.x - 7f, _buttonCenter.y - 10f, 14f, 20f), "E");
+        float lw = 14f;
+        GUI.Label(new Rect(_buttonCenter.x - lw / 2f, _buttonCenter.y - 10f, lw, 20f), "E");
     }
 
     private bool CustomButton(Rect rect, string label, bool state)
@@ -887,7 +909,7 @@ public class EspBehaviour : MonoBehaviour
 
     private Rect GetMenuRect()
     {
-        float sw = Screen.width, sh = Screen.height, mw = MenuWidth, mh = MenuHeight, r = ButtonRadius;
+        float sw = Screen.width, sh = Screen.height, mw = MenuWidth, mh = MenuHeight, r = ButtonSize / 2f;
         float x = _buttonCenter.x + r + MenuOffset;
         if (x + mw > sw) x = _buttonCenter.x - r - MenuOffset - mw;
         if (x < 0) x = Mathf.Max(0, (sw - mw) / 2f);
@@ -994,7 +1016,6 @@ public class EspBehaviour : MonoBehaviour
             Plugin.IsMenuOpen = _aimbotKeyCapturing;
         }
 
-        // Захват клавиши через Event.current в OnGUI — здесь, пока меню открыто
         if (_aimbotKeyCapturing)
         {
             Event e = Event.current;
