@@ -54,13 +54,13 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Input: старый + новый -->
+    <!-- Input (legacy + внутренний модуль) -->
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>libs/interop/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityEngine.InputSystem">
-      <HintPath>libs/interop/UnityEngine.InputSystem.dll</HintPath>
+    <Reference Include="UnityEngine.InputModule">
+      <HintPath>libs/interop/UnityEngine.InputModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
 
