@@ -8,13 +8,6 @@ public static class MenuRenderer
     public const float MenuHeight = 540f;
     public const float TabWidth = 120f;
 
-    private const float FadeBgStart = 0.0f;
-    private const float FadeBgEnd = 0.3f;
-    private const float FadeLogoStart = 0.2f;
-    private const float FadeLogoEnd = 0.6f;
-    private const float FadeMenuStart = 0.5f;
-    private const float FadeMenuEnd = 0.9f;
-
     private static Texture2D _circleTex;
     private static Texture2D _ringTex;
 
@@ -67,13 +60,22 @@ public static class MenuRenderer
         GUI.color = Color.white;
     }
 
-    // Анимация: фон → логотип → меню (по центру)
-    public static void DrawMenuAnimation(Texture2D whiteTex, float animTime)
+    // === ИНТРО-АНИМАЦИЯ (один раз при заходе) ===
+    // 0.0–0.3: фон появляется
+    // 0.3–0.8: "Explode" появляется
+    // 0.8–1.2: логотип держится
+    // 1.2–1.6: логотип исчезает
+    // 1.6–2.0: фон исчезает
+    public static void DrawIntroAnimation(Texture2D whiteTex, float t)
     {
         float sw = Screen.width, sh = Screen.height;
 
-        // 1. Фон
-        float bgAlpha = Mathf.Clamp01((animTime - FadeBgStart) / (FadeBgEnd - FadeBgStart)) * 0.65f;
+        float bgAlpha = 0f;
+        if (t >= 0f && t < 0.3f) bgAlpha = Mathf.Lerp(0f, 0.65f, (t - 0f) / 0.3f);
+        else if (t >= 0.3f && t < 1.6f) bgAlpha = 0.65f;
+        else if (t >= 1.6f && t < 2.0f) bgAlpha = Mathf.Lerp(0.65f, 0f, (t - 1.6f) / 0.4f);
+        else if (t >= 2.0f) bgAlpha = 0f;
+
         if (bgAlpha > 0f)
         {
             GUI.color = new Color(0.1f, 0.1f, 0.1f, bgAlpha);
@@ -81,40 +83,43 @@ public static class MenuRenderer
             GUI.color = Color.white;
         }
 
-        // 2. Логотип "Explode" (E красная)
-        float logoAlpha = Mathf.Clamp01((animTime - FadeLogoStart) / (FadeLogoEnd - FadeLogoStart));
+        float logoAlpha = 0f;
+        if (t >= 0.3f && t < 0.8f) logoAlpha = Mathf.Lerp(0f, 1f, (t - 0.3f) / 0.5f);
+        else if (t >= 0.8f && t < 1.2f) logoAlpha = 1f;
+        else if (t >= 1.2f && t < 1.6f) logoAlpha = Mathf.Lerp(1f, 0f, (t - 1.2f) / 0.4f);
+        else if (t >= 1.6f) logoAlpha = 0f;
+
         if (logoAlpha > 0f)
         {
             string eLetter = "E";
             string rest = "xplode";
-            float logoY = sh * 0.25f;
-            var style = GUI.skin.label;
+            float logoY = sh * 0.35f;
+
+            var style = new GUIStyle(GUI.skin.label);
+            style.fontSize = 96;
+            style.fontStyle = FontStyle.Bold;
+            style.alignment = TextAnchor.MiddleCenter;
+
             Vector2 sizeE = style.CalcSize(new GUIContent(eLetter));
             Vector2 sizeRest = style.CalcSize(new GUIContent(rest));
             float totalWidth = sizeE.x + sizeRest.x;
             float startX = sw / 2f - totalWidth / 2f;
 
+            // Тень
             GUI.color = new Color(0f, 0f, 0f, logoAlpha * 0.6f);
-            GUI.Label(new Rect(startX + 2f, logoY + 2f, totalWidth, 80f), eLetter + rest);
+            GUI.Label(new Rect(startX + 3f, logoY + 3f, totalWidth, 120f), eLetter + rest, style);
+            // E красная
             GUI.color = new Color(1f, 0.2f, 0.2f, logoAlpha);
-            GUI.Label(new Rect(startX, logoY, sizeE.x + 4f, 80f), eLetter);
+            GUI.Label(new Rect(startX, logoY, sizeE.x + 4f, 120f), eLetter, style);
+            // xplode белое
             GUI.color = new Color(1f, 1f, 1f, logoAlpha);
-            GUI.Label(new Rect(startX + sizeE.x, logoY, sizeRest.x + 4f, 80f), rest);
+            GUI.Label(new Rect(startX + sizeE.x, logoY, sizeRest.x + 4f, 120f), rest, style);
             GUI.color = Color.white;
-        }
-
-        // 3. Меню
-        float menuAlpha = Mathf.Clamp01((animTime - FadeMenuStart) / (FadeMenuEnd - FadeMenuStart));
-        if (menuAlpha > 0f)
-        {
-            var old = GUI.color;
-            GUI.color = new Color(1f, 1f, 1f, menuAlpha);
-            DrawMenuContent(whiteTex);
-            GUI.color = old;
         }
     }
 
-    private static void DrawMenuContent(Texture2D whiteTex)
+    // === МЕНЮ (после интро) ===
+    public static void DrawMenu(Texture2D whiteTex)
     {
         float sw = Screen.width, sh = Screen.height;
         float mw = MenuWidth, mh = MenuHeight;
