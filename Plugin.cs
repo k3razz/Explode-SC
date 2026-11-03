@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
+using UnityEngine.UI;
 using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using System;
@@ -27,12 +28,11 @@ public class EspBehaviour : MonoBehaviour
         public bool IsBot;
         public int Team;
         public string Name;
-        public Renderer[] Renderers;
     }
 
     private readonly Dictionary<int, Tracked> _tracked = new();
     private readonly List<Tracked> _toDraw = new();
-    private readonly List<int> _seenList = new(); // Замена HashSet в параметрах
+    private readonly List<int> _seenList = new();
 
     private Camera _cam;
     private Texture2D _whiteTex;
@@ -43,6 +43,19 @@ public class EspBehaviour : MonoBehaviour
     private const float BoxHeight = 120f;
     private const float OutlineThickness = 2f;
     private const float HeadOffset = 1.8f;
+
+    // ---- Настройки функций (переключаются в меню) ----
+    private bool _espBoxesEnabled = true;
+    private bool _espNamesEnabled = true;
+    private bool _espDistanceEnabled = true;
+    private bool _menuVisible = false;
+
+    // ---- Unity UI ----
+    private GameObject _menuCanvas;
+    private GameObject _menuPanel;
+    private Text _boxesLabel;
+    private Text _namesLabel;
+    private Text _distLabel;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
@@ -58,10 +71,220 @@ public class EspBehaviour : MonoBehaviour
         _whiteTex = new Texture2D(1, 1);
         _whiteTex.SetPixel(0, 0, Color.white);
         _whiteTex.Apply();
+        BuildMenu();
     }
 
+    // =========================================================
+    //                       UNITY UI MENU
+    // =========================================================
+    private void BuildMenu()
+    {
+        try
+        {
+            // Canvas
+            _menuCanvas = new GameObject("ESP_MenuCanvas");
+            DontDestroyOnLoad(_menuCanvas);
+            var canvas = _menuCanvas.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 9999;
+            var scaler = _menuCanvas.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            _menuCanvas.AddComponent<GraphicRaycaster>();
+
+            // Панель
+            _menuPanel = new GameObject("Panel");
+            _menuPanel.transform.SetParent(_menuCanvas.transform, false);
+            var panelImg = _menuPanel.AddComponent<Image>();
+            panelImg.color = new Color(0.05f, 0.05f, 0.08f, 0.92f);
+            var panelRect = _menuPanel.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0, 1);
+            panelRect.anchorMax = new Vector2(0, 1);
+            panelRect.pivot = new Vector2(0, 1);
+            panelRect.anchoredPosition = new Vector2(20, -20);
+            panelRect.sizeDelta = new Vector2(320, 300);
+
+            // Заголовок
+            CreateLabel(_menuPanel.transform, "DynamicESP", new Vector2(10, -10), 22, FontStyle.Bold, new Color(1f, 0.8f, 0.3f));
+
+            // Переключатели
+            float y = -55;
+            y = CreateToggle(_menuPanel.transform, "ESP Boxes", y, _espBoxesEnabled, v =>
+            {
+                _espBoxesEnabled = v;
+                UpdateToggleLabel(_boxesLabel, v);
+            }, out _boxesLabel);
+
+            y = CreateToggle(_menuPanel.transform, "Names", y, _espNamesEnabled, v =>
+            {
+                _espNamesEnabled = v;
+                UpdateToggleLabel(_namesLabel, v);
+            }, out _namesLabel);
+
+            y = CreateToggle(_menuPanel.transform, "Distance", y, _espDistanceEnabled, v =>
+            {
+                _espDistanceEnabled = v;
+                UpdateToggleLabel(_distLabel, v);
+            }, out _distLabel);
+
+            // Кнопка "Скрыть меню"
+            y -= 10;
+            CreateButton(_menuPanel.transform, "Hide Menu (F1)", new Vector2(10, y), () => ToggleMenu());
+
+            _menuPanel.SetActive(false); // по умолчанию скрыто
+            Debug.Log("[ESP] Menu built");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[ESP] BuildMenu EX: {e}");
+        }
+    }
+
+    private float CreateToggle(Transform parent, string text, float y, bool initial, Action<bool> onChange, out Text label)
+    {
+        // Фон строки
+        var row = new GameObject("Row_" + text);
+        row.transform.SetParent(parent, false);
+        var rowImg = row.AddComponent<Image>();
+        rowImg.color = new Color(0.12f, 0.12f, 0.16f, 1f);
+        var rowRect = row.GetComponent<RectTransform>();
+        rowRect.anchorMin = new Vector2(0, 1);
+        rowRect.anchorMax = new Vector2(0, 1);
+        rowRect.pivot = new Vector2(0, 1);
+        rowRect.anchoredPosition = new Vector2(10, y);
+        rowRect.sizeDelta = new Vector2(300, 38);
+
+        // Текст
+        var txtGo = new GameObject("Label");
+        txtGo.transform.SetParent(row.transform, false);
+        var txt = txtGo.AddComponent<Text>();
+        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        txt.fontSize = 18;
+        txt.color = Color.white;
+        txt.alignment = TextAnchor.MiddleLeft;
+        txt.text = text;
+        var txtRect = txtGo.GetComponent<RectTransform>();
+        txtRect.anchorMin = new Vector2(0, 0);
+        txtRect.anchorMax = new Vector2(1, 1);
+        txtRect.offsetMin = new Vector2(10, 0);
+        txtRect.offsetMax = new Vector2(-70, 0);
+
+        // Кнопка ON/OFF справа
+        var btnGo = new GameObject("ToggleBtn");
+        btnGo.transform.SetParent(row.transform, false);
+        var btnImg = btnGo.AddComponent<Image>();
+        btnImg.color = initial ? new Color(0.2f, 0.7f, 0.3f, 1f) : new Color(0.6f, 0.2f, 0.2f, 1f);
+        var btnRect = btnGo.GetComponent<RectTransform>();
+        btnRect.anchorMin = new Vector2(1, 0.5f);
+        btnRect.anchorMax = new Vector2(1, 0.5f);
+        btnRect.pivot = new Vector2(1, 0.5f);
+        btnRect.anchoredPosition = new Vector2(-6, 0);
+        btnRect.sizeDelta = new Vector2(56, 28);
+
+        var btnTextGo = new GameObject("Text");
+        btnTextGo.transform.SetParent(btnGo.transform, false);
+        var btnText = btnTextGo.AddComponent<Text>();
+        btnText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        btnText.fontSize = 16;
+        btnText.alignment = TextAnchor.MiddleCenter;
+        btnText.color = Color.white;
+        btnText.text = initial ? "ON" : "OFF";
+        var btnTextRect = btnTextGo.GetComponent<RectTransform>();
+        btnTextRect.anchorMin = Vector2.zero;
+        btnTextRect.anchorMax = Vector2.one;
+        btnTextRect.offsetMin = Vector2.zero;
+        btnTextRect.offsetMax = Vector2.zero;
+
+        // Кнопка
+        var btn = btnGo.AddComponent<Button>();
+        btn.targetGraphic = btnImg;
+        bool state = initial;
+        btn.onClick.AddListener((Action)(() =>
+        {
+            state = !state;
+            btnImg.color = state ? new Color(0.2f, 0.7f, 0.3f, 1f) : new Color(0.6f, 0.2f, 0.2f, 1f);
+            btnText.text = state ? "ON" : "OFF";
+            onChange(state);
+        }));
+
+        label = btnText;
+        return y - 46;
+    }
+
+    private void UpdateToggleLabel(Text label, bool state)
+    {
+        if (label == null) return;
+        label.text = state ? "ON" : "OFF";
+    }
+
+    private GameObject CreateLabel(Transform parent, string text, Vector2 pos, int size, FontStyle style, Color color)
+    {
+        var go = new GameObject("Label");
+        go.transform.SetParent(parent, false);
+        var txt = go.AddComponent<Text>();
+        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        txt.fontSize = size;
+        txt.fontStyle = style;
+        txt.color = color;
+        txt.text = text;
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0, 1);
+        rect.anchorMax = new Vector2(0, 1);
+        rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = new Vector2(300, 30);
+        return go;
+    }
+
+    private void CreateButton(Transform parent, string text, Vector2 pos, Action onClick)
+    {
+        var go = new GameObject("Button");
+        go.transform.SetParent(parent, false);
+        var img = go.AddComponent<Image>();
+        img.color = new Color(0.2f, 0.35f, 0.6f, 1f);
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0, 1);
+        rect.anchorMax = new Vector2(0, 1);
+        rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = new Vector2(300, 36);
+
+        var txtGo = new GameObject("Text");
+        txtGo.transform.SetParent(go.transform, false);
+        var txt = txtGo.AddComponent<Text>();
+        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        txt.fontSize = 18;
+        txt.color = Color.white;
+        txt.alignment = TextAnchor.MiddleCenter;
+        txt.text = text;
+        var txtRect = txtGo.GetComponent<RectTransform>();
+        txtRect.anchorMin = Vector2.zero;
+        txtRect.anchorMax = Vector2.one;
+        txtRect.offsetMin = Vector2.zero;
+        txtRect.offsetMax = Vector2.zero;
+
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        btn.onClick.AddListener((Action)onClick);
+    }
+
+    private void ToggleMenu()
+    {
+        if (_menuPanel == null) return;
+        _menuVisible = !_menuVisible;
+        _menuPanel.SetActive(_menuVisible);
+        Cursor.visible = _menuVisible;
+        Cursor.lockState = _menuVisible ? CursorLockMode.None : CursorLockMode.Locked;
+    }
+
+    // =========================================================
+    //                       UPDATE
+    // =========================================================
     void Update()
     {
+        if (Input.GetKeyDown(KeyCode.F1))
+            ToggleMenu();
+
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= ScanInterval)
         {
@@ -69,42 +292,12 @@ public class EspBehaviour : MonoBehaviour
             DoScan();
         }
 
-        // 1. Применяем чамсы каждый кадр
-        foreach (var t in _tracked.Values)
-        {
-            if (t.Transform == null) continue;
-            ApplyChamsInternal(t);
-        }
-
-        // 2. Формируем список для отрисовки
         _toDraw.Clear();
         foreach (var t in _tracked.Values)
         {
             if (t.Transform == null) continue;
-            if (_localTeam != -1 && t.Team == _localTeam) continue; // только враги
+            if (_localTeam != -1 && t.Team == _localTeam) continue;
             _toDraw.Add(t);
-        }
-    }
-
-    void ApplyChamsInternal(Tracked t)
-    {
-        if (t.Renderers == null || t.Renderers.Length == 0) return;
-
-        Color chamColor = t.Team == 1 ? Color.red : new Color(0f, 0.5f, 1f);
-
-        foreach (var r in t.Renderers)
-        {
-            if (r == null) continue;
-            try
-            {
-                var mat = r.material;
-                if (mat != null)
-                {
-                    if (mat.HasProperty("_Color")) mat.color = chamColor;
-                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", chamColor);
-                }
-            }
-            catch { }
         }
     }
 
@@ -152,8 +345,6 @@ public class EspBehaviour : MonoBehaviour
         foreach (var id in _tracked.Keys)
             if (!_seenList.Contains(id)) dead.Add(id);
         foreach (var id in dead) _tracked.Remove(id);
-
-        Debug.Log($"[ESP] Scan: tracked={_tracked.Count}, localTeam={_localTeam}");
     }
 
     void UpdateLocalTeam()
@@ -177,7 +368,6 @@ public class EspBehaviour : MonoBehaviour
         catch { }
     }
 
-    // Теперь метод не принимает HashSet, а использует поле _seenList
     void ScanTypeInternal(Il2CppSystem.Type type, bool isBot)
     {
         if (type == null) return;
@@ -211,15 +401,12 @@ public class EspBehaviour : MonoBehaviour
                 }
                 catch { }
 
-                var allRenderers = go.GetComponentsInChildren<Renderer>();
-
                 _tracked[id] = new Tracked
                 {
                     Transform = tr,
                     IsBot = isBot,
                     Team = targetTeam,
-                    Name = TryGetName(c, isBot),
-                    Renderers = allRenderers
+                    Name = TryGetName(c, isBot)
                 };
             }
         }
@@ -250,10 +437,18 @@ public class EspBehaviour : MonoBehaviour
         return isBot ? "BOT" : "PLAYER";
     }
 
+    // =========================================================
+    //                       OnGUI (ESP)
+    // =========================================================
     void OnGUI()
     {
+        if (!_espBoxesEnabled && !_espNamesEnabled) return;
+
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
+
+        var style = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.MiddleCenter };
+        style.normal.textColor = Color.white;
 
         foreach (var t in _toDraw)
         {
@@ -267,29 +462,46 @@ public class EspBehaviour : MonoBehaviour
             float x = screen.x;
             float y = Screen.height - screen.y;
 
-            float bw = BoxWidth;
-            float bh = BoxHeight;
-            float th = OutlineThickness;
+            float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
 
-            float left = x - bw / 2f;
-            float top = y;
-            float bottom = y + bh;
+            if (_espBoxesEnabled)
+            {
+                float bw = BoxWidth;
+                float bh = BoxHeight;
+                float th = OutlineThickness;
 
-            Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.15f) : new Color(0f, 0.5f, 1f, 0.15f);
-            Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
+                float left = x - bw / 2f;
+                float top = y;
+                float bottom = y + bh;
 
-            GUI.color = fillColor;
-            GUI.DrawTexture(new Rect(left, top, bw, bh), _whiteTex);
+                Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
+                Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
 
-            GUI.color = outlineColor;
-            GUI.DrawTexture(new Rect(left, top, bw, th), _whiteTex);
-            GUI.DrawTexture(new Rect(left, bottom - th, bw, th), _whiteTex);
-            GUI.DrawTexture(new Rect(left, top, th, bh), _whiteTex);
-            GUI.DrawTexture(new Rect(left + bw - th, top, th, bh), _whiteTex);
+                GUI.color = fillColor;
+                GUI.DrawTexture(new Rect(left, top, bw, bh), _whiteTex);
 
-            GUI.color = Color.white;
-            string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
-            GUI.Label(new Rect(left, top - 18f, bw + 60f, 20f), label);
+                GUI.color = outlineColor;
+                GUI.DrawTexture(new Rect(left, top, bw, th), _whiteTex);
+                GUI.DrawTexture(new Rect(left, bottom - th, bw, th), _whiteTex);
+                GUI.DrawTexture(new Rect(left, top, th, bh), _whiteTex);
+                GUI.DrawTexture(new Rect(left + bw - th, top, th, bh), _whiteTex);
+                GUI.color = Color.white;
+            }
+
+            if (_espNamesEnabled)
+            {
+                string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
+                if (_espDistanceEnabled)
+                    label += $" [{dist:F0}m]";
+
+                // Тень
+                var shadow = new GUIStyle(style);
+                shadow.normal.textColor = Color.black;
+                GUI.Label(new Rect(x - 99f, y - 17f, 200f, 20f), label, shadow);
+                GUI.Label(new Rect(x - 101f, y - 19f, 200f, 20f), label, shadow);
+                // Текст
+                GUI.Label(new Rect(x - 100f, y - 18f, 200f, 20f), label, style);
+            }
         }
         GUI.color = Color.white;
     }
