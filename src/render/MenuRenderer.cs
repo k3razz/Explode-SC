@@ -8,7 +8,6 @@ public static class MenuRenderer
     public const float MenuHeight = 540f;
     public const float TabWidth = 120f;
 
-    // Тайминги анимации (секунды)
     private const float FadeBgStart = 0.0f;
     private const float FadeBgEnd = 0.3f;
     private const float FadeLogoStart = 0.2f;
@@ -68,56 +67,53 @@ public static class MenuRenderer
         GUI.color = Color.white;
     }
 
-    // === Анимация меню: фон → логотип → меню, всё по центру ===
+    // Анимация: фон → логотип → меню (по центру)
     public static void DrawMenuAnimation(Texture2D whiteTex, float animTime)
     {
         float sw = Screen.width, sh = Screen.height;
 
-        // 1. Тёмно-серый полупрозрачный фон
+        // 1. Фон
         float bgAlpha = Mathf.Clamp01((animTime - FadeBgStart) / (FadeBgEnd - FadeBgStart)) * 0.65f;
-        GUI.color = new Color(0.1f, 0.1f, 0.1f, bgAlpha);
-        GUI.DrawTexture(new Rect(0, 0, sw, sh), whiteTex);
-        GUI.color = Color.white;
+        if (bgAlpha > 0f)
+        {
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, bgAlpha);
+            GUI.DrawTexture(new Rect(0, 0, sw, sh), whiteTex);
+            GUI.color = Color.white;
+        }
 
-        // 2. Надпись "Explode" — E красная, остальное белое
+        // 2. Логотип "Explode" (E красная)
         float logoAlpha = Mathf.Clamp01((animTime - FadeLogoStart) / (FadeLogoEnd - FadeLogoStart));
         if (logoAlpha > 0f)
         {
             string eLetter = "E";
             string rest = "xplode";
             float logoY = sh * 0.25f;
-            float fontSize = 72f;
-            // Рисуем каждую часть по центру, вычисляя ширину через GUI.skin.label.CalcSize
             var style = GUI.skin.label;
             Vector2 sizeE = style.CalcSize(new GUIContent(eLetter));
             Vector2 sizeRest = style.CalcSize(new GUIContent(rest));
             float totalWidth = sizeE.x + sizeRest.x;
             float startX = sw / 2f - totalWidth / 2f;
 
-            // Тень
             GUI.color = new Color(0f, 0f, 0f, logoAlpha * 0.6f);
             GUI.Label(new Rect(startX + 2f, logoY + 2f, totalWidth, 80f), eLetter + rest);
-            // E красная
             GUI.color = new Color(1f, 0.2f, 0.2f, logoAlpha);
             GUI.Label(new Rect(startX, logoY, sizeE.x + 4f, 80f), eLetter);
-            // xplode белое
             GUI.color = new Color(1f, 1f, 1f, logoAlpha);
             GUI.Label(new Rect(startX + sizeE.x, logoY, sizeRest.x + 4f, 80f), rest);
             GUI.color = Color.white;
         }
 
-        // 3. Меню с плавным появлением
+        // 3. Меню
         float menuAlpha = Mathf.Clamp01((animTime - FadeMenuStart) / (FadeMenuEnd - FadeMenuStart));
         if (menuAlpha > 0f)
         {
-            var oldColor = GUI.color;
+            var old = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, menuAlpha);
             DrawMenuContent(whiteTex);
-            GUI.color = oldColor;
+            GUI.color = old;
         }
     }
 
-    // === Само меню (строго по центру) ===
     private static void DrawMenuContent(Texture2D whiteTex)
     {
         float sw = Screen.width, sh = Screen.height;
