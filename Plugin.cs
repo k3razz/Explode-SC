@@ -251,7 +251,7 @@ public class EspBehaviour : MonoBehaviour
                 var teamObj = _teamProp.GetValue(localPlayer);
                 if (teamObj != null)
                 {
-                    int newTeam = ConvertTeam(teamObj);
+                    int newTeam = Convert.ToInt32(teamObj);
                     if (newTeam != _localTeam)
                     {
                         _localTeam = newTeam;
@@ -265,24 +265,6 @@ public class EspBehaviour : MonoBehaviour
         {
             LogThrottled("checklocal_ex", $"[ESP] CheckLocalPlayer EX: {e.Message}", true);
             return false;
-        }
-    }
-
-    private int ConvertTeam(object teamObj)
-    {
-        if (teamObj == null) return -1;
-        try
-        {
-            // Если это IL2CPP / .NET Enum, пробуем привести к int через Convert или через Underlying type
-            if (teamObj.GetType().IsEnum || teamObj.GetType().FullName.Contains("Team"))
-            {
-                return Convert.ToInt32(teamObj);
-            }
-            return Convert.ToInt32(teamObj);
-        }
-        catch
-        {
-            return -1;
         }
     }
 
@@ -314,12 +296,7 @@ public class EspBehaviour : MonoBehaviour
             foreach (var t in _tracked.Values)
             {
                 if (t.Transform == null) continue;
-
-                // Если настроено скрытие своей команды (при валидном __localTeam)
-                // if (_localTeam > 0 && t.Team == _localTeam) continue;
-
                 if (!IsTeamVisible(t.Team)) continue;
-
                 _toDraw.Add(t);
             }
         }
@@ -332,15 +309,14 @@ public class EspBehaviour : MonoBehaviour
 
     private bool IsTeamVisible(int team)
     {
-        // Если команда не определена (-1), показываем по умолчанию
         if (team < 0) return true;
 
         switch (team)
         {
-            case 0: return true;                   // None / Lobby
-            case 1: return TeamFilter.ShowTr;      // TR
-            case 2: return TeamFilter.ShowCt;      // CT
-            case 3: return TeamFilter.ShowSpectator; // Spectator
+            case 0: return true;
+            case 1: return TeamFilter.ShowTr;
+            case 2: return TeamFilter.ShowCt;
+            case 3: return TeamFilter.ShowSpectator;
             default: return true;
         }
     }
@@ -372,7 +348,6 @@ public class EspBehaviour : MonoBehaviour
                 _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
 
                 PropertyInfo foundTeam = null;
-                // Ищем свойство команды сначала в PlayerController, потом в BotPlayerController
                 foreach (var targetT in new[] { pt, bt })
                 {
                     if (targetT == null) continue;
@@ -450,7 +425,7 @@ public class EspBehaviour : MonoBehaviour
                         try
                         {
                             var teamObj = _teamProp.GetValue(c);
-                            if (teamObj != null) targetTeam = ConvertTeam(teamObj);
+                            if (teamObj != null) targetTeam = Convert.ToInt32(teamObj);
                         }
                         catch { }
                     }
@@ -476,6 +451,7 @@ public class EspBehaviour : MonoBehaviour
 
     string TryGetName(Component c, bool isBot)
     {
+        // 1. Пытаемся получить имя через обфусцированное свойство HBBBCEFBCFEFBBA
         try
         {
             var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -491,19 +467,26 @@ public class EspBehaviour : MonoBehaviour
                         var nick = nickProp.GetValue(pp) as string;
                         if (!string.IsNullOrEmpty(nick)) return nick;
                     }
+                    // Если свойство вернуло объект профиля, пробуем ToString()
+                    string strVal = pp.ToString();
+                    if (!string.IsNullOrEmpty(strVal) && !strVal.Contains("Namespace")) return strVal;
                 }
             }
         }
         catch { }
 
-        // Резервный поиск по имени объекта, если это не дефолтный Player(Clone)
+        // 2. Проверяем имя GameObject, если оно уникальное (не клон и не дефолт)
         try
         {
             string n = c.gameObject.name;
-            if (!string.IsNullOrEmpty(n) && n != "Player(Clone)") return n;
+            if (!string.IsNullOrEmpty(n) && n != "Player(Clone)" && n != "Bot" && n != "Player")
+            {
+                return n;
+            }
         }
         catch { }
 
+        // 3. Fallback: для ботов возвращаем "Bot", для игроков "Player"
         return isBot ? "Bot" : "Player";
     }
 
