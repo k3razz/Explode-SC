@@ -43,5 +43,27 @@
       <HintPath>libs/interop/UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
+    <!-- Unity UI (Canvas, Text, Button, Image, CanvasScaler, GraphicRaycaster) -->
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>libs/interop/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>libs/interop/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Обработка ввода (Input.GetKeyDown) -->
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>libs/interop/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- TextAnchor, FontStyle, Resources.GetBuiltinResource<Font> -->
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>libs/interop/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>
