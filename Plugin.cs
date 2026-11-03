@@ -5,6 +5,7 @@ using BepInEx.Logging;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
 using System.Collections.Generic;
@@ -98,24 +99,52 @@ public class Plugin : BasePlugin
 }
 
 // =========================================================
-//                    KEYBIND LISTENER
+//                    KEYBIND LISTENER (New Input System)
 // =========================================================
 public class KeybindListener : MonoBehaviour
 {
     private float _lastLog;
     private bool _waitingForRelease = false;
 
-    void Awake() { Plugin.LogSource?.LogInfo("[KB] Awake"); }
-    void OnDestroy() { Plugin.LogSource?.LogInfo("[KB] OnDestroy"); }
+    private static readonly Dictionary<KeyCode, Key> KeyMap = new Dictionary<KeyCode, Key>
+    {
+        { KeyCode.A, Key.A }, { KeyCode.B, Key.B }, { KeyCode.C, Key.C }, { KeyCode.D, Key.D },
+        { KeyCode.E, Key.E }, { KeyCode.F, Key.F }, { KeyCode.G, Key.G }, { KeyCode.H, Key.H },
+        { KeyCode.I, Key.I }, { KeyCode.J, Key.J }, { KeyCode.K, Key.K }, { KeyCode.L, Key.L },
+        { KeyCode.M, Key.M }, { KeyCode.N, Key.N }, { KeyCode.O, Key.O }, { KeyCode.P, Key.P },
+        { KeyCode.Q, Key.Q }, { KeyCode.R, Key.R }, { KeyCode.S, Key.S }, { KeyCode.T, Key.T },
+        { KeyCode.U, Key.U }, { KeyCode.V, Key.V }, { KeyCode.W, Key.W }, { KeyCode.X, Key.X },
+        { KeyCode.Y, Key.Y }, { KeyCode.Z, Key.Z },
+        { KeyCode.Alpha0, Key.Digit0 }, { KeyCode.Alpha1, Key.Digit1 }, { KeyCode.Alpha2, Key.Digit2 },
+        { KeyCode.Alpha3, Key.Digit3 }, { KeyCode.Alpha4, Key.Digit4 }, { KeyCode.Alpha5, Key.Digit5 },
+        { KeyCode.Alpha6, Key.Digit6 }, { KeyCode.Alpha7, Key.Digit7 }, { KeyCode.Alpha8, Key.Digit8 },
+        { KeyCode.Alpha9, Key.Digit9 },
+        { KeyCode.F1, Key.F1 }, { KeyCode.F2, Key.F2 }, { KeyCode.F3, Key.F3 }, { KeyCode.F4, Key.F4 },
+        { KeyCode.F5, Key.F5 }, { KeyCode.F6, Key.F6 }, { KeyCode.F7, Key.F7 }, { KeyCode.F8, Key.F8 },
+        { KeyCode.F9, Key.F9 }, { KeyCode.F10, Key.F10 }, { KeyCode.F11, Key.F11 }, { KeyCode.F12, Key.F12 },
+        { KeyCode.Space, Key.Space }, { KeyCode.LeftShift, Key.LeftShift }, { KeyCode.RightShift, Key.RightShift },
+        { KeyCode.LeftControl, Key.LeftCtrl }, { KeyCode.RightControl, Key.RightCtrl },
+        { KeyCode.LeftAlt, Key.LeftAlt }, { KeyCode.RightAlt, Key.RightAlt },
+        { KeyCode.Tab, Key.Tab }, { KeyCode.CapsLock, Key.CapsLock },
+        { KeyCode.Escape, Key.Escape }, { KeyCode.Enter, Key.Enter },
+        { KeyCode.Backspace, Key.Backspace }, { KeyCode.Delete, Key.Delete },
+        { KeyCode.Insert, Key.Insert }, { KeyCode.Home, Key.Home }, { KeyCode.End, Key.End },
+        { KeyCode.PageUp, Key.PageUp }, { KeyCode.PageDown, Key.PageDown },
+        { KeyCode.UpArrow, Key.UpArrow }, { KeyCode.DownArrow, Key.DownArrow },
+        { KeyCode.LeftArrow, Key.LeftArrow }, { KeyCode.RightArrow, Key.RightArrow },
+    };
 
-    void Update()
+    private void Awake() { Plugin.LogSource?.LogInfo("[KB] Awake"); }
+    private void OnDestroy() { Plugin.LogSource?.LogInfo("[KB] OnDestroy"); }
+
+    private void Update()
     {
         try
         {
-            if (Time.realtimeSinceStartup - _lastLog > 3f)
+            if (Time.realtimeSinceStartup - _lastLog > 5f)
             {
                 _lastLog = Time.realtimeSinceStartup;
-                Plugin.LogSource?.LogInfo($"[KB] Tick key={Plugin.AimbotToggleKey} capture={Plugin.CapturingKey}");
+                Plugin.LogSource?.LogInfo($"[KB] Tick key={Plugin.AimbotToggleKey}");
             }
 
             if (Plugin.CapturingKey) { HandleCapture(); return; }
@@ -123,14 +152,7 @@ public class KeybindListener : MonoBehaviour
             if (Plugin.AimbotToggleKey == KeyCode.None) return;
 
             bool kd = false, kdDown = false;
-            try
-            {
-                if (Plugin.AimbotToggleKey == KeyCode.Mouse0) { kd = Input.GetMouseButton(0); kdDown = Input.GetMouseButtonDown(0); }
-                else if (Plugin.AimbotToggleKey == KeyCode.Mouse1) { kd = Input.GetMouseButton(1); kdDown = Input.GetMouseButtonDown(1); }
-                else if (Plugin.AimbotToggleKey == KeyCode.Mouse2) { kd = Input.GetMouseButton(2); kdDown = Input.GetMouseButtonDown(2); }
-                else { kd = Input.GetKey(Plugin.AimbotToggleKey); kdDown = Input.GetKeyDown(Plugin.AimbotToggleKey); }
-            }
-            catch (Exception e) { Plugin.LogSource?.LogError($"[KB] Input EX: {e.Message}"); }
+            GetKeyState(Plugin.AimbotToggleKey, out kd, out kdDown);
 
             if (Plugin.AimbotToggleMode)
             {
@@ -143,15 +165,53 @@ public class KeybindListener : MonoBehaviour
             else
             {
                 EspBehaviour.SetAimbotActive(kd);
-                if (kd) Plugin.LogSource?.LogInfo($"[KB] Hold active");
             }
         }
         catch (Exception e) { Debug.LogError($"[KB] EX: {e.Message}"); }
     }
 
+    private void GetKeyState(KeyCode kc, out bool pressed, out bool pressedThisFrame)
+    {
+        pressed = false;
+        pressedThisFrame = false;
+
+        var kb = Keyboard.current;
+        var mouse = Mouse.current;
+
+        if (kc == KeyCode.Mouse0) { pressed = mouse != null && mouse.leftButton.isPressed; pressedThisFrame = mouse != null && mouse.leftButton.wasPressedThisFrame; return; }
+        if (kc == KeyCode.Mouse1) { pressed = mouse != null && mouse.rightButton.isPressed; pressedThisFrame = mouse != null && mouse.rightButton.wasPressedThisFrame; return; }
+        if (kc == KeyCode.Mouse2) { pressed = mouse != null && mouse.middleButton.isPressed; pressedThisFrame = mouse != null && mouse.middleButton.wasPressedThisFrame; return; }
+        if (kc == KeyCode.Mouse3) { pressed = mouse != null && mouse.backButton.isPressed; pressedThisFrame = mouse != null && mouse.backButton.wasPressedThisFrame; return; }
+        if (kc == KeyCode.Mouse4) { pressed = mouse != null && mouse.forwardButton.isPressed; pressedThisFrame = mouse != null && mouse.forwardButton.wasPressedThisFrame; return; }
+
+        if (KeyMap.TryGetValue(kc, out Key key))
+        {
+            if (kb != null)
+            {
+                var ctrl = kb[key];
+                pressed = ctrl.isPressed;
+                pressedThisFrame = ctrl.wasPressedThisFrame;
+            }
+            return;
+        }
+
+        if (Enum.TryParse<Key>(kc.ToString(), out Key parsed))
+        {
+            if (kb != null)
+            {
+                var ctrl = kb[parsed];
+                pressed = ctrl.isPressed;
+                pressedThisFrame = ctrl.wasPressedThisFrame;
+            }
+        }
+    }
+
     private void HandleCapture()
     {
-        if (Input.GetKeyDown(KeyCode.Escape))
+        var kb = Keyboard.current;
+        var mouse = Mouse.current;
+
+        if (kb != null && kb.escapeKey.wasPressedThisFrame)
         {
             Plugin.AimbotToggleKey = Plugin.CapturingBackup;
             Plugin.CapturingKey = false;
@@ -162,38 +222,43 @@ public class KeybindListener : MonoBehaviour
         if (_waitingForRelease)
         {
             bool anyDown = false;
-            for (int b = 0; b < 3; b++) if (Input.GetMouseButton(b)) { anyDown = true; break; }
+            if (mouse != null && (mouse.leftButton.isPressed || mouse.rightButton.isPressed || mouse.middleButton.isPressed)) anyDown = true;
             if (!anyDown) _waitingForRelease = false;
             return;
         }
 
-        foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
+        if (mouse != null)
         {
-            if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
-            if (Input.GetKeyDown(kc))
-            {
-                Plugin.AimbotToggleKey = kc;
-                Plugin.CapturingKey = false;
-                _waitingForRelease = true;
-                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                Plugin.LogSource?.LogInfo($"[KB] Set {kc}");
-                return;
-            }
+            if (mouse.leftButton.wasPressedThisFrame) { SetBind(KeyCode.Mouse0); return; }
+            if (mouse.rightButton.wasPressedThisFrame) { SetBind(KeyCode.Mouse1); return; }
+            if (mouse.middleButton.wasPressedThisFrame) { SetBind(KeyCode.Mouse2); return; }
         }
 
-        for (int b = 0; b < 3; b++)
+        if (kb != null)
         {
-            if (Input.GetMouseButtonDown(b))
+            foreach (var ctrl in kb.allKeys)
             {
-                KeyCode kc = b == 0 ? KeyCode.Mouse0 : (b == 1 ? KeyCode.Mouse1 : KeyCode.Mouse2);
-                Plugin.AimbotToggleKey = kc;
-                Plugin.CapturingKey = false;
-                _waitingForRelease = true;
-                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                Plugin.LogSource?.LogInfo($"[KB] Set {kc}");
-                return;
+                if (ctrl != null && ctrl.wasPressedThisFrame)
+                {
+                    var k = ctrl.keyCode;
+                    if (k == Key.Escape) continue;
+                    if (Enum.TryParse<KeyCode>(k.ToString(), out KeyCode kc))
+                    {
+                        SetBind(kc);
+                        return;
+                    }
+                }
             }
         }
+    }
+
+    private void SetBind(KeyCode kc)
+    {
+        Plugin.AimbotToggleKey = kc;
+        Plugin.CapturingKey = false;
+        _waitingForRelease = true;
+        if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
+        Plugin.LogSource?.LogInfo($"[KB] Set {kc}");
     }
 
     private bool IsTypingInChat()
