@@ -8,6 +8,7 @@ using Il2CppInterop.Runtime.Injection;
 using System.Collections.Generic;
 using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace MyDynamicESP;
 
@@ -257,13 +258,36 @@ public class EspBehaviour : MonoBehaviour
         return -1;
     }
 
+    // Чтение team через нативный offset (для ботов)
+    int ReadByteAtOffset(object obj, int offset)
+    {
+        try
+        {
+            IntPtr ptr = IntPtr.Zero;
+            if (obj is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cppObj)
+                ptr = il2cppObj.Pointer;
+            else if (obj is Component comp)
+                ptr = comp.Pointer;
+
+            if (ptr == IntPtr.Zero) return -1;
+
+            byte b = Marshal.ReadByte(ptr, offset);
+            return b;
+        }
+        catch (Exception e)
+        {
+            LogThrottled($"readbyte_{offset}", $"[ESP] ReadByte@{offset} EX: {e.Message}", true);
+            return -1;
+        }
+    }
+
     int ReadTeam(Component component, bool isBot)
     {
         if (component == null) return -1;
 
         if (isBot)
         {
-            // 1) botTeamMember напрямую (обычно null)
+            // 1) botTeamMember напрямую
             int team = ReadTeamFromMember(_botTeamMember, component);
             if (team >= 0) return team;
 
@@ -272,51 +296,30 @@ public class EspBehaviour : MonoBehaviour
             {
                 var t = component.GetType();
                 object playerCtrl = null;
-                bool found = false;
 
-                // property crvs
                 var crvsProp = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (crvsProp != null)
-                {
-                    playerCtrl = crvsProp.GetValue(component);
-                    found = true;
-                    LogThrottled($"bot_crvs_prop", $"[ESP] bot.crvs (prop) = {playerCtrl?.GetType().Name ?? "null"}", false);
-                }
+                if (crvsProp != null) playerCtrl = crvsProp.GetValue(component);
 
-                // get_crvs метод
                 if (playerCtrl == null)
                 {
                     var crvsGetter = t.GetMethod("get_crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (crvsGetter != null)
-                    {
-                        playerCtrl = crvsGetter.Invoke(component, null);
-                        found = true;
-                        LogThrottled($"bot_crvs_getter", $"[ESP] bot.get_crvs() = {playerCtrl?.GetType().Name ?? "null"}", false);
-                    }
+                    if (crvsGetter != null) playerCtrl = crvsGetter.Invoke(component, null);
                 }
 
-                // field crvs
                 if (playerCtrl == null)
                 {
                     var crvsField = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (crvsField != null)
-                    {
-                        playerCtrl = crvsField.GetValue(component);
-                        found = true;
-                        LogThrottled($"bot_crvs_field", $"[ESP] bot.crvs (field) = {playerCtrl?.GetType().Name ?? "null"}", false);
-                    }
-                }
-
-                if (!found)
-                {
-                    LogThrottled($"bot_crvs_missing", $"[ESP] bot.crvs NOT FOUND (prop/getter/field all null)", true);
+                    if (crvsField != null) playerCtrl = crvsField.GetValue(component);
                 }
 
                 if (playerCtrl != null)
                 {
                     team = ReadTeamFromMember(_playerTeamMember, playerCtrl);
-                    LogThrottled($"bot_team_via_crvs", $"[ESP] bot team via crvs = {team}", false);
-                    if (team >= 0) return team;
+                    if (team >= 0)
+                    {
+                        LogThrottled($"bot_team_via_crvs", $"[ESP] bot team via crvs = {team}", false);
+                        return team;
+                    }
                 }
             }
             catch (Exception e)
@@ -324,31 +327,16 @@ public class EspBehaviour : MonoBehaviour
                 LogThrottled($"bot_crvs_ex", $"[ESP] Bot crvs EX: {e.Message}", true);
             }
 
-            // 3) Fallback: Controller.cfkc (field) — читаем team напрямую из Controller
-            try
+            // 3) Fallback: Controller.cfkc по offset 0x24 (byte)
+            int offTeam = ReadByteAtOffset(component, 0x24);
+            if (offTeam > 0 && offTeam <= 3)
             {
-                Type search = component.GetType();
-                int depth = 0;
-                while (search != null && search != typeof(object) && depth < 10)
-                {
-                    var cfkcField = search.GetField("cfkc", BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (cfkcField != null)
-                    {
-                        var val = cfkcField.GetValue(component);
-                        if (val != null)
-                        {
-                            int t2 = Convert.ToInt32(val is Enum en ? (object)en : val);
-                            LogThrottled($"bot_cfkc", $"[ESP] bot team via cfkc = {t2} (owner={search.Name})", false);
-                            return t2;
-                        }
-                    }
-                    search = search.BaseType;
-                    depth++;
-                }
+                LogThrottled($"bot_offset_ok", $"[ESP] bot team via offset 0x24 = {offTeam}", false);
+                return offTeam;
             }
-            catch (Exception e)
+            else
             {
-                LogThrottled($"bot_cfkc_ex", $"[ESP] Bot cfkc EX: {e.Message}", true);
+                LogThrottled($"bot_offset_bad", $"[ESP] bot offset 0x24 = {offTeam} (unexpected)", false);
             }
 
             return -1;
