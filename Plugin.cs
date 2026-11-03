@@ -112,7 +112,7 @@ public class EspBehaviour : MonoBehaviour
     // ---- Меню ----
     private const float MenuWidth = 340f;
     private const float MenuHeight = 460f;
-    private const float MenuOffset = 30f; // отступ от кнопки
+    private const float MenuOffset = 30f;
 
     // ---- Круглая кнопка ----
     private const float ButtonRadius = 22f;
@@ -258,7 +258,12 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (_localPlayerProp == null || _teamProp == null) return false;
+            if (_localPlayerProp == null || _teamProp == null)
+            {
+                if (_watchdogTicks % 6 == 0)
+                    Debug.LogWarning($"[ESP] CheckLocalPlayer: props null (localPlayer={_localPlayerProp != null}, team={_teamProp != null})");
+                return false;
+            }
 
             var pmType = _localPlayerProp.DeclaringType;
             object pmInstance = null;
@@ -280,6 +285,10 @@ public class EspBehaviour : MonoBehaviour
                     Debug.Log($"[ESP] Watchdog: Local team changed: {_localTeam} -> {newTeam}");
                     _localTeam = newTeam;
                     _lastLoggedTeam = newTeam;
+                }
+                else if (_watchdogTicks % 6 == 0)
+                {
+                    Debug.Log($"[ESP] CheckLocalPlayer: team={newTeam}");
                 }
             }
             return true;
@@ -325,8 +334,20 @@ public class EspBehaviour : MonoBehaviour
             foreach (var t in _tracked.Values)
             {
                 if (t.Transform == null) { skippedNull++; continue; }
-                if (_localTeam != -1 && t.Team == _localTeam) { skippedOwnTeam++; continue; }
-                if (!IsTeamVisible(t.Team)) { skippedFiltered++; continue; }
+
+                // Свою команду скрываем только если она валидна (не None, не -1)
+                if (_localTeam > 0 && t.Team == _localTeam)
+                {
+                    skippedOwnTeam++;
+                    continue;
+                }
+
+                if (!IsTeamVisible(t.Team))
+                {
+                    skippedFiltered++;
+                    continue;
+                }
+
                 _toDraw.Add(t);
             }
 
@@ -349,10 +370,11 @@ public class EspBehaviour : MonoBehaviour
     {
         switch (team)
         {
-            case 1: return TeamFilter.ShowTr;
-            case 2: return TeamFilter.ShowCt;
-            case 3: return TeamFilter.ShowSpectator;
-            default: return true;
+            case 0: return false;              // None
+            case 1: return TeamFilter.ShowTr;  // Tr
+            case 2: return TeamFilter.ShowCt;  // Ct
+            case 3: return TeamFilter.ShowSpectator; // Spectator
+            default: return true;              // неизвестно — показываем
         }
     }
 
@@ -391,10 +413,42 @@ public class EspBehaviour : MonoBehaviour
             {
                 _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA",
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-                _teamProp = pt.GetProperty("CGGHFHCAFFBBCBB",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
-                Debug.Log($"[ESP] Properties: LocalPlayer={(_localPlayerProp != null)}, Team={(_teamProp != null)}");
+                // Ищем свойство Team вверх по иерархии: PlayerController -> Controller -> ...
+                PropertyInfo foundTeam = null;
+                Type teamOwner = null;
+                Type searchType = pt;
+                int depth = 0;
+                while (searchType != null && searchType != typeof(object) && depth < 10)
+                {
+                    var p = searchType.GetProperty("CGGHFHCAFFBBCBB",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (p != null)
+                    {
+                        foundTeam = p;
+                        teamOwner = searchType;
+                        Debug.Log($"[ESP] Team property found on: {searchType.FullName} (depth={depth})");
+                        break;
+                    }
+                    // Пробуем также как field (если обфускатор сделал поле вместо свойства)
+                    var f = searchType.GetField("CGGHFHCAFFBBCBB",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (f != null)
+                    {
+                        Debug.LogWarning($"[ESP] Team is a FIELD on {searchType.FullName}, not property!");
+                    }
+                    searchType = searchType.BaseType;
+                    depth++;
+                }
+
+                if (foundTeam == null)
+                {
+                    Debug.LogError("[ESP] Team property 'CGGHFHCAFFBBCBB' NOT FOUND in hierarchy!");
+                }
+                _teamProp = foundTeam;
+
+                Debug.Log($"[ESP] Properties: LocalPlayer={(_localPlayerProp != null)}, " +
+                          $"Team={(_teamProp != null)} (owner={teamOwner?.FullName ?? "null"})");
             }
 
             if (_botType == null && _playerType == null)
@@ -469,14 +523,15 @@ public class EspBehaviour : MonoBehaviour
                     _seenList.Add(id);
 
                     int targetTeam = -1;
+                    string rawTeam = "null";
                     if (_teamProp != null)
                     {
                         try
                         {
-                            // Читаем team как byte (enum Team в игре — byte-based)
                             var teamObj = _teamProp.GetValue(c);
                             if (teamObj != null)
                             {
+                                rawTeam = teamObj.ToString();
                                 try { targetTeam = Convert.ToInt32(teamObj); }
                                 catch { targetTeam = -1; }
                             }
@@ -498,7 +553,7 @@ public class EspBehaviour : MonoBehaviour
                     };
 
                     if (isNew)
-                        Debug.Log($"[ESP] +Tracked {label}: name='{name}', team={targetTeam}, id={id}");
+                        Debug.Log($"[ESP] +Tracked {label}: name='{name}', team={targetTeam} (raw='{rawTeam}'), id={id}");
                 }
                 catch (Exception e)
                 {
@@ -576,7 +631,6 @@ public class EspBehaviour : MonoBehaviour
                 Debug.Log($"[ESP] Camera found: {_cam.name}");
             }
 
-            // ---- ESP ----
             if (_espBoxesEnabled || _espNamesEnabled)
             {
                 int drawn = 0, skippedBehind = 0, skippedNull = 0;
@@ -657,7 +711,6 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // ---- Меню или круглая кнопка ----
             if (_menuVisible)
             {
                 DrawMenu();
@@ -677,7 +730,6 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    // ---- Плавающая круглая кнопка ----
     private void DrawFloatingButton()
     {
         if (!_buttonInitialized)
@@ -741,9 +793,6 @@ public class EspBehaviour : MonoBehaviour
             letterH), "E");
     }
 
-    // =========================================================
-    //           Ручная кнопка (без GUI.Button)
-    // =========================================================
     private bool CustomButton(Rect rect, string label, bool state)
     {
         Event e = Event.current;
@@ -773,7 +822,6 @@ public class EspBehaviour : MonoBehaviour
         return clicked;
     }
 
-    // ---- Позиция меню относительно кнопки с учётом границ ----
     private Rect GetMenuRect()
     {
         float sw = Screen.width;
@@ -783,27 +831,19 @@ public class EspBehaviour : MonoBehaviour
         float r = ButtonRadius;
         float offset = MenuOffset;
 
-        // Предпочтительно справа от кнопки
         float x = _buttonCenter.x + r + offset;
-        // Если не влезает справа — слева
         if (x + mw > sw)
             x = _buttonCenter.x - r - offset - mw;
-        // Если и слева не влезает — по центру экрана
         if (x < 0) x = Mathf.Max(0, (sw - mw) / 2f);
 
-        // Y: центрируем по кнопке
         float y = _buttonCenter.y - mh / 2f;
-        // Верхняя граница
         if (y < 0) y = 0;
-        // Нижняя граница
         if (y + mh > sh) y = sh - mh;
-        // Если меню выше экрана — прижимаем к верху
         if (y < 0) y = 0;
 
         return new Rect(x, y, mw, mh);
     }
 
-    // ---- Меню ----
     private void DrawMenu()
     {
         Rect panelRect = GetMenuRect();
