@@ -109,6 +109,11 @@ public class EspBehaviour : MonoBehaviour
     private bool _espDistanceEnabled = true;
     private bool _menuVisible = false;
 
+    // ---- Меню ----
+    private const float MenuWidth = 340f;
+    private const float MenuHeight = 460f;
+    private const float MenuOffset = 30f; // отступ от кнопки
+
     // ---- Круглая кнопка ----
     private const float ButtonRadius = 22f;
     private Vector2 _buttonCenter = new Vector2(-1f, -1f);
@@ -468,8 +473,13 @@ public class EspBehaviour : MonoBehaviour
                     {
                         try
                         {
+                            // Читаем team как byte (enum Team в игре — byte-based)
                             var teamObj = _teamProp.GetValue(c);
-                            if (teamObj != null) targetTeam = Convert.ToInt32(teamObj);
+                            if (teamObj != null)
+                            {
+                                try { targetTeam = Convert.ToInt32(teamObj); }
+                                catch { targetTeam = -1; }
+                            }
                         }
                         catch (Exception e)
                         {
@@ -692,7 +702,6 @@ public class EspBehaviour : MonoBehaviour
                 _dragOffset = mouse - _buttonCenter;
                 _dragStartMouse = mouse;
                 e.Use();
-                Debug.Log("[ESP] Floating button drag started");
             }
             else if (e.type == EventType.MouseDrag && _isDragging)
             {
@@ -708,27 +717,20 @@ public class EspBehaviour : MonoBehaviour
             {
                 _isDragging = false;
 
-                // Открываем меню только если это был клик (без перемещения)
                 if (!_dragMoved)
                 {
                     _menuVisible = true;
                     Debug.Log("[ESP] Floating button clicked -> menu opened");
                 }
-                else
-                {
-                    Debug.Log($"[ESP] Floating button moved to {_buttonCenter}");
-                }
                 e.Use();
             }
         }
 
-        // Круг
         GUI.color = _isDragging
             ? new Color(0.3f, 0.6f, 1f, 0.9f)
             : new Color(0.15f, 0.15f, 0.2f, 0.85f);
         GUI.DrawTexture(btnRect, _circleTex);
 
-        // Буква E по центру
         GUI.color = Color.white;
         float letterW = 14f;
         float letterH = 20f;
@@ -750,40 +752,70 @@ public class EspBehaviour : MonoBehaviour
         if (e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
         {
             clicked = true;
-            Debug.Log($"[ESP] CustomButton '{label}' clicked");
         }
 
-        // Фон
         GUI.color = state
             ? new Color(0.2f, 0.55f, 0.3f, 0.95f)
             : new Color(0.55f, 0.2f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, _whiteTex);
 
-        // Текст по центру (без GUIStyle)
         GUI.color = Color.white;
-        float approxW = label.Length * 7f;
+        float approxCharW = 6.5f;
+        float approxW = label.Length * approxCharW;
+        if (approxW > rect.width - 8f) approxW = rect.width - 8f;
+
         GUI.Label(new Rect(
             rect.x + (rect.width - approxW) / 2f,
             rect.y + (rect.height - 16f) / 2f,
-            approxW,
+            approxW + 4f,
             16f), label);
 
         return clicked;
     }
 
-    // ---- Меню (все кнопки — ручные, без GUI.Button) ----
+    // ---- Позиция меню относительно кнопки с учётом границ ----
+    private Rect GetMenuRect()
+    {
+        float sw = Screen.width;
+        float sh = Screen.height;
+        float mw = MenuWidth;
+        float mh = MenuHeight;
+        float r = ButtonRadius;
+        float offset = MenuOffset;
+
+        // Предпочтительно справа от кнопки
+        float x = _buttonCenter.x + r + offset;
+        // Если не влезает справа — слева
+        if (x + mw > sw)
+            x = _buttonCenter.x - r - offset - mw;
+        // Если и слева не влезает — по центру экрана
+        if (x < 0) x = Mathf.Max(0, (sw - mw) / 2f);
+
+        // Y: центрируем по кнопке
+        float y = _buttonCenter.y - mh / 2f;
+        // Верхняя граница
+        if (y < 0) y = 0;
+        // Нижняя граница
+        if (y + mh > sh) y = sh - mh;
+        // Если меню выше экрана — прижимаем к верху
+        if (y < 0) y = 0;
+
+        return new Rect(x, y, mw, mh);
+    }
+
+    // ---- Меню ----
     private void DrawMenu()
     {
-        Rect panelRect = new Rect(20, 20, 340, 460);
+        Rect panelRect = GetMenuRect();
         GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
         GUI.DrawTexture(panelRect, _whiteTex);
         GUI.color = Color.white;
 
-        GUI.Label(new Rect(panelRect.x + 10, panelRect.y + 8, 320, 25), "<b>DynamicESP</b>");
+        GUI.Label(new Rect(panelRect.x + 10, panelRect.y + 8, panelRect.width - 20, 25), "<b>DynamicESP</b>");
 
         float y = panelRect.y + 40;
         float bx = panelRect.x + 10;
-        float bw = 320;
+        float bw = panelRect.width - 20;
         float bh = 30;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}", _espBoxesEnabled))
