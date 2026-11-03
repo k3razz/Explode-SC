@@ -8,25 +8,25 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- BepInEx core -->
+    <!-- BepInEx core (в libs/) -->
     <Reference Include="BepInEx.Core">
-      <HintPath>libs/core/BepInEx.Core.dll</HintPath>
+      <HintPath>libs/BepInEx.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="BepInEx.Unity.IL2CPP">
-      <HintPath>libs/core/BepInEx.Unity.IL2CPP.dll</HintPath>
+      <HintPath>libs/BepInEx.Unity.IL2CPP.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>libs/core/0Harmony.dll</HintPath>
+      <HintPath>libs/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
-      <HintPath>libs/core/Il2CppInterop.Runtime.dll</HintPath>
+      <HintPath>libs/Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
 
-    <!-- Unity interop + Il2Cppmscorlib — скопируйте из <Игра>/BepInEx/interop/ -->
+    <!-- Unity interop (в libs/interop/) -->
     <Reference Include="Il2Cppmscorlib">
       <HintPath>libs/interop/Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
@@ -44,7 +44,7 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Unity UI (Canvas, Text, Button, Image, CanvasScaler, GraphicRaycaster) -->
+    <!-- Unity UI: Canvas, Text, Button, Image, CanvasScaler, GraphicRaycaster -->
     <Reference Include="UnityEngine.UIModule">
       <HintPath>libs/interop/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
@@ -54,7 +54,7 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Обработка ввода (Input.GetKeyDown) -->
+    <!-- Input.GetKeyDown -->
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>libs/interop/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
