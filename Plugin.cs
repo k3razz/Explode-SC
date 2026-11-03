@@ -120,9 +120,10 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
-    private static MemberInfo _teamMember;
-    private static MemberInfo _teamStaticMember;
-    private static MemberInfo _localPlayerMember;
+    // --- Team members ---
+    private static MemberInfo _playerTeamMember;   // для PlayerController
+    private static MemberInfo _botTeamMember;      // для BotPlayerController
+    private static MemberInfo _localPlayerMember;  // для PlayerManager
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
 
@@ -222,7 +223,7 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, teamMember={_teamMember?.Name ?? "null"}, teamStatic={_teamStaticMember?.Name ?? "null"}, playerType={(_playerType != null ? "found" : "null")}, botType={(_botType != null ? "found" : "null")}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, playerTeam={_playerTeamMember?.Name ?? "null"}, botTeam={_botTeamMember?.Name ?? "null"}, localPlayer={_localPlayerMember?.Name ?? "null"}");
             }
         }
         catch (Exception e)
@@ -231,38 +232,38 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    int ReadTeam(Component component)
+    // =========================================================
+    //                    TEAM READING
+    // =========================================================
+    int ReadTeamFromMember(MemberInfo member, object target)
     {
-        if (component == null) return -1;
+        if (member == null || target == null) return -1;
         try
         {
-            if (_teamMember is MethodInfo instMethod)
-            {
-                var val = instMethod.Invoke(component, null);
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
-            else if (_teamMember is PropertyInfo prop)
-            {
-                var val = prop.GetValue(component);
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
-            else if (_teamMember is FieldInfo field)
-            {
-                var val = field.GetValue(component);
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
+            object val = null;
+            if (member is MethodInfo m) val = m.Invoke(target, null);
+            else if (member is PropertyInfo p) val = p.GetValue(target);
+            else if (member is FieldInfo f) val = f.GetValue(target);
 
-            if (_teamStaticMember is MethodInfo statMethod)
+            if (val != null)
             {
-                var val = statMethod.Invoke(null, new object[] { component });
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
+                if (val is Enum en) return Convert.ToInt32(en);
+                return Convert.ToInt32(val);
             }
         }
         catch (Exception e)
         {
-            LogThrottled($"readteam_{component.GetInstanceID()}", $"[ESP] ReadTeam EX: {e.Message}", true);
+            // Не спамим в консоль — лог только раз в 2 сек на ключ
+            LogThrottled($"readteam_{target.GetHashCode()}", $"[ESP] ReadTeam EX ({member.Name}): {e.Message}", true);
         }
         return -1;
+    }
+
+    int ReadTeam(Component component, bool isBot)
+    {
+        if (component == null) return -1;
+        var member = isBot ? _botTeamMember : _playerTeamMember;
+        return ReadTeamFromMember(member, component);
     }
 
     void UpdateLocalTeam()
@@ -288,7 +289,7 @@ public class EspBehaviour : MonoBehaviour
 
             if (localPlayer == null) return;
 
-            int newTeam = ReadTeamFromObject(localPlayer);
+            int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
             if (newTeam != _localTeam && newTeam >= 0)
             {
                 Plugin.LogSource?.LogInfo($"[ESP] Local team changed: {_localTeam} -> {newTeam}");
@@ -299,35 +300,6 @@ public class EspBehaviour : MonoBehaviour
         {
             LogThrottled("localt_ex", $"[ESP] UpdateLocalTeam EX: {e.Message}", true);
         }
-    }
-
-    int ReadTeamFromObject(object obj)
-    {
-        try
-        {
-            if (_teamMember is MethodInfo instMethod)
-            {
-                var val = instMethod.Invoke(obj, null);
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
-            else if (_teamMember is PropertyInfo prop)
-            {
-                var val = prop.GetValue(obj);
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
-            else if (_teamMember is FieldInfo field)
-            {
-                var val = field.GetValue(obj);
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
-            if (_teamStaticMember is MethodInfo statMethod && obj is Component comp)
-            {
-                var val = statMethod.Invoke(null, new object[] { comp });
-                if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
-            }
-        }
-        catch { }
-        return -1;
     }
 
     void Update()
@@ -401,7 +373,7 @@ public class EspBehaviour : MonoBehaviour
     }
 
     // =========================================================
-    //                    TYPE RESOLUTION (FIXED)
+    //                    TYPE RESOLUTION
     // =========================================================
     private static Type FindTypeByName(string shortName, out string foundFullName)
     {
@@ -410,7 +382,6 @@ public class EspBehaviour : MonoBehaviour
         {
             try
             {
-                // 1) Пробуем прямое полное имя
                 var direct = asm.GetType(shortName);
                 if (direct != null) { foundFullName = direct.FullName; return direct; }
             }
@@ -418,7 +389,6 @@ public class EspBehaviour : MonoBehaviour
 
             try
             {
-                // 2) Перебираем все типы и ищем по короткому имени
                 foreach (var t in asm.GetTypes())
                 {
                     if (t.Name == shortName)
@@ -429,6 +399,48 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
             catch { }
+        }
+        return null;
+    }
+
+    // Ищет team-member вверх по иерархии указанного типа
+    private static MemberInfo FindTeamMember(Type startType, out string ownerName)
+    {
+        ownerName = null;
+        if (startType == null) return null;
+        Type search = startType;
+        int depth = 0;
+        while (search != null && search != typeof(object) && depth < 10)
+        {
+            // instance method без параметров -> Team
+            foreach (var m in search.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                if (m.GetParameters().Length == 0 && IsTeamEnum(m.ReturnType))
+                {
+                    ownerName = $"{search.Name}.{m.Name}()";
+                    return m;
+                }
+            }
+            // property Team
+            foreach (var p in search.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                if (IsTeamEnum(p.PropertyType) && p.GetGetMethod(true) != null)
+                {
+                    ownerName = $"{search.Name}.{p.Name}";
+                    return p;
+                }
+            }
+            // field Team
+            foreach (var f in search.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                if (IsTeamEnum(f.FieldType))
+                {
+                    ownerName = $"{search.Name}.{f.Name}";
+                    return f;
+                }
+            }
+            search = search.BaseType;
+            depth++;
         }
         return null;
     }
@@ -449,53 +461,18 @@ public class EspBehaviour : MonoBehaviour
             if (pt != null) _playerType = Il2CppType.From(pt);
             if (pmType != null) _playerManagerType = Il2CppType.From(pmType);
 
-            _teamMember = null;
-            _teamStaticMember = null;
-
-            if (pt != null)
-            {
-                Type search = pt;
-                int depth = 0;
-                while (search != null && search != typeof(object) && depth < 10 && _teamMember == null)
-                {
-                    foreach (var m in search.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                    {
-                        if (m.GetParameters().Length == 0 && IsTeamEnum(m.ReturnType))
-                        {
-                            _teamMember = m;
-                            Plugin.LogSource?.LogInfo($"[ESP] Team instance method: {search.Name}.{m.Name}() -> {m.ReturnType.Name} (depth={depth})");
-                            break;
-                        }
-                    }
-                    if (_teamMember == null)
-                    {
-                        foreach (var p in search.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                        {
-                            if (IsTeamEnum(p.PropertyType) && p.GetGetMethod(true) != null)
-                            {
-                                _teamMember = p;
-                                Plugin.LogSource?.LogInfo($"[ESP] Team property: {search.Name}.{p.Name} -> {p.PropertyType.Name} (depth={depth})");
-                                break;
-                            }
-                        }
-                    }
-                    search = search.BaseType;
-                    depth++;
-                }
-
-                foreach (var m in pt.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                {
-                    var pars = m.GetParameters();
-                    if (pars.Length == 1 && pars[0].ParameterType == pt && IsTeamEnum(m.ReturnType))
-                    {
-                        _teamStaticMember = m;
-                        Plugin.LogSource?.LogInfo($"[ESP] Team static method: {pt.Name}.{m.Name}({pars[0].ParameterType.Name}) -> {m.ReturnType.Name}");
-                        break;
-                    }
-                }
-            }
-
+            _playerTeamMember = null;
+            _botTeamMember = null;
             _localPlayerMember = null;
+
+            string playerOwner = null, botOwner = null;
+
+            _playerTeamMember = FindTeamMember(pt, out playerOwner);
+            _botTeamMember = FindTeamMember(bt, out botOwner);
+
+            Plugin.LogSource?.LogInfo($"[ESP] Team member Player: {playerOwner ?? "null"}");
+            Plugin.LogSource?.LogInfo($"[ESP] Team member Bot: {botOwner ?? "null"}");
+
             if (pmType != null && pt != null)
             {
                 foreach (var p in pmType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
@@ -521,7 +498,7 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, Team={_teamMember != null}, TeamStatic={_teamStaticMember != null}, LocalPlayer={_localPlayerMember != null}");
+            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, PlayerTeam={_playerTeamMember != null}, BotTeam={_botTeamMember != null}, LocalPlayer={_localPlayerMember != null}");
         }
         catch (Exception e)
         {
@@ -578,7 +555,7 @@ public class EspBehaviour : MonoBehaviour
                     if (_seenList.Contains(id)) continue;
                     _seenList.Add(id);
 
-                    int targetTeam = ReadTeam(c);
+                    int targetTeam = ReadTeam(c, isBot);
                     string name = TryGetName(c, isBot);
                     bool isNew = !_tracked.ContainsKey(id);
                     _tracked[id] = new Tracked
