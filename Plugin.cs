@@ -126,7 +126,7 @@ public class KeybindListener : MonoBehaviour
         { KeyCode.LeftControl, Key.LeftCtrl }, { KeyCode.RightControl, Key.RightCtrl },
         { KeyCode.LeftAlt, Key.LeftAlt }, { KeyCode.RightAlt, Key.RightAlt },
         { KeyCode.Tab, Key.Tab }, { KeyCode.CapsLock, Key.CapsLock },
-        { KeyCode.Escape, Key.Escape }, { KeyCode.Enter, Key.Enter },
+        { KeyCode.Escape, Key.Escape }, { KeyCode.Return, Key.Enter },
         { KeyCode.Backspace, Key.Backspace }, { KeyCode.Delete, Key.Delete },
         { KeyCode.Insert, Key.Insert }, { KeyCode.Home, Key.Home }, { KeyCode.End, Key.End },
         { KeyCode.PageUp, Key.PageUp }, { KeyCode.PageDown, Key.PageDown },
