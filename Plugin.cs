@@ -120,7 +120,7 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
-    private static MemberInfo _teamMember; // Может быть свойством, методом или полем
+    private static MemberInfo _teamMember; 
     private int _localTeam = -1;
 
     private readonly Dictionary<string, float> _lastLogTime = new();
@@ -222,18 +222,18 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    int ReadTeam(object controllerObj)
+    int ReadTeam(Component component)
     {
-        if (controllerObj == null || _teamMember == null) return -1;
+        if (component == null || _teamMember == null) return -1;
         try
         {
             object val = null;
             if (_teamMember is PropertyInfo prop)
-                val = prop.GetValue(controllerObj);
+                val = prop.GetValue(component);
             else if (_teamMember is MethodInfo method)
-                val = method.Invoke(controllerObj, null);
+                val = method.Invoke(component, null);
             else if (_teamMember is FieldInfo field)
-                val = field.GetValue(controllerObj);
+                val = field.GetValue(component);
 
             if (val != null)
             {
@@ -286,14 +286,14 @@ public class EspBehaviour : MonoBehaviour
 
     private bool IsTeamVisible(int team)
     {
-        if (team < 0) return true; // Если команда не определена — показываем
+        if (team < 0) return true; 
 
         switch (team)
         {
             case 0: return true;
-            case 1: return TeamFilter.ShowTr;      // TR (Terrorists)
-            case 2: return TeamFilter.ShowCt;      // CT (Counter-Terrorists)
-            case 3: return TeamFilter.ShowSpectator; // Spectator
+            case 1: return TeamFilter.ShowTr;      
+            case 2: return TeamFilter.ShowCt;      
+            case 3: return TeamFilter.ShowSpectator; 
             default: return true;
         }
     }
@@ -319,7 +319,6 @@ public class EspBehaviour : MonoBehaviour
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
 
-            // Ищем метод или свойство команды в PlayerController
             if (pt != null)
             {
                 foreach (var m in pt.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
@@ -422,7 +421,6 @@ public class EspBehaviour : MonoBehaviour
 
     string TryGetName(Component c, bool isBot)
     {
-        // 1. Ищем строковые свойства (никнеймы) внутри компонента
         try
         {
             var props = c.GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -440,7 +438,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch { }
 
-        // 2. Проверяем уникальное имя GameObject (fallback)
         try
         {
             string n = c.gameObject.name;
@@ -451,7 +448,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch { }
 
-        // 3. Финальный fallback (чтобы боты не назывались одинаково везде)
         return isBot ? "Bot" : "Player";
     }
 
