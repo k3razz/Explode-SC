@@ -1,7 +1,6 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
-using UnityEngine.UI;
 using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using System;
@@ -17,8 +16,10 @@ public class Plugin : BasePlugin
         Log.LogInfo("[ESP] ===== Plugin.Load() =====");
         try
         {
-            IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
-            Log.LogInfo("[ESP] EspBehaviour component added successfully");
+            var go = new GameObject("ESP_Behaviour");
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            go.AddComponent<EspBehaviour>();
+            Log.LogInfo("[ESP] EspBehaviour added via GameObject");
         }
         catch (Exception e)
         {
@@ -36,7 +37,6 @@ public class EspBehaviour : MonoBehaviour
         public bool IsBot;
         public int Team;
         public string Name;
-        public int LastSeenFrame;
     }
 
     private readonly Dictionary<int, Tracked> _tracked = new();
@@ -48,10 +48,9 @@ public class EspBehaviour : MonoBehaviour
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
-    private const float BoxWidth = 60f;
-    private const float BoxHeight = 120f;
-    private const float OutlineThickness = 2f;
     private const float HeadOffset = 1.8f;
+    private const float FootOffset = 0.1f;
+    private const float BoxWidthRatio = 0.4f;
 
     // ---- Настройки функций ----
     private bool _espBoxesEnabled = true;
@@ -59,25 +58,18 @@ public class EspBehaviour : MonoBehaviour
     private bool _espDistanceEnabled = true;
     private bool _menuVisible = false;
 
-    // ---- Unity UI ----
-    private GameObject _menuCanvas;
-    private GameObject _menuPanel;
-
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
-    private static bool _resolveFailed;
 
     private static PropertyInfo _localPlayerProp;
     private static PropertyInfo _teamProp;
     private int _localTeam = -1;
     private int _lastLoggedTeam = -2;
 
-    // ---- Защита от спама логов ----
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 2.0f;
 
-    // ---- Счётчики для отладки ----
     private int _updateCount;
     private float _lastUpdateLog;
     private int _scanCount;
@@ -104,223 +96,34 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex = new Texture2D(1, 1);
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
-            Debug.Log("[ESP] White texture created");
         }
-        catch (Exception e)
-        {
-            Debug.LogError($"[ESP] Awake texture EX: {e}");
-        }
+        catch (Exception e) { Debug.LogError($"[ESP] Awake texture EX: {e}"); }
 
         try
         {
-            BuildMenu();
+            enabled = true;
+            gameObject.SetActive(true);
+            Debug.Log($"[ESP] Awake state: enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
         }
-        catch (Exception e)
-        {
-            Debug.LogError($"[ESP] Awake BuildMenu EX: {e}");
-        }
+        catch (Exception e) { Debug.LogError($"[ESP] Awake activate EX: {e}"); }
+
         Debug.Log("[ESP] ===== Awake() done =====");
+    }
+
+    void Start()
+    {
+        Debug.Log($"[ESP] ===== Start() ===== enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
+        // Разблокируем курсор, чтобы можно было кликать по IMGUI-меню
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+        Debug.Log("[ESP] Cursor unlocked");
     }
 
     void OnDestroy()
     {
         Debug.Log("[ESP] OnDestroy() - cleaning up");
-        try
-        {
-            if (_menuCanvas != null) Destroy(_menuCanvas);
-            if (_whiteTex != null) Destroy(_whiteTex);
-        }
+        try { if (_whiteTex != null) Destroy(_whiteTex); }
         catch (Exception e) { Debug.LogError($"[ESP] OnDestroy EX: {e}"); }
-    }
-
-    // =========================================================
-    //                       UNITY UI MENU
-    // =========================================================
-    private void BuildMenu()
-    {
-        Debug.Log("[ESP] BuildMenu() start");
-        _menuCanvas = new GameObject("ESP_MenuCanvas");
-        DontDestroyOnLoad(_menuCanvas);
-        var canvas = _menuCanvas.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 9999;
-        var scaler = _menuCanvas.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        _menuCanvas.AddComponent<GraphicRaycaster>();
-        Debug.Log("[ESP] Canvas created");
-
-        _menuPanel = new GameObject("Panel");
-        _menuPanel.transform.SetParent(_menuCanvas.transform, false);
-        var panelImg = _menuPanel.AddComponent<Image>();
-        panelImg.color = new Color(0.05f, 0.05f, 0.08f, 0.92f);
-        var panelRect = _menuPanel.GetComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0, 1);
-        panelRect.anchorMax = new Vector2(0, 1);
-        panelRect.pivot = new Vector2(0, 1);
-        panelRect.anchoredPosition = new Vector2(20, -20);
-        panelRect.sizeDelta = new Vector2(320, 300);
-
-        CreateLabel(_menuPanel.transform, "DynamicESP", new Vector2(10, -10), 22, FontStyle.Bold, new Color(1f, 0.8f, 0.3f));
-
-        float y = -55;
-        y = CreateToggle(_menuPanel.transform, "ESP Boxes", y, _espBoxesEnabled, v =>
-        {
-            _espBoxesEnabled = v;
-            Debug.Log($"[ESP] Menu: ESP Boxes = {v}");
-        });
-        y = CreateToggle(_menuPanel.transform, "Names", y, _espNamesEnabled, v =>
-        {
-            _espNamesEnabled = v;
-            Debug.Log($"[ESP] Menu: Names = {v}");
-        });
-        y = CreateToggle(_menuPanel.transform, "Distance", y, _espDistanceEnabled, v =>
-        {
-            _espDistanceEnabled = v;
-            Debug.Log($"[ESP] Menu: Distance = {v}");
-        });
-
-        y -= 10;
-        CreateButton(_menuPanel.transform, "Hide Menu (Insert)", new Vector2(10, y), ToggleMenu);
-
-        _menuPanel.SetActive(false);
-        Debug.Log("[ESP] BuildMenu() done (panel hidden)");
-    }
-
-    private float CreateToggle(Transform parent, string text, float y, bool initial, Action<bool> onChange)
-    {
-        var row = new GameObject("Row_" + text);
-        row.transform.SetParent(parent, false);
-        var rowImg = row.AddComponent<Image>();
-        rowImg.color = new Color(0.12f, 0.12f, 0.16f, 1f);
-        var rowRect = row.GetComponent<RectTransform>();
-        rowRect.anchorMin = new Vector2(0, 1);
-        rowRect.anchorMax = new Vector2(0, 1);
-        rowRect.pivot = new Vector2(0, 1);
-        rowRect.anchoredPosition = new Vector2(10, y);
-        rowRect.sizeDelta = new Vector2(300, 38);
-
-        var txtGo = new GameObject("Label");
-        txtGo.transform.SetParent(row.transform, false);
-        var txt = txtGo.AddComponent<Text>();
-        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        txt.fontSize = 18;
-        txt.color = Color.white;
-        txt.alignment = TextAnchor.MiddleLeft;
-        txt.text = text;
-        var txtRect = txtGo.GetComponent<RectTransform>();
-        txtRect.anchorMin = new Vector2(0, 0);
-        txtRect.anchorMax = new Vector2(1, 1);
-        txtRect.offsetMin = new Vector2(10, 0);
-        txtRect.offsetMax = new Vector2(-70, 0);
-
-        var btnGo = new GameObject("ToggleBtn");
-        btnGo.transform.SetParent(row.transform, false);
-        var btnImg = btnGo.AddComponent<Image>();
-        btnImg.color = initial ? new Color(0.2f, 0.7f, 0.3f, 1f) : new Color(0.6f, 0.2f, 0.2f, 1f);
-        var btnRect = btnGo.GetComponent<RectTransform>();
-        btnRect.anchorMin = new Vector2(1, 0.5f);
-        btnRect.anchorMax = new Vector2(1, 0.5f);
-        btnRect.pivot = new Vector2(1, 0.5f);
-        btnRect.anchoredPosition = new Vector2(-6, 0);
-        btnRect.sizeDelta = new Vector2(56, 28);
-
-        var btnTextGo = new GameObject("Text");
-        btnTextGo.transform.SetParent(btnGo.transform, false);
-        var btnText = btnTextGo.AddComponent<Text>();
-        btnText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        btnText.fontSize = 16;
-        btnText.alignment = TextAnchor.MiddleCenter;
-        btnText.color = Color.white;
-        btnText.text = initial ? "ON" : "OFF";
-        var btnTextRect = btnTextGo.GetComponent<RectTransform>();
-        btnTextRect.anchorMin = Vector2.zero;
-        btnTextRect.anchorMax = Vector2.one;
-        btnTextRect.offsetMin = Vector2.zero;
-        btnTextRect.offsetMax = Vector2.zero;
-
-        var btn = btnGo.AddComponent<Button>();
-        btn.targetGraphic = btnImg;
-        bool state = initial;
-        btn.onClick.AddListener((Action)(() =>
-        {
-            state = !state;
-            btnImg.color = state ? new Color(0.2f, 0.7f, 0.3f, 1f) : new Color(0.6f, 0.2f, 0.2f, 1f);
-            btnText.text = state ? "ON" : "OFF";
-            try { onChange(state); }
-            catch (Exception e) { Debug.LogError($"[ESP] Toggle '{text}' callback EX: {e}"); }
-        }));
-
-        return y - 46;
-    }
-
-    private GameObject CreateLabel(Transform parent, string text, Vector2 pos, int size, FontStyle style, Color color)
-    {
-        var go = new GameObject("Label");
-        go.transform.SetParent(parent, false);
-        var txt = go.AddComponent<Text>();
-        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        txt.fontSize = size;
-        txt.fontStyle = style;
-        txt.color = color;
-        txt.text = text;
-        var rect = go.GetComponent<RectTransform>();
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = pos;
-        rect.sizeDelta = new Vector2(300, 30);
-        return go;
-    }
-
-    private void CreateButton(Transform parent, string text, Vector2 pos, Action onClick)
-    {
-        var go = new GameObject("Button");
-        go.transform.SetParent(parent, false);
-        var img = go.AddComponent<Image>();
-        img.color = new Color(0.2f, 0.35f, 0.6f, 1f);
-        var rect = go.GetComponent<RectTransform>();
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = pos;
-        rect.sizeDelta = new Vector2(300, 36);
-
-        var txtGo = new GameObject("Text");
-        txtGo.transform.SetParent(go.transform, false);
-        var txt = txtGo.AddComponent<Text>();
-        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        txt.fontSize = 18;
-        txt.color = Color.white;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.text = text;
-        var txtRect = txtGo.GetComponent<RectTransform>();
-        txtRect.anchorMin = Vector2.zero;
-        txtRect.anchorMax = Vector2.one;
-        txtRect.offsetMin = Vector2.zero;
-        txtRect.offsetMax = Vector2.zero;
-
-        var btn = go.AddComponent<Button>();
-        btn.targetGraphic = img;
-        btn.onClick.AddListener((Action)(() =>
-        {
-            try { onClick(); }
-            catch (Exception e) { Debug.LogError($"[ESP] Button '{text}' EX: {e}"); }
-        }));
-    }
-
-    private void ToggleMenu()
-    {
-        if (_menuPanel == null)
-        {
-            Debug.LogError("[ESP] ToggleMenu: _menuPanel is null!");
-            return;
-        }
-        _menuVisible = !_menuVisible;
-        _menuPanel.SetActive(_menuVisible);
-        Cursor.visible = _menuVisible;
-        Cursor.lockState = _menuVisible ? CursorLockMode.None : CursorLockMode.Locked;
-        Debug.Log($"[ESP] Menu toggled: visible={_menuVisible}, cursor={(_menuVisible ? "unlocked" : "locked")}");
     }
 
     // =========================================================
@@ -332,26 +135,20 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
-            // ---- Ввод: Insert (основной) + F1 (альтернативный) ----
             try
             {
                 if (Input.GetKeyDown(KeyCode.Insert))
                 {
-                    Debug.Log("[ESP] Insert pressed -> toggling menu");
-                    ToggleMenu();
-                }
-                else if (Input.GetKeyDown(KeyCode.F1))
-                {
-                    Debug.Log("[ESP] F1 pressed -> toggling menu");
-                    ToggleMenu();
+                    Debug.Log("[ESP] Insert pressed");
+                    _menuVisible = !_menuVisible;
+                    Debug.Log($"[ESP] Menu toggled: visible={_menuVisible}");
                 }
             }
             catch (Exception e)
             {
-                LogThrottled("input_ex", $"[ESP] Input.GetKeyDown EX: {e.Message}", true);
+                LogThrottled("input_ex", $"[ESP] Input EX: {e.Message}", true);
             }
 
-            // Периодический скан
             _scanTimer += Time.deltaTime;
             if (_scanTimer >= ScanInterval)
             {
@@ -359,7 +156,6 @@ public class EspBehaviour : MonoBehaviour
                 DoScan();
             }
 
-            // Формируем список для отрисовки
             _toDraw.Clear();
             int skippedOwnTeam = 0, skippedNull = 0;
             foreach (var t in _tracked.Values)
@@ -374,9 +170,7 @@ public class EspBehaviour : MonoBehaviour
                 _lastUpdateLog = Time.realtimeSinceStartup;
                 Debug.Log($"[ESP] Update alive: tracked={_tracked.Count}, draw={_toDraw.Count}, " +
                           $"skippedOwnTeam={skippedOwnTeam}, skippedNull={skippedNull}, " +
-                          $"localTeam={_localTeam}, menu={_menuVisible}, " +
-                          $"boxes={_espBoxesEnabled}, names={_espNamesEnabled}, dist={_espDistanceEnabled}, " +
-                          $"updates={_updateCount}");
+                          $"localTeam={_localTeam}, menu={_menuVisible}, updates={_updateCount}");
             }
         }
         catch (Exception e)
@@ -428,18 +222,12 @@ public class EspBehaviour : MonoBehaviour
             }
 
             if (_botType == null && _playerType == null)
-            {
-                _resolveFailed = true;
                 Debug.LogError("[ESP] ResolveTypes: NO types resolved! ESP will not work.");
-            }
             else
-            {
                 Debug.Log($"[ESP] ResolveTypes OK: Bot={_botType != null}, Player={_playerType != null}");
-            }
         }
         catch (Exception e)
         {
-            _resolveFailed = true;
             Debug.LogError($"[ESP] ResolveTypes FATAL EX: {e}");
         }
     }
@@ -579,15 +367,13 @@ public class EspBehaviour : MonoBehaviour
                     }
 
                     string name = TryGetName(c, isBot);
-
                     bool isNew = !_tracked.ContainsKey(id);
                     _tracked[id] = new Tracked
                     {
                         Transform = tr,
                         IsBot = isBot,
                         Team = targetTeam,
-                        Name = name,
-                        LastSeenFrame = Time.frameCount
+                        Name = name
                     };
 
                     if (isNew)
@@ -640,33 +426,18 @@ public class EspBehaviour : MonoBehaviour
     }
 
     // =========================================================
-    //                       OnGUI (ESP + кнопка меню)
+    //                       OnGUI (ESP + IMGUI меню)
     // =========================================================
     void OnGUI()
     {
         _guiFrameCount++;
         try
         {
-            // Кнопка открытия меню (fallback, если клавиши перехвачены игрой)
-            if (GUI.Button(new Rect(10, 10, 170, 30), _menuVisible ? "Close ESP Menu (Insert)" : "Open ESP Menu (Insert)"))
-            {
-                Debug.Log("[ESP] Menu button clicked");
-                ToggleMenu();
-            }
-
-            if (!_espBoxesEnabled && !_espNamesEnabled)
-            {
-                if (_guiFrameCount % 600 == 0)
-                    Debug.Log($"[ESP] OnGUI: all ESP disabled, drawing nothing (frame {_guiFrameCount})");
-                return;
-            }
-
             if (_whiteTex == null)
             {
                 _whiteTex = new Texture2D(1, 1);
                 _whiteTex.SetPixel(0, 0, Color.white);
                 _whiteTex.Apply();
-                Debug.LogWarning("[ESP] OnGUI: _whiteTex was null, recreated");
             }
 
             if (_cam == null)
@@ -677,80 +448,140 @@ public class EspBehaviour : MonoBehaviour
                     LogThrottled("no_cam", "[ESP] OnGUI: Camera.main is null!", true);
                     return;
                 }
-                Debug.Log($"[ESP] Camera found: {_cam.name}, pos={_cam.transform.position}");
+                Debug.Log($"[ESP] Camera found: {_cam.name}");
             }
 
-            int drawn = 0, skippedBehind = 0, skippedNull = 0;
-            foreach (var t in _toDraw)
+            // ---- ESP отрисовка ----
+            if (_espBoxesEnabled || _espNamesEnabled)
             {
-                try
+                int drawn = 0, skippedBehind = 0, skippedNull = 0;
+                foreach (var t in _toDraw)
                 {
-                    Vector3 headWorld;
-                    if (t.Transform == null) { skippedNull++; continue; }
-                    headWorld = t.Transform.position + Vector3.up * HeadOffset;
-
-                    Vector3 screen = _cam.WorldToScreenPoint(headWorld);
-                    if (screen.z < 0) { skippedBehind++; continue; }
-
-                    float x = screen.x;
-                    float y = Screen.height - screen.y;
-                    float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
-
-                    if (_espBoxesEnabled)
+                    try
                     {
-                        float bw = BoxWidth;
-                        float bh = BoxHeight;
-                        float th = OutlineThickness;
-                        float left = x - bw / 2f;
-                        float top = y;
-                        float bottom = y + bh;
+                        if (t.Transform == null) { skippedNull++; continue; }
 
-                        Color fillColor = t.Team == 1
-                            ? new Color(1f, 0f, 0f, 0.12f)
-                            : new Color(0f, 0.5f, 1f, 0.12f);
-                        Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
+                        Vector3 headWorld = t.Transform.position + Vector3.up * HeadOffset;
+                        Vector3 footWorld = t.Transform.position - Vector3.up * FootOffset;
 
-                        GUI.color = fillColor;
-                        GUI.DrawTexture(new Rect(left, top, bw, bh), _whiteTex);
+                        Vector3 screenHead = _cam.WorldToScreenPoint(headWorld);
+                        Vector3 screenFoot = _cam.WorldToScreenPoint(footWorld);
 
-                        GUI.color = outlineColor;
-                        GUI.DrawTexture(new Rect(left, top, bw, th), _whiteTex);
-                        GUI.DrawTexture(new Rect(left, bottom - th, bw, th), _whiteTex);
-                        GUI.DrawTexture(new Rect(left, top, th, bh), _whiteTex);
-                        GUI.DrawTexture(new Rect(left + bw - th, top, th, bh), _whiteTex);
-                        GUI.color = Color.white;
+                        if (screenHead.z < 0 || screenFoot.z < 0) { skippedBehind++; continue; }
+
+                        float x = screenHead.x;
+                        float top = Screen.height - screenHead.y;
+                        float bottom = Screen.height - screenFoot.y;
+                        float height = Mathf.Abs(bottom - top);
+                        float width = height * BoxWidthRatio;
+                        if (width < 4f) width = 4f;
+                        if (height < 8f) height = 8f;
+
+                        float left = x - width / 2f;
+                        float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
+
+                        if (_espBoxesEnabled)
+                        {
+                            float th = 2f;
+                            Color fillColor = t.Team == 1
+                                ? new Color(1f, 0f, 0f, 0.12f)
+                                : new Color(0f, 0.5f, 1f, 0.12f);
+                            Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
+
+                            GUI.color = fillColor;
+                            GUI.DrawTexture(new Rect(left, top, width, height), _whiteTex);
+
+                            GUI.color = outlineColor;
+                            GUI.DrawTexture(new Rect(left, top, width, th), _whiteTex);
+                            GUI.DrawTexture(new Rect(left, top + height - th, width, th), _whiteTex);
+                            GUI.DrawTexture(new Rect(left, top, th, height), _whiteTex);
+                            GUI.DrawTexture(new Rect(left + width - th, top, th, height), _whiteTex);
+                            GUI.color = Color.white;
+                        }
+
+                        if (_espNamesEnabled)
+                        {
+                            string label = string.IsNullOrEmpty(t.Name)
+                                ? (t.IsBot ? "BOT" : "PLAYER")
+                                : t.Name;
+                            if (_espDistanceEnabled)
+                                label += $" [{dist:F0}m]";
+
+                            float approxWidth = label.Length * 7f;
+                            float labelLeft = x - approxWidth / 2f;
+
+                            GUI.color = Color.black;
+                            GUI.Label(new Rect(labelLeft - 1f, top - 19f, approxWidth, 20f), label);
+                            GUI.Label(new Rect(labelLeft + 1f, top - 17f, approxWidth, 20f), label);
+                            GUI.color = Color.white;
+                            GUI.Label(new Rect(labelLeft, top - 18f, approxWidth, 20f), label);
+                        }
+
+                        drawn++;
                     }
-
-                    if (_espNamesEnabled)
+                    catch (Exception e)
                     {
-                        string label = string.IsNullOrEmpty(t.Name)
-                            ? (t.IsBot ? "BOT" : "PLAYER")
-                            : t.Name;
-                        if (_espDistanceEnabled)
-                            label += $" [{dist:F0}m]";
-
-                        float approxWidth = label.Length * 7f;
-                        float left = x - approxWidth / 2f;
-
-                        GUI.color = Color.black;
-                        GUI.Label(new Rect(left - 1f, y - 19f, approxWidth, 20f), label);
-                        GUI.Label(new Rect(left + 1f, y - 17f, approxWidth, 20f), label);
-                        GUI.color = Color.white;
-                        GUI.Label(new Rect(left, y - 18f, approxWidth, 20f), label);
+                        LogThrottled("gui_item", $"[ESP] OnGUI item EX: {e.Message}", true);
                     }
-
-                    drawn++;
                 }
-                catch (Exception e)
+
+                if (_guiFrameCount % 600 == 0 && _toDraw.Count > 0)
                 {
-                    LogThrottled("gui_item", $"[ESP] OnGUI item EX: {e.Message}", true);
+                    Debug.Log($"[ESP] OnGUI: drawn={drawn}, total={_toDraw.Count}, " +
+                              $"skippedBehind={skippedBehind}, skippedNull={skippedNull}");
                 }
             }
 
-            if (_guiFrameCount % 600 == 0 && _toDraw.Count > 0)
+            // ---- IMGUI меню ----
+            if (_menuVisible)
             {
-                Debug.Log($"[ESP] OnGUI: drawn={drawn}, total={_toDraw.Count}, " +
-                          $"skippedBehind={skippedBehind}, skippedNull={skippedNull}");
+                Rect panelRect = new Rect(20, 20, 300, 260);
+                GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
+                GUI.DrawTexture(panelRect, _whiteTex);
+                GUI.color = Color.white;
+
+                GUI.Label(new Rect(panelRect.x + 10, panelRect.y + 10, 280, 25), "<b>DynamicESP</b>");
+
+                float y = panelRect.y + 40;
+
+                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30),
+                    $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}"))
+                {
+                    _espBoxesEnabled = !_espBoxesEnabled;
+                    Debug.Log($"[ESP] ESP Boxes = {_espBoxesEnabled}");
+                }
+                y += 36;
+
+                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30),
+                    $"Names: {(_espNamesEnabled ? "ON" : "OFF")}"))
+                {
+                    _espNamesEnabled = !_espNamesEnabled;
+                    Debug.Log($"[ESP] Names = {_espNamesEnabled}");
+                }
+                y += 36;
+
+                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30),
+                    $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}"))
+                {
+                    _espDistanceEnabled = !_espDistanceEnabled;
+                    Debug.Log($"[ESP] Distance = {_espDistanceEnabled}");
+                }
+                y += 36;
+
+                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30), "Hide Menu (Insert)"))
+                {
+                    _menuVisible = false;
+                    Debug.Log("[ESP] Menu hidden via button");
+                }
+            }
+            else
+            {
+                // Маленькая кнопка для открытия меню
+                if (GUI.Button(new Rect(10, 10, 170, 30), "Open ESP Menu (Insert)"))
+                {
+                    _menuVisible = true;
+                    Debug.Log("[ESP] Menu opened via button");
+                }
             }
         }
         catch (Exception e)
