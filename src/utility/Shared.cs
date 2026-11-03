@@ -18,11 +18,14 @@ public static class KeybindState
     public static KeyCode CapturingBackup = KeyCode.None;
 
     public static KeyCode MenuKey = KeyCode.Insert;
-    public static bool MenuOpen = false;
-    public static float MenuAnimTime = 0f;
-    public static bool IntroPlayed = false;
 
-    // Оптимизация: последнее состояние клавиши, чтобы не дёргать Input каждый кадр
+    public static bool IntroPlayed = false;  
+    public static bool IntroActive = false;   
+    public static float IntroAnimTime = 0f;
+    public static bool IntroDone = false;   
+
+    public static bool MenuOpen = false;
+    public static float MenuAnimTime = 0f;  
     public static bool LastKeyState = false;
 }
 
