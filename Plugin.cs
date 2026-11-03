@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.Injection;
 using System.Collections.Generic;
 using System;
 using System.Reflection;
@@ -16,10 +17,55 @@ public class Plugin : BasePlugin
         Log.LogInfo("[ESP] ===== Plugin.Load() =====");
         try
         {
+            // 1. Регистрируем тип в IL2CPP-домене
+            ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
+            Log.LogInfo("[ESP] EspBehaviour registered in IL2CPP");
+
+            // 2. Создаём GameObject
             var go = new GameObject("ESP_Behaviour");
             UnityEngine.Object.DontDestroyOnLoad(go);
-            go.AddComponent<EspBehaviour>();
-            Log.LogInfo("[ESP] EspBehaviour added via GameObject");
+            Log.LogInfo("[ESP] GameObject 'ESP_Behaviour' created");
+
+            // 3. Пытаемся добавить компонент non-generic способом
+            bool added = false;
+            try
+            {
+                var il2cppType = Il2CppType.From(typeof(EspBehaviour)).TryCast<Il2CppSystem.Type>();
+                if (il2cppType != null)
+                {
+                    go.AddComponent(il2cppType);
+                    added = true;
+                    Log.LogInfo("[ESP] EspBehaviour added via non-generic AddComponent(Type)");
+                }
+                else
+                {
+                    Log.LogWarning("[ESP] Il2CppType.From returned null after TryCast");
+                }
+            }
+            catch (Exception inner)
+            {
+                Log.LogWarning($"[ESP] Non-generic AddComponent failed: {inner.GetType().Name}: {inner.Message}");
+            }
+
+            // 4. Fallback на generic
+            if (!added)
+            {
+                try
+                {
+                    go.AddComponent<EspBehaviour>();
+                    added = true;
+                    Log.LogInfo("[ESP] EspBehaviour added via generic AddComponent<T>()");
+                }
+                catch (Exception inner)
+                {
+                    Log.LogError($"[ESP] Generic AddComponent also failed: {inner}");
+                }
+            }
+
+            if (added)
+                Log.LogInfo("[ESP] EspBehaviour successfully attached");
+            else
+                Log.LogError("[ESP] FAILED to attach EspBehaviour - ESP will not work");
         }
         catch (Exception e)
         {
@@ -113,7 +159,6 @@ public class EspBehaviour : MonoBehaviour
     void Start()
     {
         Debug.Log($"[ESP] ===== Start() ===== enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
-        // Разблокируем курсор, чтобы можно было кликать по IMGUI-меню
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
         Debug.Log("[ESP] Cursor unlocked");
@@ -576,7 +621,6 @@ public class EspBehaviour : MonoBehaviour
             }
             else
             {
-                // Маленькая кнопка для открытия меню
                 if (GUI.Button(new Rect(10, 10, 170, 30), "Open ESP Menu (Insert)"))
                 {
                     _menuVisible = true;
