@@ -53,11 +53,11 @@ public class KeybindListener : MonoBehaviour
 
             var kb = Keyboard.current;
 
-            // Открытие/закрытие меню — Insert
+            // Insert — открыть/закрыть меню
             if (kb != null && kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing)
             {
                 KeybindState.MenuOpen = !KeybindState.MenuOpen;
-                KeybindState.MenuAnimTime = 0f;
+                KeybindState.MenuAnimTime = KeybindState.MenuOpen ? 0f : 1f;
                 UiState.MenuVisible = KeybindState.MenuOpen;
                 UiState.MenuTab = 0;
                 Plugin.LogSource?.LogInfo($"[ESP] Menu {(KeybindState.MenuOpen ? "opened" : "closed")}");
@@ -67,20 +67,24 @@ public class KeybindListener : MonoBehaviour
             if (IsTypingInChat()) return;
             if (KeybindState.AimbotKey == KeyCode.None) return;
 
-            bool kd, kdDown;
+            // Оптимизация: сначала проверяем, что кнопка вообще нажата (быстрый путь)
+            bool kd = false, kdDown = false;
             GetKeyState(KeybindState.AimbotKey, out kd, out kdDown);
 
-            if (KeybindState.ToggleMode)
+            // Если состояние не изменилось и не ToggleMode — не делаем ничего
+            if (!KeybindState.ToggleMode)
+            {
+                if (kd == KeybindState.LastKeyState) return;
+                KeybindState.LastKeyState = kd;
+                AimbotState.Active = kd;
+            }
+            else
             {
                 if (kdDown)
                 {
                     AimbotState.Active = !AimbotState.Active;
                     Plugin.LogSource?.LogInfo($"[ESP] Aimbot toggled: {AimbotState.Active}");
                 }
-            }
-            else
-            {
-                AimbotState.Active = kd;
             }
         }
         catch (Exception e) { Debug.LogError($"[KB] EX: {e.Message}"); }
@@ -94,29 +98,27 @@ public class KeybindListener : MonoBehaviour
         var kb = Keyboard.current;
         var mouse = Mouse.current;
 
+        // Мышь — отдельные поля, без словаря
         if (kc == KeyCode.Mouse0) { pressed = mouse != null && mouse.leftButton.isPressed; pressedThisFrame = mouse != null && mouse.leftButton.wasPressedThisFrame; return; }
         if (kc == KeyCode.Mouse1) { pressed = mouse != null && mouse.rightButton.isPressed; pressedThisFrame = mouse != null && mouse.rightButton.wasPressedThisFrame; return; }
         if (kc == KeyCode.Mouse2) { pressed = mouse != null && mouse.middleButton.isPressed; pressedThisFrame = mouse != null && mouse.middleButton.wasPressedThisFrame; return; }
 
+        if (kb == null) return;
+
+        // Клавиатура — сначала словарь, потом Enum.TryParse (один раз при первом вызове)
         if (KeyMap.TryGetValue(kc, out Key key))
         {
-            if (kb != null)
-            {
-                var ctrl = kb[key];
-                pressed = ctrl.isPressed;
-                pressedThisFrame = ctrl.wasPressedThisFrame;
-            }
+            var ctrl = kb[key];
+            pressed = ctrl.isPressed;
+            pressedThisFrame = ctrl.wasPressedThisFrame;
             return;
         }
 
         if (Enum.TryParse<Key>(kc.ToString(), out Key parsed))
         {
-            if (kb != null)
-            {
-                var ctrl = kb[parsed];
-                pressed = ctrl.isPressed;
-                pressedThisFrame = ctrl.wasPressedThisFrame;
-            }
+            var ctrl = kb[parsed];
+            pressed = ctrl.isPressed;
+            pressedThisFrame = ctrl.wasPressedThisFrame;
         }
     }
 
