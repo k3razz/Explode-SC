@@ -48,7 +48,19 @@ public class KeybindListener : MonoBehaviour
             if (Time.realtimeSinceStartup - _lastLog > 5f)
             {
                 _lastLog = Time.realtimeSinceStartup;
-                Plugin.LogSource?.LogInfo($"[KB] Tick key={KeybindState.AimbotKey}");
+                Plugin.LogSource?.LogInfo($"[KB] Tick key={KeybindState.AimbotKey} menu={KeybindState.MenuOpen}");
+            }
+
+            var kb = Keyboard.current;
+
+            // Открытие/закрытие меню — Insert
+            if (kb != null && kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing)
+            {
+                KeybindState.MenuOpen = !KeybindState.MenuOpen;
+                KeybindState.MenuAnimTime = 0f;
+                UiState.MenuVisible = KeybindState.MenuOpen;
+                UiState.MenuTab = 0;
+                Plugin.LogSource?.LogInfo($"[ESP] Menu {(KeybindState.MenuOpen ? "opened" : "closed")}");
             }
 
             if (KeybindState.Capturing) { HandleCapture(); return; }
