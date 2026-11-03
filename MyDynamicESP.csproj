@@ -8,10 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Plugin.cs в корне + все .cs в src/ -->
-    <Compile Include="Plugin.cs" />
-    <Compile Include="src/**/*.cs" />
-
     <Reference Include="BepInEx.Core">
       <HintPath>libs/BepInEx.Core.dll</HintPath>
       <Private>false</Private>
