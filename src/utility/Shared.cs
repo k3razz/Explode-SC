@@ -16,6 +16,11 @@ public static class KeybindState
     public static bool ToggleMode = false;
     public static bool Capturing = false;
     public static KeyCode CapturingBackup = KeyCode.None;
+
+    // Меню
+    public static KeyCode MenuKey = KeyCode.Insert;
+    public static bool MenuOpen = false;
+    public static float MenuAnimTime = 0f; // секунды с момента открытия
 }
 
 public static class AimbotState
@@ -31,7 +36,5 @@ public static class AimbotState
 public static class UiState
 {
     public static bool MenuVisible = false;
-    public static Vector2 ButtonPos = new Vector2(-1f, -1f);
-    public static bool ButtonInitialized = false;
     public static int MenuTab = 0;
 }
