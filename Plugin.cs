@@ -3,7 +3,6 @@ using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.InputSystem;
 using Il2CppInterop.Runtime;
@@ -89,17 +88,41 @@ public class Plugin : BasePlugin
 
             Log.LogInfo($"[ESP] Aimbot key: {AimbotToggleKey}, mode: {AimbotToggleMode}");
 
-            AddComponent<EspBehaviour>();
+            ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
+            ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
+
+            // KeybindListener — на объекте плагина (работает)
             AddComponent<KeybindListener>();
 
-            Log.LogInfo("[ESP] Components added via AddComponent<T>()");
+            // EspBehaviour — на своём GameObject с DontDestroyOnLoad
+            var go = new GameObject("ESP_Behaviour");
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            var espType = Il2CppType.From(typeof(EspBehaviour)).TryCast<Il2CppSystem.Type>();
+            if (espType != null)
+            {
+                go.AddComponent(espType);
+                Log.LogInfo("[ESP] EspBehaviour added to new GameObject");
+            }
+            else
+            {
+                Log.LogError("[ESP] Failed to get Il2CppType for EspBehaviour");
+            }
+
+            SceneManager.sceneLoaded += (Action<Scene, LoadSceneMode>)OnSceneLoaded;
+
+            Log.LogInfo("[ESP] Components added");
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
+    }
+
+    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        LogSource?.LogInfo($"[ESP] Scene loaded: '{scene.name}' ({mode})");
     }
 }
 
 // =========================================================
-//                    KEYBIND LISTENER (New Input System)
+//                    KEYBIND LISTENER
 // =========================================================
 public class KeybindListener : MonoBehaviour
 {
@@ -181,8 +204,6 @@ public class KeybindListener : MonoBehaviour
         if (kc == KeyCode.Mouse0) { pressed = mouse != null && mouse.leftButton.isPressed; pressedThisFrame = mouse != null && mouse.leftButton.wasPressedThisFrame; return; }
         if (kc == KeyCode.Mouse1) { pressed = mouse != null && mouse.rightButton.isPressed; pressedThisFrame = mouse != null && mouse.rightButton.wasPressedThisFrame; return; }
         if (kc == KeyCode.Mouse2) { pressed = mouse != null && mouse.middleButton.isPressed; pressedThisFrame = mouse != null && mouse.middleButton.wasPressedThisFrame; return; }
-        if (kc == KeyCode.Mouse3) { pressed = mouse != null && mouse.backButton.isPressed; pressedThisFrame = mouse != null && mouse.backButton.wasPressedThisFrame; return; }
-        if (kc == KeyCode.Mouse4) { pressed = mouse != null && mouse.forwardButton.isPressed; pressedThisFrame = mouse != null && mouse.forwardButton.wasPressedThisFrame; return; }
 
         if (KeyMap.TryGetValue(kc, out Key key))
         {
@@ -334,13 +355,9 @@ public class EspBehaviour : MonoBehaviour
     private const float MenuOffset = 30f;
     private const float TabWidth = 120f;
 
-    private GameObject _btnCanvas;
-    private RectTransform _btnRect;
+    // Кнопка — просто флаг + координаты, рисуется через GUI.Button в OnGUI
     private Vector2 _btnPos = new Vector2(-1f, -1f);
     private bool _btnInitialized = false;
-    private bool _btnMoved = false;
-    private Vector2 _btnDragOffset;
-    private Vector2 _btnDragStart;
 
     private bool _aimbotEnabled = false;
     private float _aimbotFov = 15f;
@@ -376,6 +393,7 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            Debug.Log("[ESP] ===== Awake() =====");
             _whiteTex = new Texture2D(1, 1);
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
@@ -383,10 +401,14 @@ public class EspBehaviour : MonoBehaviour
             GetCircleTex();
             GetRingTex();
 
+            if (!_btnInitialized)
+            {
+                _btnPos = new Vector2(Screen.width / 2f, Screen.height / 2f);
+                _btnInitialized = true;
+            }
+
             enabled = true;
             gameObject.SetActive(true);
-
-            BuildButtonCanvas();
 
             if (Plugin.CfgEspBoxes != null) _espBoxesEnabled = Plugin.CfgEspBoxes.Value;
             if (Plugin.CfgEspNames != null) _espNamesEnabled = Plugin.CfgEspNames.Value;
@@ -396,6 +418,8 @@ public class EspBehaviour : MonoBehaviour
             if (Plugin.CfgAimbotSmooth != null) _aimbotSmooth = Plugin.CfgAimbotSmooth.Value;
             if (Plugin.CfgAimbotTargetTeammates != null) _aimbotTargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
             if (Plugin.CfgAimbotVisibilityCheck != null) _aimbotVisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
+
+            Debug.Log("[ESP] ===== Awake() done =====");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
     }
@@ -450,120 +474,6 @@ public class EspBehaviour : MonoBehaviour
         tex.Apply();
         _ringTex = tex;
         return tex;
-    }
-
-    private void BuildButtonCanvas()
-    {
-        try
-        {
-            _btnCanvas = new GameObject("ESP_BtnCanvas");
-            DontDestroyOnLoad(_btnCanvas);
-            var canvas = _btnCanvas.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 9998;
-            var scaler = _btnCanvas.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-            _btnCanvas.AddComponent<GraphicRaycaster>();
-
-            var btnGo = new GameObject("ESP_E_Button");
-            btnGo.transform.SetParent(_btnCanvas.transform, false);
-
-            var img = btnGo.AddComponent<Image>();
-            var btnTex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
-            btnTex.filterMode = FilterMode.Point;
-            btnTex.wrapMode = TextureWrapMode.Clamp;
-            var pixels = new Color32[32 * 32];
-            float center = 16f;
-            float radius = 15f;
-            for (int y = 0; y < 32; y++)
-                for (int x = 0; x < 32; x++)
-                {
-                    float dx = x - center + 0.5f, dy = y - center + 0.5f;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    byte a = dist <= radius ? (byte)255 : (byte)0;
-                    pixels[y * 32 + x] = new Color32(40, 40, 60, a);
-                }
-            btnTex.SetPixels32(pixels);
-            btnTex.Apply();
-            img.sprite = Sprite.Create(btnTex, new Rect(0, 0, 32, 32), new Vector2(0.5f, 0.5f));
-            img.raycastTarget = true;
-
-            var txtGo = new GameObject("E_Label");
-            txtGo.transform.SetParent(btnGo.transform, false);
-            var txt = txtGo.AddComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            txt.fontSize = 22;
-            txt.color = Color.white;
-            txt.alignment = TextAnchor.MiddleCenter;
-            txt.text = "E";
-            var txtRect = txtGo.GetComponent<RectTransform>();
-            txtRect.anchorMin = Vector2.zero;
-            txtRect.anchorMax = Vector2.one;
-            txtRect.offsetMin = Vector2.zero;
-            txtRect.offsetMax = Vector2.zero;
-
-            _btnRect = btnGo.GetComponent<RectTransform>();
-            _btnRect.anchorMin = new Vector2(0, 0);
-            _btnRect.anchorMax = new Vector2(0, 0);
-            _btnRect.pivot = new Vector2(0.5f, 0.5f);
-            _btnRect.sizeDelta = new Vector2(44, 44);
-
-            if (!_btnInitialized)
-            {
-                _btnPos = new Vector2(Screen.width / 2f, Screen.height / 2f);
-                _btnInitialized = true;
-            }
-            _btnRect.anchoredPosition = _btnPos;
-
-            var trigger = btnGo.AddComponent<UnityEngine.EventSystems.EventTrigger>();
-
-            var downEntry = new UnityEngine.EventSystems.EventTrigger.Entry { eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown };
-            downEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
-            {
-                try
-                {
-                    var ped = data.TryCast<UnityEngine.EventSystems.PointerEventData>();
-                    Vector2 mouse = ped.position;
-                    _btnMoved = false;
-                    _btnDragOffset = mouse - _btnPos;
-                    _btnDragStart = mouse;
-                }
-                catch { }
-            }));
-            trigger.triggers.Add(downEntry);
-
-            var dragEntry = new UnityEngine.EventSystems.EventTrigger.Entry { eventID = UnityEngine.EventSystems.EventTriggerType.Drag };
-            dragEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
-            {
-                try
-                {
-                    var ped = data.TryCast<UnityEngine.EventSystems.PointerEventData>();
-                    Vector2 mouse = ped.position;
-                    if ((mouse - _btnDragStart).sqrMagnitude > 9f) _btnMoved = true;
-                    _btnPos = mouse - _btnDragOffset;
-                    _btnPos.x = Mathf.Clamp(_btnPos.x, 22f, Screen.width - 22f);
-                    _btnPos.y = Mathf.Clamp(_btnPos.y, 22f, Screen.height - 22f);
-                    _btnRect.anchoredPosition = _btnPos;
-                }
-                catch { }
-            }));
-            trigger.triggers.Add(dragEntry);
-
-            var upEntry = new UnityEngine.EventSystems.EventTrigger.Entry { eventID = UnityEngine.EventSystems.EventTriggerType.PointerUp };
-            upEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
-            {
-                try
-                {
-                    if (!_btnMoved) _menuVisible = true;
-                }
-                catch { }
-            }));
-            trigger.triggers.Add(upEntry);
-
-            _btnCanvas.SetActive(true);
-            Plugin.LogSource?.LogInfo("[ESP] Button canvas created");
-        }
-        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] BuildButtonCanvas EX: {e}"); }
     }
 
     void Start() { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
@@ -705,12 +615,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (_btnCanvas != null)
-            {
-                bool showBtn = !_menuVisible;
-                if (_btnCanvas.activeSelf != showBtn) _btnCanvas.SetActive(showBtn);
-            }
-
             if (_menuVisible) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
 
             _watchdogTimer += Time.deltaTime;
@@ -944,6 +848,17 @@ public class EspBehaviour : MonoBehaviour
         {
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
             if (_cam == null) { _cam = Camera.main; if (_cam == null) return; }
+
+            // Кнопка "E" — только когда меню закрыто
+            if (!_menuVisible)
+            {
+                float r = 22f;
+                Rect btnRect = new Rect(_btnPos.x - r, _btnPos.y - r, r * 2f, r * 2f);
+                if (GUI.Button(btnRect, "E"))
+                {
+                    _menuVisible = true;
+                }
+            }
 
             if (_espBoxesEnabled || _espNamesEnabled)
                 foreach (var t in _toDraw)
