@@ -46,12 +46,6 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex.Apply();
             MenuRenderer.EnsureTextures();
 
-            if (!UiState.ButtonInitialized)
-            {
-                UiState.ButtonPos = new Vector2(Screen.width / 2f, Screen.height / 2f);
-                UiState.ButtonInitialized = true;
-            }
-
             enabled = true;
             gameObject.SetActive(true);
 
@@ -80,7 +74,12 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (UiState.MenuVisible) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
+            if (UiState.MenuVisible)
+            {
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
+                KeybindState.MenuAnimTime += Time.deltaTime;
+            }
 
             _watchdogTimer += Time.deltaTime;
             if (_watchdogTimer >= WatchdogInterval) { _watchdogTimer = 0f; RunWatchdog(); }
@@ -117,10 +116,9 @@ public class EspBehaviour : MonoBehaviour
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
             if (_cam == null) { _cam = Camera.main; if (_cam == null) return; }
 
-            if (!UiState.MenuVisible) MenuRenderer.DrawButton(_whiteTex);
             EspModule.Draw(_whiteTex);
             if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
-            if (UiState.MenuVisible) MenuRenderer.DrawMenu(_whiteTex);
+            if (UiState.MenuVisible) MenuRenderer.DrawMenuAnimation(_whiteTex, KeybindState.MenuAnimTime);
         }
         catch { }
         finally { GUI.color = Color.white; }
