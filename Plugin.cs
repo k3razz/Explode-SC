@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using System;
@@ -75,7 +76,7 @@ public class EspBehaviour : MonoBehaviour
 
     // ---- Защита от спама логов ----
     private readonly Dictionary<string, float> _lastLogTime = new();
-    private const float LogCooldown = 2.0f; // не чаще раза в 2 секунды на одно сообщение
+    private const float LogCooldown = 2.0f;
 
     // ---- Счётчики для отладки ----
     private int _updateCount;
@@ -320,7 +321,7 @@ public class EspBehaviour : MonoBehaviour
         _menuPanel.SetActive(_menuVisible);
         Cursor.visible = _menuVisible;
         Cursor.lockState = _menuVisible ? CursorLockMode.None : CursorLockMode.Locked;
-        Debug.Log($"[ESP] Menu toggled: visible={_menuVisible}, cursor={( _menuVisible ? "unlocked" : "locked")}");
+        Debug.Log($"[ESP] Menu toggled: visible={_menuVisible}, cursor={(_menuVisible ? "unlocked" : "locked")}");
     }
 
     // =========================================================
@@ -332,12 +333,40 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
-            // F1 — переключение меню
-            if (Input.GetKeyDown(KeyCode.F1))
+            // ---- Ввод: пробуем New Input System, затем legacy ----
+            bool f1Pressed = false;
+            try
             {
-                Debug.Log("[ESP] F1 pressed");
-                ToggleMenu();
+                var kb = Keyboard.current;
+                if (kb != null && kb.f1Key.wasPressedThisFrame)
+                {
+                    f1Pressed = true;
+                    Debug.Log("[ESP] F1 pressed (New Input System)");
+                }
             }
+            catch (Exception e)
+            {
+                LogThrottled("newinput_ex", $"[ESP] New Input System EX: {e.Message}", true);
+            }
+
+            if (!f1Pressed)
+            {
+                try
+                {
+                    if (Input.GetKeyDown(KeyCode.F1))
+                    {
+                        f1Pressed = true;
+                        Debug.Log("[ESP] F1 pressed (Legacy Input)");
+                    }
+                }
+                catch (Exception e)
+                {
+                    LogThrottled("legacyinput_ex", $"[ESP] Legacy Input EX: {e.Message}", true);
+                }
+            }
+
+            if (f1Pressed)
+                ToggleMenu();
 
             // Периодический скан
             _scanTimer += Time.deltaTime;
@@ -357,7 +386,6 @@ public class EspBehaviour : MonoBehaviour
                 _toDraw.Add(t);
             }
 
-            // Лог раз в 5 секунд, чтобы видеть, что Update работает
             if (Time.realtimeSinceStartup - _lastUpdateLog > 5f)
             {
                 _lastUpdateLog = Time.realtimeSinceStartup;
@@ -441,7 +469,7 @@ public class EspBehaviour : MonoBehaviour
             ResolveTypes();
             if (_botType == null && _playerType == null)
             {
-                if (_scanCount % 10 == 0) // раз в 10 сканов
+                if (_scanCount % 10 == 0)
                     Debug.LogWarning("[ESP] DoScan: no types resolved, skipping");
                 return;
             }
@@ -453,7 +481,6 @@ public class EspBehaviour : MonoBehaviour
             ScanTypeInternal(_botType, true, "Bot");
             ScanTypeInternal(_playerType, false, "Player");
 
-            // Удаляем тех, кого не видели
             var dead = new List<int>();
             foreach (var kv in _tracked)
                 if (!_seenList.Contains(kv.Key)) dead.Add(kv.Key);
@@ -462,7 +489,6 @@ public class EspBehaviour : MonoBehaviour
             int added = _tracked.Count - beforeCount + dead.Count;
             int removed = dead.Count;
 
-            // Лог скана: раз в 5 сканов или если что-то изменилось
             if (removed > 0 || added > 0 || _scanCount % 5 == 0)
             {
                 Debug.Log($"[ESP] Scan #{_scanCount}: tracked={_tracked.Count} " +
@@ -640,7 +666,6 @@ public class EspBehaviour : MonoBehaviour
         {
             if (!_espBoxesEnabled && !_espNamesEnabled)
             {
-                // Лог раз в 10 секунд, что OnGUI работает, но ничего не рисует
                 if (_guiFrameCount % 600 == 0)
                     Debug.Log($"[ESP] OnGUI: all ESP disabled, drawing nothing (frame {_guiFrameCount})");
                 return;
@@ -732,7 +757,6 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // Лог раз в 10 секунд, если что-то рисуется
             if (_guiFrameCount % 600 == 0 && _toDraw.Count > 0)
             {
                 Debug.Log($"[ESP] OnGUI: drawn={drawn}, total={_toDraw.Count}, " +
