@@ -88,7 +88,6 @@ public static class MenuRenderer
             string eLetter = "E";
             string rest = "xplode";
             float logoY = sh * 0.35f;
-
             float eWidth = 55f;
             float restWidth = rest.Length * 55f;
             float totalWidth = eWidth + restWidth;
@@ -118,11 +117,13 @@ public static class MenuRenderer
         float contentX = bx + TabWidth + 10f;
         float contentW = panelRect.width - (TabWidth + 30f);
 
-        GUI.Label(new Rect(bx, by, panelRect.width - 20f, 24f), "<b>DynamicESP</b>");
+        GUI.Label(new Rect(bx, by, panelRect.width - 20f, 24f), "<b>Explode</b>");
         by += 30;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", UiState.MenuTab == 0, whiteTex)) UiState.MenuTab = 0;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimBot", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
+        by += 34;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Hide", false, whiteTex))
         {
@@ -132,7 +133,26 @@ public static class MenuRenderer
 
         float cy = panelRect.y + 40;
         if (UiState.MenuTab == 0) DrawEspTab(contentX, cy, contentW, whiteTex);
-        else DrawAimTab(contentX, cy, contentW, whiteTex);
+        else if (UiState.MenuTab == 1) DrawAimTab(contentX, cy, contentW, whiteTex);
+        else if (UiState.MenuTab == 2) DrawRenderTab(contentX, cy, contentW, whiteTex);
+    }
+
+    private static void DrawRenderTab(float bx, float y, float bw, Texture2D whiteTex)
+    {
+        float bh = 30;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Watermark: {(WatermarkModule.Enabled ? "ON" : "OFF")}", WatermarkModule.Enabled, whiteTex))
+        {
+            WatermarkModule.Enabled = !WatermarkModule.Enabled;
+            Plugin.CfgWatermarkEnabled.Value = WatermarkModule.Enabled;
+        }
+        y += 36;
+
+        if (CustomButton(new Rect(bx, y, bw, bh), "Reset Watermark Position", false, whiteTex))
+        {
+            WatermarkModule.Position = new Vector2(Screen.width / 2f, Screen.height - 40f);
+            Plugin.CfgWatermarkX.Value = WatermarkModule.Position.x;
+            Plugin.CfgWatermarkY.Value = WatermarkModule.Position.y;
+        }
     }
 
     private static void DrawEspTab(float bx, float y, float bw, Texture2D whiteTex)
@@ -228,8 +248,13 @@ public static class MenuRenderer
         GUI.color = state ? new Color(0.2f, 0.55f, 0.3f, 0.95f) : new Color(0.55f, 0.2f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
-        float lw = Mathf.Min(label.Length * 7.5f + 4f, rect.width - 6f);
-        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
+
+        // ТОЧНАЯ ЦЕНТРОВКА ЧЕРЕЗ CalcSize
+        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
+        float x = rect.x + (rect.width - size.x) / 2f;
+        float y = rect.y + (rect.height - size.y) / 2f;
+        GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
+
         return clicked;
     }
 
@@ -240,8 +265,13 @@ public static class MenuRenderer
         GUI.color = active ? new Color(0.2f, 0.4f, 0.7f, 0.95f) : new Color(0.15f, 0.15f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
-        float lw = Mathf.Min(label.Length * 7.5f + 4f, rect.width - 6f);
-        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
+
+        // ТОЧНАЯ ЦЕНТРОВКА ЧЕРЕЗ CalcSize
+        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
+        float x = rect.x + (rect.width - size.x) / 2f;
+        float y = rect.y + (rect.height - size.y) / 2f;
+        GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
+
         return clicked;
     }
 }
