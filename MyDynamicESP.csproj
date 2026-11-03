@@ -44,7 +44,7 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Unity UI: Canvas, Text, Button, Image, CanvasScaler, GraphicRaycaster -->
+    <!-- Unity UI -->
     <Reference Include="UnityEngine.UIModule">
       <HintPath>libs/interop/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
@@ -54,9 +54,13 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Input.GetKeyDown -->
+    <!-- Input: старый + новый -->
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>libs/interop/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputSystem">
+      <HintPath>libs/interop/UnityEngine.InputSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
 
