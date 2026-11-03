@@ -17,6 +17,7 @@ public static class TeamFilter
     public static bool ShowTr = true;
     public static bool ShowCt = true;
     public static bool ShowSpectator = false;
+    public static bool OnlyEnemies = false;
 }
 
 public static class EspManager
@@ -109,11 +110,12 @@ public class EspBehaviour : MonoBehaviour
 
     // ---- Menu ----
     private bool _menuVisible = false;
-    private int _menuTab = 0; // 0 = ESP, 1 = AimBot
+    private int _menuTab = 0;
 
-    private const float MenuWidth = 360f;
-    private const float MenuHeight = 540f;
+    private const float MenuWidth = 480f;
+    private const float MenuHeight = 520f;
     private const float MenuOffset = 30f;
+    private const float TabWidth = 110f;
 
     // ---- Floating button ----
     private const float ButtonRadius = 22f;
@@ -130,10 +132,10 @@ public class EspBehaviour : MonoBehaviour
     private float _aimbotSmooth = 15f;
     private bool _aimbotTargetTeammates = false;
     private bool _aimbotVisibilityCheck = false;
-    private bool _aimbotToggleMode = false; // false = hold, true = toggle
+    private bool _aimbotToggleMode = false;
     private KeyCode _aimbotKey = KeyCode.Mouse1;
     private bool _aimbotKeyCapturing = false;
-    private bool _aimbotActive = false; // для toggle-режима
+    private bool _aimbotActive = false;
     private bool _aimbotPrevKeyState = false;
 
     private static Il2CppSystem.Type _botType;
@@ -286,7 +288,6 @@ public class EspBehaviour : MonoBehaviour
             int team = ReadTeamFromMember(_playerTeamMember, component);
             if (team >= 0) return team;
 
-            // fallback: crvs
             try
             {
                 var t = component.GetType();
@@ -375,15 +376,16 @@ public class EspBehaviour : MonoBehaviour
             foreach (var t in _tracked.Values)
             {
                 if (t.Transform == null) continue;
-                if (_localTeam > 0 && t.Team == _localTeam) continue;
+                if (TeamFilter.OnlyEnemies && _localTeam > 0 && t.Team == _localTeam) continue;
                 if (!IsTeamVisible(t.Team)) continue;
                 _toDraw.Add(t);
             }
 
-            // Aimbot key handling
             if (!_aimbotKeyCapturing)
             {
-                bool keyDown = Input.GetKey(_aimbotKey);
+                bool keyDown = false;
+                try { keyDown = Input.GetKey(_aimbotKey); } catch { }
+
                 if (_aimbotToggleMode)
                 {
                     if (keyDown && !_aimbotPrevKeyState) _aimbotActive = !_aimbotActive;
@@ -417,35 +419,37 @@ public class EspBehaviour : MonoBehaviour
 
             Tracked best = null;
             float bestAngle = _aimbotFov;
-            Vector3 camPos = _cam.transform.position;
-            Vector3 camForward = _cam.transform.forward;
+            Vector3 camPos;
+            Vector3 camForward;
+            try
+            {
+                camPos = _cam.transform.position;
+                camForward = _cam.transform.forward;
+            }
+            catch { return; }
 
             foreach (var t in _tracked.Values)
             {
-                if (t.Transform == null) continue;
-
-                // Teammates
-                if (!_aimbotTargetTeammates && _localTeam > 0 && t.Team == _localTeam) continue;
-
-                // Visibility
-                if (!_aimbotVisibilityCheck)
+                try
                 {
-                    // Semirage through walls — no visibility check
-                }
-                else
-                {
-                    // Only aim if visible
-                    if (!IsVisible(t, camPos)) continue;
-                }
+                    if (t.Transform == null) continue;
+                    if (!_aimbotTargetTeammates && _localTeam > 0 && t.Team == _localTeam) continue;
 
-                Vector3 headPos = GetHeadPosition(t);
-                Vector3 dir = (headPos - camPos).normalized;
-                float angle = Vector3.Angle(camForward, dir);
-                if (angle < bestAngle)
-                {
-                    bestAngle = angle;
-                    best = t;
+                    if (_aimbotVisibilityCheck)
+                    {
+                        if (!IsVisible(t, camPos)) continue;
+                    }
+
+                    Vector3 headPos = GetHeadPosition(t);
+                    Vector3 dir = (headPos - camPos).normalized;
+                    float angle = Vector3.Angle(camForward, dir);
+                    if (angle < bestAngle)
+                    {
+                        bestAngle = angle;
+                        best = t;
+                    }
                 }
+                catch { }
             }
 
             if (best == null) return;
@@ -453,8 +457,12 @@ public class EspBehaviour : MonoBehaviour
             Vector3 targetHead = GetHeadPosition(best);
             Vector3 targetDir = (targetHead - camPos).normalized;
             Quaternion targetRot = Quaternion.LookRotation(targetDir);
-            _cam.transform.rotation = Quaternion.Slerp(
-                _cam.transform.rotation, targetRot, _aimbotSmooth * Time.deltaTime);
+            try
+            {
+                _cam.transform.rotation = Quaternion.Slerp(
+                    _cam.transform.rotation, targetRot, _aimbotSmooth * Time.deltaTime);
+            }
+            catch { }
         }
         catch (Exception e)
         {
@@ -472,30 +480,29 @@ public class EspBehaviour : MonoBehaviour
             if (dist < 0.1f) return true;
             if (Physics.Raycast(camPos, dir.normalized, out var hit, dist))
             {
-                // Если попали в сам объект — видно
                 return hit.transform == t.Transform || hit.transform.IsChildOf(t.Transform);
             }
-            return true; // ничего не перекрывает
+            return true;
         }
         catch { return true; }
     }
 
     Vector3 GetHeadPosition(Tracked t)
     {
-        if (t.BipedMap != null)
+        try
         {
-            try
+            if (t.BipedMap != null)
             {
                 var nwh = t.BipedMap.GetType().GetMethod("nwh",
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (nwh != null)
                 {
-                    var headTr = nwh.Invoke(t.BipedMap, new object[] { 0 }); // Head = 0
+                    var headTr = nwh.Invoke(t.BipedMap, new object[] { 0 });
                     if (headTr is Transform ht) return ht.position;
                 }
             }
-            catch { }
         }
+        catch { }
         return t.Transform.position + Vector3.up * 1.6f;
     }
 
@@ -795,23 +802,22 @@ public class EspBehaviour : MonoBehaviour
                             string label = $"{t.Name}";
                             if (_espDistanceEnabled) label += $" [{dist:F0}m]";
 
-                            float approxWidth = label.Length * 7f;
-                            float labelLeft = x - approxWidth / 2f;
+                            float labelW = Math.Min(label.Length * 7.5f + 8f, 260f);
+                            float labelLeft = x - labelW / 2f;
 
-                            GUI.color = Color.black;
-                            GUI.Label(new Rect(labelLeft - 1f, top - 19f, approxWidth, 20f), label);
+                            GUI.color = new Color(0f, 0f, 0f, 0.6f);
+                            GUI.DrawTexture(new Rect(labelLeft - 2f, top - 21f, labelW + 4f, 20f), _whiteTex);
                             GUI.color = Color.white;
-                            GUI.Label(new Rect(labelLeft, top - 18f, approxWidth, 20f), label);
+                            GUI.Label(new Rect(labelLeft, top - 20f, labelW, 18f), label);
                         }
                     }
                     catch { }
                 }
             }
 
-            // FOV circle (если аимбот включён)
             if (_aimbotEnabled)
             {
-                float fovScreen = _aimbotFov * (Screen.height / 90f); // примерный перевод градусов в пиксели
+                float fovScreen = _aimbotFov * (Screen.height / 90f);
                 GUI.color = new Color(1f, 1f, 1f, 0.15f);
                 GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f,
                     Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
@@ -884,8 +890,9 @@ public class EspBehaviour : MonoBehaviour
         GUI.DrawTexture(rect, _whiteTex);
         GUI.color = Color.white;
 
-        float approxW = Math.Min(label.Length * 6.5f, rect.width - 8f);
-        GUI.Label(new Rect(rect.x + (rect.width - approxW) / 2f, rect.y + (rect.height - 16f) / 2f, approxW + 4f, 16f), label);
+        float labelW = Math.Min(label.Length * 7.5f + 4f, rect.width - 6f);
+        GUI.Label(new Rect(rect.x + (rect.width - labelW) / 2f,
+            rect.y + (rect.height - 16f) / 2f, labelW, 16f), label);
         return clicked;
     }
 
@@ -900,8 +907,9 @@ public class EspBehaviour : MonoBehaviour
         GUI.DrawTexture(rect, _whiteTex);
         GUI.color = Color.white;
 
-        float approxW = Math.Min(label.Length * 7f, rect.width - 8f);
-        GUI.Label(new Rect(rect.x + (rect.width - approxW) / 2f, rect.y + (rect.height - 16f) / 2f, approxW + 4f, 16f), label);
+        float labelW = Math.Min(label.Length * 7.5f + 4f, rect.width - 6f);
+        GUI.Label(new Rect(rect.x + (rect.width - labelW) / 2f,
+            rect.y + (rect.height - 16f) / 2f, labelW, 16f), label);
         return clicked;
     }
 
@@ -932,20 +940,25 @@ public class EspBehaviour : MonoBehaviour
         GUI.color = Color.white;
 
         float bx = panelRect.x + 10;
-        float bw = panelRect.width - 20;
-        float y = panelRect.y + 8;
+        float by = panelRect.y + 10;
+        float contentX = bx + TabWidth + 10f;
+        float contentW = panelRect.width - (TabWidth + 30f);
 
-        GUI.Label(new Rect(bx, y, bw, 25), "<b>DynamicESP</b>");
-        y += 28;
+        // Title
+        GUI.Label(new Rect(bx, by, panelRect.width - 20f, 24f), "<b>DynamicESP</b>");
+        by += 30;
 
-        // Tabs
-        float tabW = (bw - 10f) / 2f;
-        if (TabButton(new Rect(bx, y, tabW, 26), "ESP", _menuTab == 0)) _menuTab = 0;
-        if (TabButton(new Rect(bx + tabW + 10f, y, tabW, 26), "AimBot", _menuTab == 1)) _menuTab = 1;
-        y += 34;
+        // Vertical tabs (left)
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", _menuTab == 0)) _menuTab = 0;
+        by += 34;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimBot", _menuTab == 1)) _menuTab = 1;
+        by += 34;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Hide", false)) _menuVisible = false;
 
-        if (_menuTab == 0) DrawEspTab(bx, y, bw);
-        else DrawAimTab(bx, y, bw, panelRect);
+        // Content
+        float cy = panelRect.y + 40;
+        if (_menuTab == 0) DrawEspTab(contentX, cy, contentW);
+        else DrawAimTab(contentX, cy, contentW);
     }
 
     private void DrawEspTab(float bx, float y, float bw)
@@ -979,11 +992,11 @@ public class EspBehaviour : MonoBehaviour
             TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator;
         y += 46;
 
-        if (CustomButton(new Rect(bx, y, bw, 34), "Hide Menu", false))
-            _menuVisible = false;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Show only enemies: {(TeamFilter.OnlyEnemies ? "ON" : "OFF")}", TeamFilter.OnlyEnemies))
+            TeamFilter.OnlyEnemies = !TeamFilter.OnlyEnemies;
     }
 
-    private void DrawAimTab(float bx, float y, float bw, Rect panelRect)
+    private void DrawAimTab(float bx, float y, float bw)
     {
         float bh = 30;
 
@@ -991,22 +1004,16 @@ public class EspBehaviour : MonoBehaviour
             _aimbotEnabled = !_aimbotEnabled;
         y += 36;
 
-        // FOV
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {_aimbotFov:F0}°");
-        y += 22;
+        y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false))
-        {
             _aimbotFov = Mathf.Max(1f, _aimbotFov - 2f);
-        }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true))
-        {
             _aimbotFov = Mathf.Min(90f, _aimbotFov + 2f);
-        }
         y += 36;
 
-        // Smooth
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {_aimbotSmooth:F0}");
-        y += 22;
+        y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false))
             _aimbotSmooth = Mathf.Max(1f, _aimbotSmooth - 5f);
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true))
@@ -1021,19 +1028,14 @@ public class EspBehaviour : MonoBehaviour
             _aimbotVisibilityCheck = !_aimbotVisibilityCheck;
         y += 36;
 
-        // Toggle/Hold
         if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(_aimbotToggleMode ? "TOGGLE" : "HOLD")}", _aimbotToggleMode))
             _aimbotToggleMode = !_aimbotToggleMode;
         y += 36;
 
-        // Bind
         string keyName = _aimbotKeyCapturing ? "PRESS KEY..." : _aimbotKey.ToString();
         if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", _aimbotKeyCapturing))
-        {
             _aimbotKeyCapturing = !_aimbotKeyCapturing;
-        }
 
-        // Захват клавиши
         if (_aimbotKeyCapturing)
         {
             Event e = Event.current;
@@ -1041,23 +1043,16 @@ public class EspBehaviour : MonoBehaviour
             {
                 _aimbotKey = e.keyCode;
                 _aimbotKeyCapturing = false;
-                Plugin.LogSource?.LogInfo($"[ESP] Aimbot key set to {_aimbotKey}");
                 e.Use();
             }
             else if (e != null && e.type == EventType.MouseDown)
             {
-                // ПКМ/ЛКМ тоже можно назначить
                 if (e.button == 0) _aimbotKey = KeyCode.Mouse0;
                 else if (e.button == 1) _aimbotKey = KeyCode.Mouse1;
                 else if (e.button == 2) _aimbotKey = KeyCode.Mouse2;
                 _aimbotKeyCapturing = false;
-                Plugin.LogSource?.LogInfo($"[ESP] Aimbot key set to {_aimbotKey}");
                 e.Use();
             }
         }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, 34), "Hide Menu", false))
-            _menuVisible = false;
     }
 }
