@@ -2,7 +2,6 @@ using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.InputSystem;
 using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using System;
@@ -182,7 +181,7 @@ public class EspBehaviour : MonoBehaviour
         });
 
         y -= 10;
-        CreateButton(_menuPanel.transform, "Hide Menu (F1)", new Vector2(10, y), ToggleMenu);
+        CreateButton(_menuPanel.transform, "Hide Menu (Insert)", new Vector2(10, y), ToggleMenu);
 
         _menuPanel.SetActive(false);
         Debug.Log("[ESP] BuildMenu() done (panel hidden)");
@@ -333,40 +332,24 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
-            // ---- Ввод: пробуем New Input System, затем legacy ----
-            bool f1Pressed = false;
+            // ---- Ввод: Insert (основной) + F1 (альтернативный) ----
             try
             {
-                var kb = Keyboard.current;
-                if (kb != null && kb.f1Key.wasPressedThisFrame)
+                if (Input.GetKeyDown(KeyCode.Insert))
                 {
-                    f1Pressed = true;
-                    Debug.Log("[ESP] F1 pressed (New Input System)");
+                    Debug.Log("[ESP] Insert pressed -> toggling menu");
+                    ToggleMenu();
+                }
+                else if (Input.GetKeyDown(KeyCode.F1))
+                {
+                    Debug.Log("[ESP] F1 pressed -> toggling menu");
+                    ToggleMenu();
                 }
             }
             catch (Exception e)
             {
-                LogThrottled("newinput_ex", $"[ESP] New Input System EX: {e.Message}", true);
+                LogThrottled("input_ex", $"[ESP] Input.GetKeyDown EX: {e.Message}", true);
             }
-
-            if (!f1Pressed)
-            {
-                try
-                {
-                    if (Input.GetKeyDown(KeyCode.F1))
-                    {
-                        f1Pressed = true;
-                        Debug.Log("[ESP] F1 pressed (Legacy Input)");
-                    }
-                }
-                catch (Exception e)
-                {
-                    LogThrottled("legacyinput_ex", $"[ESP] Legacy Input EX: {e.Message}", true);
-                }
-            }
-
-            if (f1Pressed)
-                ToggleMenu();
 
             // Периодический скан
             _scanTimer += Time.deltaTime;
@@ -657,13 +640,20 @@ public class EspBehaviour : MonoBehaviour
     }
 
     // =========================================================
-    //                       OnGUI (ESP)
+    //                       OnGUI (ESP + кнопка меню)
     // =========================================================
     void OnGUI()
     {
         _guiFrameCount++;
         try
         {
+            // Кнопка открытия меню (fallback, если клавиши перехвачены игрой)
+            if (GUI.Button(new Rect(10, 10, 170, 30), _menuVisible ? "Close ESP Menu (Insert)" : "Open ESP Menu (Insert)"))
+            {
+                Debug.Log("[ESP] Menu button clicked");
+                ToggleMenu();
+            }
+
             if (!_espBoxesEnabled && !_espNamesEnabled)
             {
                 if (_guiFrameCount % 600 == 0)
