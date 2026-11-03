@@ -4,6 +4,19 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Release?'
+        type: choice
+        options:
+          - 'No'
+          - 'Yes'
+        default: 'No'
+      release_notes:
+        description: 'Release description (used only if Release = Yes)'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -53,34 +66,79 @@ jobs:
             unzip -o "$z" -d artifacts/extracted
           done
 
-      - name: Compute next release number
-        id: next_release
+      - name: Determine release mode
+        id: mode
         shell: bash
         env:
+          INPUT_CREATE_RELEASE: ${{ github.event.inputs.create_release }}
+          INPUT_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          MODE="prerelease"
+          if [[ "${INPUT_CREATE_RELEASE}" == "Yes" ]]; then
+            MODE="release"
+          fi
+          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+          echo "notes=${INPUT_NOTES}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next tag
+        id: next_tag
+        shell: bash
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Получаем все теги релизов, отфильтровываем те, что соответствуют формату pre-release-N
-          TAGS=$(gh release list --repo "${{ github.repository }}" --limit 100 --json tagName --jq '.[].tagName' || true)
-          MAX_NUM=0
-          for tag in $TAGS; do
-            if [[ "$tag" =~ ^pre-release-([0-9]+)$ ]]; then
-              num="${BASH_REMATCH[1]}"
-              if (( num > MAX_NUM )); then
-                MAX_NUM=$num
-              fi
-            fi
-          done
-          NEXT_NUM=$((MAX_NUM + 1))
-          echo "tag=pre-release-${NEXT_NUM}" >> "$GITHUB_OUTPUT"
-          echo "name=Pre-Release ${NEXT_NUM}" >> "$GITHUB_OUTPUT"
+          TAGS=$(gh release list --repo "${{ github.repository }}" --limit 500 --json tagName --jq '.[].tagName' || true)
 
-      - name: Create Release
+          if [[ "${MODE}" == "prerelease" ]]; then
+            MAX_NUM=0
+            for tag in $TAGS; do
+              if [[ "$tag" =~ ^pre-release-([0-9]+)$ ]]; then
+                num="${BASH_REMATCH[1]}"
+                if (( num > MAX_NUM )); then
+                  MAX_NUM=$num
+                fi
+              fi
+            done
+            NEXT_NUM=$((MAX_NUM + 1))
+            echo "tag=pre-release-${NEXT_NUM}" >> "$GITHUB_OUTPUT"
+            echo "name=Pre-Release ${NEXT_NUM}" >> "$GITHUB_OUTPUT"
+          else
+            MAX_NUM=0
+            for tag in $TAGS; do
+              if [[ "$tag" =~ ^v([0-9]+)$ ]]; then
+                num="${BASH_REMATCH[1]}"
+                if (( num > MAX_NUM )); then
+                  MAX_NUM=$num
+                fi
+              fi
+            done
+            NEXT_NUM=$((MAX_NUM + 1))
+            echo "tag=v${NEXT_NUM}" >> "$GITHUB_OUTPUT"
+            echo "name=v${NEXT_NUM}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Pre-Release
+        if: steps.mode.outputs.mode == 'prerelease'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.next_release.outputs.tag }}
-          name: ${{ steps.next_release.outputs.name }}
+          tag_name: ${{ steps.next_tag.outputs.tag }}
+          name: ${{ steps.next_tag.outputs.name }}
           body: Testing release dll
           prerelease: true
+          files: |
+            artifacts/**/*.dll
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        if: steps.mode.outputs.mode == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.next_tag.outputs.tag }}
+          name: ${{ steps.next_tag.outputs.name }}
+          body: ${{ steps.mode.outputs.notes }}
+          prerelease: false
           files: |
             artifacts/**/*.dll
           fail_on_unmatched_files: true
