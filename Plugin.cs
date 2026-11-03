@@ -120,10 +120,9 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
-    // --- Team members ---
-    private static MemberInfo _playerTeamMember;   // для PlayerController
-    private static MemberInfo _botTeamMember;      // для BotPlayerController
-    private static MemberInfo _localPlayerMember;  // для PlayerManager
+    private static MemberInfo _playerTeamMember;
+    private static MemberInfo _botTeamMember;
+    private static MemberInfo _localPlayerMember;
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
 
@@ -223,7 +222,7 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, playerTeam={_playerTeamMember?.Name ?? "null"}, botTeam={_botTeamMember?.Name ?? "null"}, localPlayer={_localPlayerMember?.Name ?? "null"}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, playerTeam={_playerTeamMember?.Name ?? "null"}, localPlayer={_localPlayerMember?.Name ?? "null"}");
             }
         }
         catch (Exception e)
@@ -253,7 +252,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch (Exception e)
         {
-            // Не спамим в консоль — лог только раз в 2 сек на ключ
             LogThrottled($"readteam_{target.GetHashCode()}", $"[ESP] ReadTeam EX ({member.Name}): {e.Message}", true);
         }
         return -1;
@@ -262,8 +260,47 @@ public class EspBehaviour : MonoBehaviour
     int ReadTeam(Component component, bool isBot)
     {
         if (component == null) return -1;
-        var member = isBot ? _botTeamMember : _playerTeamMember;
-        return ReadTeamFromMember(member, component);
+
+        if (isBot)
+        {
+            // 1) Пробуем botTeamMember напрямую (обычно не работает — оставляем на всякий)
+            int team = ReadTeamFromMember(_botTeamMember, component);
+            if (team >= 0) return team;
+
+            // 2) Fallback: bot.crvs (PlayerController) -> playerCtrl.cfmp
+            try
+            {
+                var t = component.GetType();
+                object playerCtrl = null;
+
+                var crvsProp = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (crvsProp != null) playerCtrl = crvsProp.GetValue(component);
+
+                if (playerCtrl == null)
+                {
+                    var crvsField = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (crvsField != null) playerCtrl = crvsField.GetValue(component);
+                }
+
+                if (playerCtrl != null)
+                {
+                    team = ReadTeamFromMember(_playerTeamMember, playerCtrl);
+                    if (team >= 0)
+                    {
+                        return team;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                LogThrottled($"bot_crvs_ex_{component.GetInstanceID()}", $"[ESP] Bot crvs EX: {e.Message}", true);
+            }
+            return -1;
+        }
+        else
+        {
+            return ReadTeamFromMember(_playerTeamMember, component);
+        }
     }
 
     void UpdateLocalTeam()
@@ -372,9 +409,6 @@ public class EspBehaviour : MonoBehaviour
         return t.IsEnum && (t.Name == "Team" || t.FullName.EndsWith(".Team"));
     }
 
-    // =========================================================
-    //                    TYPE RESOLUTION
-    // =========================================================
     private static Type FindTypeByName(string shortName, out string foundFullName)
     {
         foundFullName = null;
@@ -403,7 +437,6 @@ public class EspBehaviour : MonoBehaviour
         return null;
     }
 
-    // Ищет team-member вверх по иерархии указанного типа
     private static MemberInfo FindTeamMember(Type startType, out string ownerName)
     {
         ownerName = null;
@@ -412,7 +445,6 @@ public class EspBehaviour : MonoBehaviour
         int depth = 0;
         while (search != null && search != typeof(object) && depth < 10)
         {
-            // instance method без параметров -> Team
             foreach (var m in search.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
                 if (m.GetParameters().Length == 0 && IsTeamEnum(m.ReturnType))
@@ -421,7 +453,6 @@ public class EspBehaviour : MonoBehaviour
                     return m;
                 }
             }
-            // property Team
             foreach (var p in search.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
                 if (IsTeamEnum(p.PropertyType) && p.GetGetMethod(true) != null)
@@ -430,7 +461,6 @@ public class EspBehaviour : MonoBehaviour
                     return p;
                 }
             }
-            // field Team
             foreach (var f in search.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
                 if (IsTeamEnum(f.FieldType))
@@ -462,16 +492,12 @@ public class EspBehaviour : MonoBehaviour
             if (pmType != null) _playerManagerType = Il2CppType.From(pmType);
 
             _playerTeamMember = null;
-            _botTeamMember = null;
             _localPlayerMember = null;
+            _botTeamMember = null;
 
-            string playerOwner = null, botOwner = null;
-
+            string playerOwner = null;
             _playerTeamMember = FindTeamMember(pt, out playerOwner);
-            _botTeamMember = FindTeamMember(bt, out botOwner);
-
             Plugin.LogSource?.LogInfo($"[ESP] Team member Player: {playerOwner ?? "null"}");
-            Plugin.LogSource?.LogInfo($"[ESP] Team member Bot: {botOwner ?? "null"}");
 
             if (pmType != null && pt != null)
             {
@@ -498,7 +524,7 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, PlayerTeam={_playerTeamMember != null}, BotTeam={_botTeamMember != null}, LocalPlayer={_localPlayerMember != null}");
+            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, PlayerTeam={_playerTeamMember != null}, LocalPlayer={_localPlayerMember != null}");
         }
         catch (Exception e)
         {
