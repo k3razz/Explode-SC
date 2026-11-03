@@ -10,7 +10,6 @@ using System.Reflection;
 
 namespace MyDynamicESP;
 
-// Teams: None=0, Tr=1, Ct=2, Spectator=3
 public static class TeamFilter
 {
     public static bool ShowTr = true;
@@ -93,6 +92,7 @@ public class EspBehaviour : MonoBehaviour
 
     private Camera _cam;
     private Texture2D _whiteTex;
+    private Texture2D _circleTex;
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
@@ -108,6 +108,13 @@ public class EspBehaviour : MonoBehaviour
     private bool _espNamesEnabled = true;
     private bool _espDistanceEnabled = true;
     private bool _menuVisible = false;
+
+    // ---- Круглая кнопка ----
+    private const float ButtonRadius = 22f;
+    private Vector2 _buttonCenter = new Vector2(-1f, -1f); // -1 = не инициализировано
+    private bool _buttonInitialized = false;
+    private bool _isDragging = false;
+    private Vector2 _dragOffset;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
@@ -144,6 +151,8 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex = new Texture2D(1, 1);
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
+
+            _circleTex = CreateCircleTexture(64);
         }
         catch (Exception e) { Debug.LogError($"[ESP] Awake texture EX: {e}"); }
 
@@ -158,6 +167,33 @@ public class EspBehaviour : MonoBehaviour
         Debug.Log("[ESP] ===== Awake() done =====");
     }
 
+    private Texture2D CreateCircleTexture(int size)
+    {
+        var tex = new Texture2D(size, size);
+        float center = size / 2f;
+        float radius = size / 2f - 1f;
+        for (int x = 0; x < size; x++)
+        {
+            for (int y = 0; y < size; y++)
+            {
+                float dx = x - center + 0.5f;
+                float dy = y - center + 0.5f;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                if (dist <= radius)
+                {
+                    float alpha = dist <= radius - 1.5f ? 1f : Mathf.Clamp01(radius - dist);
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+                else
+                {
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, 0f));
+                }
+            }
+        }
+        tex.Apply();
+        return tex;
+    }
+
     void Start()
     {
         Debug.Log($"[ESP] ===== Start() ===== enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
@@ -169,7 +205,11 @@ public class EspBehaviour : MonoBehaviour
     void OnDestroy()
     {
         Debug.Log("[ESP] OnDestroy() - behaviour destroyed");
-        try { if (_whiteTex != null) Destroy(_whiteTex); }
+        try
+        {
+            if (_whiteTex != null) Destroy(_whiteTex);
+            if (_circleTex != null) Destroy(_circleTex);
+        }
         catch (Exception e) { Debug.LogError($"[ESP] OnDestroy EX: {e}"); }
     }
 
@@ -219,20 +259,10 @@ public class EspBehaviour : MonoBehaviour
                 BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (instProp != null) pmInstance = instProp.GetValue(null);
 
-            if (pmInstance == null)
-            {
-                if (_watchdogTicks % 6 == 0)
-                    Debug.Log("[ESP] CheckLocalPlayer: PlayerManager.Instance is null");
-                return false;
-            }
+            if (pmInstance == null) return false;
 
             var localPlayer = _localPlayerProp.GetValue(pmInstance);
-            if (localPlayer == null)
-            {
-                if (_watchdogTicks % 6 == 0)
-                    Debug.Log("[ESP] CheckLocalPlayer: localPlayer is null (not spawned)");
-                return false;
-            }
+            if (localPlayer == null) return false;
 
             var teamObj = _teamProp.GetValue(localPlayer);
             if (teamObj != null)
@@ -263,26 +293,18 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
+            // Держим курсор разблокированным, пока меню открыто
+            if (_menuVisible)
+            {
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
+            }
+
             _watchdogTimer += Time.deltaTime;
             if (_watchdogTimer >= WatchdogInterval)
             {
                 _watchdogTimer = 0f;
                 RunWatchdog();
-            }
-
-            // ---- Ввод: J (русская О) и Insert ----
-            try
-            {
-                if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.Insert))
-                {
-                    Debug.Log("[ESP] Menu key pressed (J/Insert)");
-                    _menuVisible = !_menuVisible;
-                    Debug.Log($"[ESP] Menu toggled: visible={_menuVisible}");
-                }
-            }
-            catch (Exception e)
-            {
-                LogThrottled("input_ex", $"[ESP] Input EX: {e.Message}", true);
             }
 
             _scanTimer += Time.deltaTime;
@@ -324,7 +346,7 @@ public class EspBehaviour : MonoBehaviour
             case 1: return TeamFilter.ShowTr;
             case 2: return TeamFilter.ShowCt;
             case 3: return TeamFilter.ShowSpectator;
-            default: return true; // None или неизвестная — показываем
+            default: return true;
         }
     }
 
@@ -386,12 +408,7 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             ResolveTypes();
-            if (_botType == null && _playerType == null)
-            {
-                if (_scanCount % 10 == 0)
-                    Debug.LogWarning("[ESP] DoScan: no types resolved, skipping");
-                return;
-            }
+            if (_botType == null && _playerType == null) return;
 
             CheckLocalPlayer();
 
@@ -426,11 +443,7 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             var arr = FindObjectsOfType(type, false);
-            if (arr == null)
-            {
-                LogThrottled($"find_null_{label}", $"[ESP] FindObjectsOfType({label}) returned null", true);
-                return;
-            }
+            if (arr == null) return;
 
             for (int i = 0; i < arr.Length; i++)
             {
@@ -536,6 +549,10 @@ public class EspBehaviour : MonoBehaviour
                 _whiteTex.SetPixel(0, 0, Color.white);
                 _whiteTex.Apply();
             }
+            if (_circleTex == null)
+            {
+                _circleTex = CreateCircleTexture(64);
+            }
 
             if (_cam == null)
             {
@@ -629,18 +646,14 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // ---- Меню ----
+            // ---- Меню или круглая кнопка ----
             if (_menuVisible)
             {
                 DrawMenu();
             }
             else
             {
-                if (GUI.Button(new Rect(10, 10, 200, 30), "ESP Menu (J / Insert)"))
-                {
-                    _menuVisible = true;
-                    Debug.Log("[ESP] Menu opened via button");
-                }
+                DrawFloatingButton();
             }
         }
         catch (Exception e)
@@ -653,9 +666,76 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
+    // ---- Плавающая круглая кнопка ----
+    private void DrawFloatingButton()
+    {
+        if (!_buttonInitialized)
+        {
+            _buttonCenter = new Vector2(Screen.width / 2f, Screen.height / 2f);
+            _buttonInitialized = true;
+            Debug.Log($"[ESP] Floating button initialized at center: {_buttonCenter}");
+        }
+
+        float r = ButtonRadius;
+        Rect btnRect = new Rect(_buttonCenter.x - r, _buttonCenter.y - r, r * 2f, r * 2f);
+
+        // Обработка мыши
+        Event e = Event.current;
+        if (e != null)
+        {
+            Vector2 mouse = e.mousePosition;
+
+            if (e.type == EventType.MouseDown && e.button == 0 && btnRect.Contains(mouse))
+            {
+                _isDragging = true;
+                _dragOffset = mouse - _buttonCenter;
+                e.Use();
+                Debug.Log("[ESP] Floating button drag started");
+            }
+            else if (e.type == EventType.MouseDrag && _isDragging)
+            {
+                _buttonCenter = mouse - _dragOffset;
+                // Ограничиваем в пределах экрана
+                _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, r, Screen.width - r);
+                _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, r, Screen.height - r);
+                e.Use();
+            }
+            else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
+            {
+                _isDragging = false;
+                // Если мышь почти не двигалась — считаем это кликом
+                if ((mouse - (_buttonCenter + _dragOffset)).sqrMagnitude < 25f)
+                {
+                    _menuVisible = true;
+                    Debug.Log("[ESP] Floating button clicked -> menu opened");
+                }
+                else
+                {
+                    Debug.Log($"[ESP] Floating button moved to {_buttonCenter}");
+                }
+                e.Use();
+            }
+        }
+
+        // Рисуем круг
+        GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
+        GUI.DrawTexture(btnRect, _circleTex);
+
+        // Рисуем букву E по центру
+        GUI.color = Color.white;
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 22,
+            fontStyle = FontStyle.Bold
+        };
+        GUI.Label(btnRect, "E", style);
+    }
+
+    // ---- Меню ----
     private void DrawMenu()
     {
-        Rect panelRect = new Rect(20, 20, 340, 420);
+        Rect panelRect = new Rect(20, 20, 340, 460);
         GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
         GUI.DrawTexture(panelRect, _whiteTex);
         GUI.color = Color.white;
@@ -690,7 +770,6 @@ public class EspBehaviour : MonoBehaviour
         }
         y += 46;
 
-        // ---- Team filters ----
         GUI.Label(new Rect(bx, y, bw, 22), "<b>Team filter:</b>");
         y += 26;
 
@@ -718,7 +797,7 @@ public class EspBehaviour : MonoBehaviour
         }
         y += 46;
 
-        if (GUI.Button(new Rect(bx, y, bw, 34), "Hide Menu (J / Insert)"))
+        if (GUI.Button(new Rect(bx, y, bw, 34), "Hide Menu"))
         {
             _menuVisible = false;
             Debug.Log("[ESP] Menu hidden via button");
