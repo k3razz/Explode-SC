@@ -3,7 +3,6 @@ using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
@@ -23,28 +22,12 @@ public static class TeamFilter
     public static bool OnlyEnemies = false;
 }
 
-public static class EspManager
-{
-    public static void EnsureBehaviour()
-    {
-        try
-        {
-            var existing = UnityEngine.Object.FindObjectOfType<EspBehaviour>();
-            if (existing != null) return;
-            var go = new GameObject("ESP_Behaviour");
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            var type = Il2CppType.From(typeof(EspBehaviour)).TryCast<Il2CppSystem.Type>();
-            if (type != null) go.AddComponent(type);
-        }
-        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] EnsureBehaviour EX: {e}"); }
-    }
-}
-
 [BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
     public static ConfigFile ConfigFile;
+    public static Plugin Instance;
 
     public static ConfigEntry<bool> CfgAimbotEnabled;
     public static ConfigEntry<float> CfgAimbotFov;
@@ -63,13 +46,12 @@ public class Plugin : BasePlugin
 
     public static KeyCode AimbotToggleKey = KeyCode.Mouse1;
     public static bool AimbotToggleMode = false;
-
-    // Keybind capture state
     public static bool CapturingKey = false;
     public static KeyCode CapturingBackup = KeyCode.None;
 
     public override void Load()
     {
+        Instance = this;
         LogSource = Log;
         Log.LogInfo("[ESP] ===== Plugin.Load() =====");
         try
@@ -105,20 +87,13 @@ public class Plugin : BasePlugin
 
             Log.LogInfo($"[ESP] Aimbot key: {AimbotToggleKey}, mode: {AimbotToggleMode}");
 
-            ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
-            ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
-            SceneManager.sceneLoaded += (Action<Scene, LoadSceneMode>)OnSceneLoaded;
-            EspManager.EnsureBehaviour();
-            KeybindListener.EnsureBehaviour();
+            // КРИТИЧНО: используем AddComponent<T>() от BasePlugin
+            AddComponent<EspBehaviour>();
+            AddComponent<KeybindListener>();
+
+            Log.LogInfo("[ESP] Components added via AddComponent<T>()");
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
-    }
-
-    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    {
-        LogSource?.LogInfo($"[ESP] Scene loaded: '{scene.name}' ({mode})");
-        EspManager.EnsureBehaviour();
-        KeybindListener.EnsureBehaviour();
     }
 }
 
@@ -127,33 +102,30 @@ public class Plugin : BasePlugin
 // =========================================================
 public class KeybindListener : MonoBehaviour
 {
-    private static KeybindListener _instance;
     private float _lastLog;
     private bool _waitingForRelease = false;
 
-    public static void EnsureBehaviour()
+    void Awake()
     {
-        try
-        {
-            if (_instance != null) return;
-            var existing = UnityEngine.Object.FindObjectOfType<KeybindListener>();
-            if (existing != null) { _instance = existing; return; }
-
-            var go = new GameObject("ESP_KeybindListener");
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            var type = Il2CppType.From(typeof(KeybindListener)).TryCast<Il2CppSystem.Type>();
-            if (type != null) { go.AddComponent(type); Plugin.LogSource?.LogInfo("[ESP] KeybindListener created"); }
-        }
-        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] KeybindListener Ensure EX: {e}"); }
+        Plugin.LogSource?.LogInfo("[KB] Awake");
     }
 
-    void Awake() { _instance = this; DontDestroyOnLoad(gameObject); }
+    void OnDestroy()
+    {
+        Plugin.LogSource?.LogInfo("[KB] OnDestroy");
+    }
 
     void Update()
     {
         try
         {
-            // Захват бинда — приоритет над всем
+            // Лог раз в 3 секунды, чтобы видеть, что Update жив
+            if (Time.realtimeSinceStartup - _lastLog > 3f)
+            {
+                _lastLog = Time.realtimeSinceStartup;
+                Plugin.LogSource?.LogInfo($"[KB] Tick key={Plugin.AimbotToggleKey} capture={Plugin.CapturingKey}");
+            }
+
             if (Plugin.CapturingKey)
             {
                 HandleCapture();
@@ -163,9 +135,20 @@ public class KeybindListener : MonoBehaviour
             if (IsTypingInChat()) return;
             if (Plugin.AimbotToggleKey == KeyCode.None) return;
 
+            bool kd = false, kdDown = false;
+            try
+            {
+                // Мышь и клавиши обрабатываем по-разному
+                if (Plugin.AimbotToggleKey == KeyCode.Mouse0) { kd = Input.GetMouseButton(0); kdDown = Input.GetMouseButtonDown(0); }
+                else if (Plugin.AimbotToggleKey == KeyCode.Mouse1) { kd = Input.GetMouseButton(1); kdDown = Input.GetMouseButtonDown(1); }
+                else if (Plugin.AimbotToggleKey == KeyCode.Mouse2) { kd = Input.GetMouseButton(2); kdDown = Input.GetMouseButtonDown(2); }
+                else { kd = Input.GetKey(Plugin.AimbotToggleKey); kdDown = Input.GetKeyDown(Plugin.AimbotToggleKey); }
+            }
+            catch (Exception e) { Plugin.LogSource?.LogError($"[KB] Input EX: {e.Message}"); }
+
             if (Plugin.AimbotToggleMode)
             {
-                if (Input.GetKeyDown(Plugin.AimbotToggleKey))
+                if (kdDown)
                 {
                     EspBehaviour.SetAimbotActive(!EspBehaviour.AimbotActive);
                     Plugin.LogSource?.LogInfo($"[ESP] Aimbot toggled: {EspBehaviour.AimbotActive}");
@@ -173,49 +156,31 @@ public class KeybindListener : MonoBehaviour
             }
             else
             {
-                bool kd = Input.GetKey(Plugin.AimbotToggleKey);
                 EspBehaviour.SetAimbotActive(kd);
-                if (kd && Time.realtimeSinceStartup - _lastLog > 3f)
-                {
-                    _lastLog = Time.realtimeSinceStartup;
-                    Plugin.LogSource?.LogInfo($"[ESP] Aimbot active (hold)");
-                }
+                if (kd) Plugin.LogSource?.LogInfo($"[KB] Hold active");
             }
         }
-        catch (Exception e) { Debug.LogError($"[ESP] KeybindListener EX: {e.Message}"); }
+        catch (Exception e) { Debug.LogError($"[KB] EX: {e.Message}"); }
     }
 
     private void HandleCapture()
     {
-        // Esc — отмена
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             Plugin.AimbotToggleKey = Plugin.CapturingBackup;
             Plugin.CapturingKey = false;
-            _waitingForRelease = false;
-            if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = Plugin.AimbotToggleKey.ToString();
-            Plugin.LogSource?.LogInfo($"[ESP] Bind cancelled, restored to {Plugin.AimbotToggleKey}");
+            Plugin.LogSource?.LogInfo($"[KB] Cancelled, restored {Plugin.AimbotToggleKey}");
             return;
         }
 
-        // Игнорируем кадр, когда кнопка мыши/клавиша отпущена — чтобы не зациклиться
         if (_waitingForRelease)
         {
             bool anyDown = false;
             for (int b = 0; b < 3; b++) if (Input.GetMouseButton(b)) { anyDown = true; break; }
-            if (!anyDown)
-            {
-                foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
-                {
-                    if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
-                    if (Input.GetKey(kc)) { anyDown = true; break; }
-                }
-            }
             if (!anyDown) _waitingForRelease = false;
             return;
         }
 
-        // Клавиши
         foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
         {
             if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
@@ -225,12 +190,11 @@ public class KeybindListener : MonoBehaviour
                 Plugin.CapturingKey = false;
                 _waitingForRelease = true;
                 if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                Plugin.LogSource?.LogInfo($"[ESP] Bind set: {kc}");
+                Plugin.LogSource?.LogInfo($"[KB] Set {kc}");
                 return;
             }
         }
 
-        // Кнопки мыши
         for (int b = 0; b < 3; b++)
         {
             if (Input.GetMouseButtonDown(b))
@@ -240,7 +204,7 @@ public class KeybindListener : MonoBehaviour
                 Plugin.CapturingKey = false;
                 _waitingForRelease = true;
                 if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                Plugin.LogSource?.LogInfo($"[ESP] Bind set: {kc}");
+                Plugin.LogSource?.LogInfo($"[KB] Set {kc}");
                 return;
             }
         }
@@ -319,7 +283,7 @@ public class EspBehaviour : MonoBehaviour
     private const float MenuOffset = 30f;
     private const float TabWidth = 120f;
 
-    // Unity UI кнопка (не OnGUI)
+    // Кнопка — Unity UI, не OnGUI
     private GameObject _btnCanvas;
     private RectTransform _btnRect;
     private Vector2 _btnPos = new Vector2(-1f, -1f);
@@ -439,7 +403,6 @@ public class EspBehaviour : MonoBehaviour
         return tex;
     }
 
-    // === Unity UI кнопка "E" — создаётся один раз в Awake ===
     private void BuildButtonCanvas()
     {
         try
@@ -456,10 +419,9 @@ public class EspBehaviour : MonoBehaviour
             var btnGo = new GameObject("ESP_E_Button");
             btnGo.transform.SetParent(_btnCanvas.transform, false);
 
-            var img = btnGo.AddComponent<Image>();
-            // маленькая круглая текстура 32×32 — растянется до 44×44
+            var img = btnGo.AddComponent<UnityEngine.UI.Image>();
             var btnTex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
-            btnTex.filterMode = FilterMode.Bilinear;
+            btnTex.filterMode = FilterMode.Point;
             btnTex.wrapMode = TextureWrapMode.Clamp;
             var pixels = new Color32[32 * 32];
             float center = 16f;
@@ -477,10 +439,9 @@ public class EspBehaviour : MonoBehaviour
             img.sprite = Sprite.Create(btnTex, new Rect(0, 0, 32, 32), new Vector2(0.5f, 0.5f));
             img.raycastTarget = true;
 
-            // Текст "E" через Text (дешевле, чем OnGUI)
             var txtGo = new GameObject("E_Label");
             txtGo.transform.SetParent(btnGo.transform, false);
-            var txt = txtGo.AddComponent<Text>();
+            var txt = txtGo.AddComponent<UnityEngine.UI.Text>();
             txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             txt.fontSize = 22;
             txt.color = Color.white;
@@ -498,7 +459,6 @@ public class EspBehaviour : MonoBehaviour
             _btnRect.pivot = new Vector2(0.5f, 0.5f);
             _btnRect.sizeDelta = new Vector2(44, 44);
 
-            // Позиция — центр экрана
             if (!_btnInitialized)
             {
                 _btnPos = new Vector2(Screen.width / 2f, Screen.height / 2f);
@@ -506,13 +466,9 @@ public class EspBehaviour : MonoBehaviour
             }
             _btnRect.anchoredPosition = _btnPos;
 
-            // Перетаскивание и клик через EventTrigger (без Button, чтобы не конфликтовать)
             var trigger = btnGo.AddComponent<UnityEngine.EventSystems.EventTrigger>();
 
-            var downEntry = new UnityEngine.EventSystems.EventTrigger.Entry
-            {
-                eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown
-            };
+            var downEntry = new UnityEngine.EventSystems.EventTrigger.Entry { eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown };
             downEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
             {
                 try
@@ -528,10 +484,7 @@ public class EspBehaviour : MonoBehaviour
             }));
             trigger.triggers.Add(downEntry);
 
-            var dragEntry = new UnityEngine.EventSystems.EventTrigger.Entry
-            {
-                eventID = UnityEngine.EventSystems.EventTriggerType.Drag
-            };
+            var dragEntry = new UnityEngine.EventSystems.EventTrigger.Entry { eventID = UnityEngine.EventSystems.EventTriggerType.Drag };
             dragEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
             {
                 try
@@ -548,10 +501,7 @@ public class EspBehaviour : MonoBehaviour
             }));
             trigger.triggers.Add(dragEntry);
 
-            var upEntry = new UnityEngine.EventSystems.EventTrigger.Entry
-            {
-                eventID = UnityEngine.EventSystems.EventTriggerType.PointerUp
-            };
+            var upEntry = new UnityEngine.EventSystems.EventTrigger.Entry { eventID = UnityEngine.EventSystems.EventTriggerType.PointerUp };
             upEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
             {
                 try
@@ -708,7 +658,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Кнопка видима только когда меню закрыто
             if (_btnCanvas != null)
             {
                 bool showBtn = !_menuVisible;
