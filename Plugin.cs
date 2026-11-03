@@ -1,4 +1,5 @@
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
 using UnityEngine;
@@ -7,6 +8,7 @@ using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
 using System.Collections.Generic;
 using System;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -28,20 +30,12 @@ public static class EspManager
         {
             var existing = UnityEngine.Object.FindObjectOfType<EspBehaviour>();
             if (existing != null) return;
-
             var go = new GameObject("ESP_Behaviour");
             UnityEngine.Object.DontDestroyOnLoad(go);
             var type = Il2CppType.From(typeof(EspBehaviour)).TryCast<Il2CppSystem.Type>();
-            if (type != null)
-            {
-                go.AddComponent(type);
-                Plugin.LogSource?.LogInfo("[ESP] EnsureBehaviour: created new instance");
-            }
+            if (type != null) go.AddComponent(type);
         }
-        catch (Exception e)
-        {
-            Plugin.LogSource?.LogError($"[ESP] EnsureBehaviour EX: {e}");
-        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] EnsureBehaviour EX: {e}"); }
     }
 }
 
@@ -50,29 +44,186 @@ public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
 
+    public static ConfigFile Config;
+    public static ConfigEntry<bool> CfgAimbotEnabled;
+    public static ConfigEntry<float> CfgAimbotFov;
+    public static ConfigEntry<float> CfgAimbotSmooth;
+    public static ConfigEntry<bool> CfgAimbotTargetTeammates;
+    public static ConfigEntry<bool> CfgAimbotVisibilityCheck;
+    public static ConfigEntry<bool> CfgAimbotToggleMode;
+    public static ConfigEntry<string> CfgAimbotKey;
+    public static ConfigEntry<bool> CfgEspBoxes;
+    public static ConfigEntry<bool> CfgEspNames;
+    public static ConfigEntry<bool> CfgEspDistance;
+    public static ConfigEntry<bool> CfgOnlyEnemies;
+    public static ConfigEntry<bool> CfgShowTr;
+    public static ConfigEntry<bool> CfgShowCt;
+    public static ConfigEntry<bool> CfgShowSpectator;
+
+    // Keybind state (читается KeybindListener)
+    public static KeyCode AimbotToggleKey = KeyCode.Mouse1;
+    public static bool AimbotToggleMode = false;
+    public static bool IsMenuOpen = false;
+
     public override void Load()
     {
         LogSource = Log;
         Log.LogInfo("[ESP] ===== Plugin.Load() =====");
         try
         {
+            string cfgPath = Path.Combine(Paths.ConfigPath, "explode.cfg");
+            Config = new ConfigFile(cfgPath, true);
+            Log.LogInfo($"[ESP] Config: {cfgPath}");
+
+            CfgAimbotEnabled = Config.Bind("Aimbot", "Enabled", false);
+            CfgAimbotFov = Config.Bind("Aimbot", "Fov", 15f);
+            CfgAimbotSmooth = Config.Bind("Aimbot", "Smooth", 15f);
+            CfgAimbotTargetTeammates = Config.Bind("Aimbot", "TargetTeammates", false);
+            CfgAimbotVisibilityCheck = Config.Bind("Aimbot", "VisibilityCheck", false);
+            CfgAimbotToggleMode = Config.Bind("Aimbot", "ToggleMode", false);
+            CfgAimbotKey = Config.Bind("Aimbot", "Key", "Mouse1");
+
+            CfgEspBoxes = Config.Bind("ESP", "Boxes", true);
+            CfgEspNames = Config.Bind("ESP", "Names", true);
+            CfgEspDistance = Config.Bind("ESP", "Distance", true);
+            CfgOnlyEnemies = Config.Bind("ESP", "OnlyEnemies", false);
+            CfgShowTr = Config.Bind("ESP", "ShowTr", true);
+            CfgShowCt = Config.Bind("ESP", "ShowCt", true);
+            CfgShowSpectator = Config.Bind("ESP", "ShowSpectator", false);
+
+            TeamFilter.ShowTr = CfgShowTr.Value;
+            TeamFilter.ShowCt = CfgShowCt.Value;
+            TeamFilter.ShowSpectator = CfgShowSpectator.Value;
+            TeamFilter.OnlyEnemies = CfgOnlyEnemies.Value;
+
+            AimbotToggleMode = CfgAimbotToggleMode.Value;
+            if (Enum.TryParse(CfgAimbotKey.Value, out KeyCode kc))
+                AimbotToggleKey = kc;
+
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
+            ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
             SceneManager.sceneLoaded += (Action<Scene, LoadSceneMode>)OnSceneLoaded;
             EspManager.EnsureBehaviour();
+            KeybindListener.EnsureBehaviour();
         }
         catch (Exception e)
         {
-            Log.LogError($"[ESP] Failed to add EspBehaviour: {e}");
+            Log.LogError($"[ESP] Load EX: {e}");
         }
     }
 
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        LogSource?.LogInfo($"[ESP] Scene loaded: '{scene.name}' ({mode}) -> recreating behaviour");
+        LogSource?.LogInfo($"[ESP] Scene loaded: '{scene.name}' ({mode})");
         EspManager.EnsureBehaviour();
+        KeybindListener.EnsureBehaviour();
     }
 }
 
+// =========================================================
+//                    KEYBIND LISTENER
+// =========================================================
+public class KeybindListener : MonoBehaviour
+{
+    private static KeybindListener _instance;
+
+    public static void EnsureBehaviour()
+    {
+        try
+        {
+            if (_instance != null) return;
+            var existing = UnityEngine.Object.FindObjectOfType<KeybindListener>();
+            if (existing != null) { _instance = existing; return; }
+
+            var go = new GameObject("ESP_KeybindListener");
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            var type = Il2CppType.From(typeof(KeybindListener)).TryCast<Il2CppSystem.Type>();
+            if (type != null)
+            {
+                go.AddComponent(type);
+                Plugin.LogSource?.LogInfo("[ESP] KeybindListener created");
+            }
+        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] KeybindListener Ensure EX: {e}"); }
+    }
+
+    void Awake()
+    {
+        _instance = this;
+        DontDestroyOnLoad(gameObject);
+    }
+
+    void Update()
+    {
+        try
+        {
+            if (Plugin.IsMenuOpen) return;
+            if (IsTypingInChat()) return;
+
+            if (Plugin.AimbotToggleKey == KeyCode.None) return;
+
+            if (Plugin.AimbotToggleMode)
+            {
+                if (Input.GetKeyDown(Plugin.AimbotToggleKey))
+                {
+                    EspBehaviour.SetAimbotActive(!EspBehaviour.AimbotActive);
+                    Plugin.LogSource?.LogInfo($"[ESP] Aimbot toggled: {EspBehaviour.AimbotActive}");
+                }
+            }
+            else
+            {
+                EspBehaviour.SetAimbotActive(Input.GetKey(Plugin.AimbotToggleKey));
+            }
+        }
+        catch (Exception e) { Debug.LogError($"[ESP] KeybindListener EX: {e.Message}"); }
+    }
+
+    private bool IsTypingInChat()
+    {
+        try
+        {
+            Type hudType = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    foreach (var t in asm.GetTypes())
+                        if (t.Name == "HudManager") { hudType = t; break; }
+                }
+                catch { }
+                if (hudType != null) break;
+            }
+            if (hudType == null) return false;
+
+            var existsProp = hudType.GetProperty("InstanceExists", BindingFlags.Public | BindingFlags.Static);
+            if (existsProp != null)
+            {
+                var ex = existsProp.GetValue(null);
+                if (ex is bool b && !b) return false;
+            }
+
+            var instProp = hudType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+            if (instProp == null) return false;
+            var hud = instProp.GetValue(null);
+            if (hud == null) return false;
+
+            var chatProp = hudType.GetProperty("Chat", BindingFlags.Public | BindingFlags.Instance);
+            if (chatProp == null) return false;
+            var chat = chatProp.GetValue(hud);
+            if (chat == null) return false;
+
+            var openProp = chat.GetType().GetProperty("IsOpenOrOpening", BindingFlags.Public | BindingFlags.Instance);
+            if (openProp == null) return false;
+            var open = openProp.GetValue(chat);
+            return open is bool o && o;
+        }
+        catch { return false; }
+    }
+}
+
+// =========================================================
+//                    ESP BEHAVIOUR
+// =========================================================
 public class EspBehaviour : MonoBehaviour
 {
     private class Tracked
@@ -82,7 +233,6 @@ public class EspBehaviour : MonoBehaviour
         public int Team;
         public string Name;
         public object BipedMap;
-        public int LastSeenFrame;
     }
 
     private readonly Dictionary<int, Tracked> _tracked = new();
@@ -92,6 +242,7 @@ public class EspBehaviour : MonoBehaviour
     private Camera _cam;
     private Texture2D _whiteTex;
     private Texture2D _circleTex;
+    private Texture2D _ringTex;
     private float _scanTimer;
     private const float ScanInterval = 0.5f;
 
@@ -103,21 +254,18 @@ public class EspBehaviour : MonoBehaviour
     private const float FootOffset = 0.1f;
     private const float BoxWidthRatio = 0.4f;
 
-    // ---- ESP ----
     private bool _espBoxesEnabled = true;
     private bool _espNamesEnabled = true;
     private bool _espDistanceEnabled = true;
 
-    // ---- Menu ----
     private bool _menuVisible = false;
     private int _menuTab = 0;
 
-    private const float MenuWidth = 480f;
-    private const float MenuHeight = 520f;
+    private const float MenuWidth = 500f;
+    private const float MenuHeight = 540f;
     private const float MenuOffset = 30f;
-    private const float TabWidth = 110f;
+    private const float TabWidth = 120f;
 
-    // ---- Floating button ----
     private const float ButtonRadius = 22f;
     private Vector2 _buttonCenter = new Vector2(-1f, -1f);
     private bool _buttonInitialized = false;
@@ -126,17 +274,16 @@ public class EspBehaviour : MonoBehaviour
     private Vector2 _dragOffset;
     private Vector2 _dragStartMouse;
 
-    // ---- Aimbot ----
     private bool _aimbotEnabled = false;
     private float _aimbotFov = 15f;
     private float _aimbotSmooth = 15f;
     private bool _aimbotTargetTeammates = false;
     private bool _aimbotVisibilityCheck = false;
-    private bool _aimbotToggleMode = false;
-    private KeyCode _aimbotKey = KeyCode.Mouse1;
     private bool _aimbotKeyCapturing = false;
-    private bool _aimbotActive = false;
-    private bool _aimbotPrevKeyState = false;
+
+    private static bool _aimbotActive = false;
+    public static bool AimbotActive => _aimbotActive;
+    public static void SetAimbotActive(bool active) { _aimbotActive = active; }
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
@@ -155,7 +302,6 @@ public class EspBehaviour : MonoBehaviour
         float now = Time.realtimeSinceStartup;
         if (_lastLogTime.TryGetValue(key, out float last) && now - last < LogCooldown) return;
         _lastLogTime[key] = now;
-
         if (isError) { Debug.LogError(message); Plugin.LogSource?.LogError(message); }
         else { Debug.Log(message); Plugin.LogSource?.LogInfo(message); }
     }
@@ -167,36 +313,60 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex = new Texture2D(1, 1);
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
-            _circleTex = CreateCircleTexture(64);
+            _circleTex = CreateCircleTexture(256);
+            _ringTex = CreateRingTexture(256, 4f);
             enabled = true;
             gameObject.SetActive(true);
+
+            if (Plugin.CfgEspBoxes != null) _espBoxesEnabled = Plugin.CfgEspBoxes.Value;
+            if (Plugin.CfgEspNames != null) _espNamesEnabled = Plugin.CfgEspNames.Value;
+            if (Plugin.CfgEspDistance != null) _espDistanceEnabled = Plugin.CfgEspDistance.Value;
+            if (Plugin.CfgAimbotEnabled != null) _aimbotEnabled = Plugin.CfgAimbotEnabled.Value;
+            if (Plugin.CfgAimbotFov != null) _aimbotFov = Plugin.CfgAimbotFov.Value;
+            if (Plugin.CfgAimbotSmooth != null) _aimbotSmooth = Plugin.CfgAimbotSmooth.Value;
+            if (Plugin.CfgAimbotTargetTeammates != null) _aimbotTargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
+            if (Plugin.CfgAimbotVisibilityCheck != null) _aimbotVisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
     }
 
     private Texture2D CreateCircleTexture(int size)
     {
-        var tex = new Texture2D(size, size);
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+        tex.wrapMode = TextureWrapMode.Clamp;
         float center = size / 2f;
-        float radius = size / 2f - 1f;
+        float radius = size / 2f - 2f;
         for (int x = 0; x < size; x++)
-        {
             for (int y = 0; y < size; y++)
             {
-                float dx = x - center + 0.5f;
-                float dy = y - center + 0.5f;
+                float dx = x - center + 0.5f, dy = y - center + 0.5f;
                 float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                if (dist <= radius)
-                {
-                    float alpha = dist <= radius - 1.5f ? 1f : Mathf.Clamp01(radius - dist);
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-                }
-                else
-                {
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, 0f));
-                }
+                float alpha = Mathf.Clamp01((radius - dist) / 2f);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
             }
-        }
+        tex.Apply();
+        return tex;
+    }
+
+    private Texture2D CreateRingTexture(int size, float thickness)
+    {
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+        tex.wrapMode = TextureWrapMode.Clamp;
+        float center = size / 2f;
+        float outer = size / 2f - 2f;
+        float inner = outer - thickness;
+        for (int x = 0; x < size; x++)
+            for (int y = 0; y < size; y++)
+            {
+                float dx = x - center + 0.5f, dy = y - center + 0.5f;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                float alpha = 0f;
+                if (dist <= outer && dist >= inner)
+                    alpha = Mathf.Clamp01(Mathf.Min(outer - dist, dist - inner) / 1.5f);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
         tex.Apply();
         return tex;
     }
@@ -213,6 +383,7 @@ public class EspBehaviour : MonoBehaviour
         {
             if (_whiteTex != null) Destroy(_whiteTex);
             if (_circleTex != null) Destroy(_circleTex);
+            if (_ringTex != null) Destroy(_ringTex);
         }
         catch { }
     }
@@ -222,27 +393,17 @@ public class EspBehaviour : MonoBehaviour
         _watchdogTicks++;
         try
         {
-            bool cameraOk = _cam != null;
-            bool typesOk = _botType != null || _playerType != null;
-
-            if (!typesOk) { _resolved = false; ResolveTypes(); }
-            if (!cameraOk) _cam = Camera.main;
-
+            if (_botType == null && _playerType == null) { _resolved = false; ResolveTypes(); }
+            if (_cam == null) _cam = Camera.main;
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, aimbot={_aimbotEnabled}, active={_aimbotActive}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, aimbot={_aimbotEnabled}, active={AimbotActive}");
             }
         }
-        catch (Exception e)
-        {
-            Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}");
-        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
     }
 
-    // =========================================================
-    //                    TEAM READING
-    // =========================================================
     int ReadTeamFromMember(MemberInfo member, object target)
     {
         if (member == null || target == null) return -1;
@@ -252,12 +413,7 @@ public class EspBehaviour : MonoBehaviour
             if (member is MethodInfo m) val = m.Invoke(target, null);
             else if (member is PropertyInfo p) val = p.GetValue(target);
             else if (member is FieldInfo f) val = f.GetValue(target);
-
-            if (val != null)
-            {
-                if (val is Enum en) return Convert.ToInt32(en);
-                return Convert.ToInt32(val);
-            }
+            if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
         }
         catch { }
         return -1;
@@ -268,11 +424,8 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             IntPtr ptr = IntPtr.Zero;
-            if (obj is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cppObj)
-                ptr = il2cppObj.Pointer;
-            else if (obj is Component comp)
-                ptr = comp.Pointer;
-
+            if (obj is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cppObj) ptr = il2cppObj.Pointer;
+            else if (obj is Component comp) ptr = comp.Pointer;
             if (ptr == IntPtr.Zero) return -1;
             return Marshal.ReadByte(ptr, offset);
         }
@@ -282,22 +435,20 @@ public class EspBehaviour : MonoBehaviour
     int ReadTeam(Component component, bool isBot)
     {
         if (component == null) return -1;
-
         if (isBot)
         {
             int team = ReadTeamFromMember(_playerTeamMember, component);
             if (team >= 0) return team;
-
             try
             {
                 var t = component.GetType();
                 object playerCtrl = null;
-                var crvsProp = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (crvsProp != null) playerCtrl = crvsProp.GetValue(component);
+                var p = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (p != null) playerCtrl = p.GetValue(component);
                 if (playerCtrl == null)
                 {
-                    var crvsField = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (crvsField != null) playerCtrl = crvsField.GetValue(component);
+                    var f = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (f != null) playerCtrl = f.GetValue(component);
                 }
                 if (playerCtrl != null)
                 {
@@ -306,15 +457,11 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
             catch { }
-
             int offTeam = ReadByteAtOffset(component, 0x24);
             if (offTeam > 0 && offTeam <= 3) return offTeam;
             return -1;
         }
-        else
-        {
-            return ReadTeamFromMember(_playerTeamMember, component);
-        }
+        return ReadTeamFromMember(_playerTeamMember, component);
     }
 
     void UpdateLocalTeam()
@@ -322,13 +469,23 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_localPlayerMember == null || _playerManagerType == null) return;
-
             object pmInstance = null;
             var pmType = _localPlayerMember.DeclaringType;
-            var instProp = pmType.GetProperty("Instance",
-                BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+
+            var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (instProp != null) pmInstance = instProp.GetValue(null);
-            if (pmInstance == null) return;
+            if (pmInstance == null)
+            {
+                foreach (var n in new[] { "_instance", "s_Instance", "m_Instance", "instance" })
+                {
+                    var f = pmType.GetField(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    if (f != null) { pmInstance = f.GetValue(null); break; }
+                    var p = pmType.GetProperty(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    if (p != null) { pmInstance = p.GetValue(null); break; }
+                }
+            }
+            if (pmInstance == null) { var pmc = FindObjectOfType(_playerManagerType); if (pmc != null) pmInstance = pmc; }
+            if (pmInstance == null) { LogThrottled("pm_null", "[ESP] PlayerManager not found", true); return; }
 
             object localPlayer = null;
             if (_localPlayerMember is PropertyInfo lp) localPlayer = lp.GetValue(pmInstance);
@@ -338,39 +495,25 @@ public class EspBehaviour : MonoBehaviour
             int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
             if (newTeam != _localTeam && newTeam >= 0)
             {
-                Plugin.LogSource?.LogInfo($"[ESP] Local team changed: {_localTeam} -> {newTeam}");
+                Plugin.LogSource?.LogInfo($"[ESP] Local team: {_localTeam} -> {newTeam}");
                 _localTeam = newTeam;
             }
         }
-        catch { }
+        catch (Exception e) { LogThrottled("localt_ex", $"[ESP] LocalTeam EX: {e.Message}", true); }
     }
 
-    // =========================================================
-    //                    UPDATE
-    // =========================================================
     void Update()
     {
         try
         {
-            if (_menuVisible)
-            {
-                Cursor.visible = true;
-                Cursor.lockState = CursorLockMode.None;
-            }
+            if (_menuVisible) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
+            Plugin.IsMenuOpen = _menuVisible;
 
             _watchdogTimer += Time.deltaTime;
-            if (_watchdogTimer >= WatchdogInterval)
-            {
-                _watchdogTimer = 0f;
-                RunWatchdog();
-            }
+            if (_watchdogTimer >= WatchdogInterval) { _watchdogTimer = 0f; RunWatchdog(); }
 
             _scanTimer += Time.deltaTime;
-            if (_scanTimer >= ScanInterval)
-            {
-                _scanTimer = 0f;
-                DoScan();
-            }
+            if (_scanTimer >= ScanInterval) { _scanTimer = 0f; DoScan(); }
 
             _toDraw.Clear();
             foreach (var t in _tracked.Values)
@@ -380,53 +523,22 @@ public class EspBehaviour : MonoBehaviour
                 if (!IsTeamVisible(t.Team)) continue;
                 _toDraw.Add(t);
             }
-
-            if (!_aimbotKeyCapturing)
-            {
-                bool keyDown = false;
-                try { keyDown = Input.GetKey(_aimbotKey); } catch { }
-
-                if (_aimbotToggleMode)
-                {
-                    if (keyDown && !_aimbotPrevKeyState) _aimbotActive = !_aimbotActive;
-                    _aimbotPrevKeyState = keyDown;
-                }
-                else
-                {
-                    _aimbotActive = keyDown;
-                }
-            }
         }
-        catch (Exception e)
-        {
-            LogThrottled("update_ex", $"[ESP] Update EX: {e}", true);
-            _scanTimer = 0f;
-        }
+        catch (Exception e) { LogThrottled("update_ex", $"[ESP] Update EX: {e}", true); _scanTimer = 0f; }
     }
 
-    // =========================================================
-    //                    AIMBOT (LateUpdate)
-    // =========================================================
     void LateUpdate()
     {
         try
         {
-            if (!_aimbotEnabled) return;
-            if (!_aimbotActive) return;
-            if (_aimbotKeyCapturing) return;
+            if (!_aimbotEnabled || !AimbotActive || _aimbotKeyCapturing) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
 
             Tracked best = null;
             float bestAngle = _aimbotFov;
-            Vector3 camPos;
-            Vector3 camForward;
-            try
-            {
-                camPos = _cam.transform.position;
-                camForward = _cam.transform.forward;
-            }
-            catch { return; }
+            Vector3 camPos, camForward;
+            try { camPos = _cam.transform.position; camForward = _cam.transform.forward; } catch { return; }
 
             foreach (var t in _tracked.Values)
             {
@@ -434,20 +546,12 @@ public class EspBehaviour : MonoBehaviour
                 {
                     if (t.Transform == null) continue;
                     if (!_aimbotTargetTeammates && _localTeam > 0 && t.Team == _localTeam) continue;
+                    if (_aimbotVisibilityCheck && !IsVisible(t, camPos)) continue;
 
-                    if (_aimbotVisibilityCheck)
-                    {
-                        if (!IsVisible(t, camPos)) continue;
-                    }
-
-                    Vector3 headPos = GetHeadPosition(t);
-                    Vector3 dir = (headPos - camPos).normalized;
+                    Vector3 hp = GetHeadPosition(t);
+                    Vector3 dir = (hp - camPos).normalized;
                     float angle = Vector3.Angle(camForward, dir);
-                    if (angle < bestAngle)
-                    {
-                        bestAngle = angle;
-                        best = t;
-                    }
+                    if (angle < bestAngle) { bestAngle = angle; best = t; }
                 }
                 catch { }
             }
@@ -455,33 +559,22 @@ public class EspBehaviour : MonoBehaviour
             if (best == null) return;
 
             Vector3 targetHead = GetHeadPosition(best);
-            Vector3 targetDir = (targetHead - camPos).normalized;
-            Quaternion targetRot = Quaternion.LookRotation(targetDir);
-            try
-            {
-                _cam.transform.rotation = Quaternion.Slerp(
-                    _cam.transform.rotation, targetRot, _aimbotSmooth * Time.deltaTime);
-            }
-            catch { }
+            Quaternion targetRot = Quaternion.LookRotation((targetHead - camPos).normalized);
+            _cam.transform.rotation = Quaternion.Slerp(_cam.transform.rotation, targetRot, _aimbotSmooth * Time.deltaTime);
         }
-        catch (Exception e)
-        {
-            LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true);
-        }
+        catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
     }
 
     bool IsVisible(Tracked t, Vector3 camPos)
     {
         try
         {
-            Vector3 headPos = GetHeadPosition(t);
-            Vector3 dir = (headPos - camPos);
-            float dist = dir.magnitude;
+            Vector3 hp = GetHeadPosition(t);
+            Vector3 d = hp - camPos;
+            float dist = d.magnitude;
             if (dist < 0.1f) return true;
-            if (Physics.Raycast(camPos, dir.normalized, out var hit, dist))
-            {
+            if (Physics.Raycast(camPos, d.normalized, out var hit, dist))
                 return hit.transform == t.Transform || hit.transform.IsChildOf(t.Transform);
-            }
             return true;
         }
         catch { return true; }
@@ -493,12 +586,11 @@ public class EspBehaviour : MonoBehaviour
         {
             if (t.BipedMap != null)
             {
-                var nwh = t.BipedMap.GetType().GetMethod("nwh",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var nwh = t.BipedMap.GetType().GetMethod("nwh", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (nwh != null)
                 {
-                    var headTr = nwh.Invoke(t.BipedMap, new object[] { 0 });
-                    if (headTr is Transform ht) return ht.position;
+                    var h = nwh.Invoke(t.BipedMap, new object[] { 0 });
+                    if (h is Transform ht) return ht.position;
                 }
             }
         }
@@ -518,74 +610,37 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    private static bool IsTeamEnum(Type t)
-    {
-        if (t == null) return false;
-        return t.IsEnum && (t.Name == "Team" || t.FullName.EndsWith(".Team"));
-    }
+    private static bool IsTeamEnum(Type t) => t != null && t.IsEnum && (t.Name == "Team" || t.FullName.EndsWith(".Team"));
 
-    private static Type FindTypeByName(string shortName, out string foundFullName)
+    private static Type FindTypeByName(string shortName, out string full)
     {
-        foundFullName = null;
+        full = null;
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
+            try { var d = asm.GetType(shortName); if (d != null) { full = d.FullName; return d; } } catch { }
             try
             {
-                var direct = asm.GetType(shortName);
-                if (direct != null) { foundFullName = direct.FullName; return direct; }
-            }
-            catch { }
-
-            try
-            {
-                foreach (var t in asm.GetTypes())
-                {
-                    if (t.Name == shortName)
-                    {
-                        foundFullName = t.FullName;
-                        return t;
-                    }
-                }
+                foreach (var t in asm.GetTypes()) if (t.Name == shortName) { full = t.FullName; return t; }
             }
             catch { }
         }
         return null;
     }
 
-    private static MemberInfo FindTeamMember(Type startType, out string ownerName)
+    private static MemberInfo FindTeamMember(Type start, out string owner)
     {
-        ownerName = null;
-        if (startType == null) return null;
-        Type search = startType;
-        int depth = 0;
-        while (search != null && search != typeof(object) && depth < 10)
+        owner = null;
+        if (start == null) return null;
+        Type s = start; int depth = 0;
+        while (s != null && s != typeof(object) && depth < 10)
         {
-            foreach (var m in search.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-            {
-                if (m.GetParameters().Length == 0 && IsTeamEnum(m.ReturnType))
-                {
-                    ownerName = $"{search.Name}.{m.Name}()";
-                    return m;
-                }
-            }
-            foreach (var p in search.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-            {
-                if (IsTeamEnum(p.PropertyType) && p.GetGetMethod(true) != null)
-                {
-                    ownerName = $"{search.Name}.{p.Name}";
-                    return p;
-                }
-            }
-            foreach (var f in search.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-            {
-                if (IsTeamEnum(f.FieldType))
-                {
-                    ownerName = $"{search.Name}.{f.Name}";
-                    return f;
-                }
-            }
-            search = search.BaseType;
-            depth++;
+            foreach (var m in s.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (m.GetParameters().Length == 0 && IsTeamEnum(m.ReturnType)) { owner = $"{s.Name}.{m.Name}()"; return m; }
+            foreach (var p in s.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (IsTeamEnum(p.PropertyType) && p.GetGetMethod(true) != null) { owner = $"{s.Name}.{p.Name}"; return p; }
+            foreach (var f in s.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (IsTeamEnum(f.FieldType)) { owner = $"{s.Name}.{f.Name}"; return f; }
+            s = s.BaseType; depth++;
         }
         return null;
     }
@@ -596,44 +651,31 @@ public class EspBehaviour : MonoBehaviour
         _resolved = true;
         try
         {
-            Type bt = FindTypeByName("BotPlayerController", out var btName);
-            Type pt = FindTypeByName("PlayerController", out var ptName);
-            Type pmType = FindTypeByName("PlayerManager", out var pmName);
-
-            Plugin.LogSource?.LogInfo($"[ESP] FindType: Bot='{btName ?? "null"}', Player='{ptName ?? "null"}', PM='{pmName ?? "null"}'");
-
+            var bt = FindTypeByName("BotPlayerController", out _);
+            var pt = FindTypeByName("PlayerController", out _);
+            var pmType = FindTypeByName("PlayerManager", out _);
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
             if (pmType != null) _playerManagerType = Il2CppType.From(pmType);
 
             _playerTeamMember = null;
             _localPlayerMember = null;
-
-            string playerOwner = null;
-            _playerTeamMember = FindTeamMember(pt, out playerOwner);
-            Plugin.LogSource?.LogInfo($"[ESP] Team member Player: {playerOwner ?? "null"}");
+            string owner = null;
+            _playerTeamMember = FindTeamMember(pt, out owner);
+            Plugin.LogSource?.LogInfo($"[ESP] Team member: {owner ?? "null"}");
 
             if (pmType != null && pt != null)
             {
                 foreach (var p in pmType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                {
                     if (p.PropertyType == pt) { _localPlayerMember = p; break; }
-                }
                 if (_localPlayerMember == null)
-                {
                     foreach (var f in pmType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                    {
                         if (f.FieldType == pt) { _localPlayerMember = f; break; }
-                    }
-                }
             }
 
-            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, PlayerTeam={_playerTeamMember != null}, LocalPlayer={_localPlayerMember != null}");
+            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, Team={_playerTeamMember != null}, LocalPlayer={_localPlayerMember != null}");
         }
-        catch (Exception e)
-        {
-            Plugin.LogSource?.LogError($"[ESP] ResolveTypes FATAL EX: {e}");
-        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
 
     void DoScan()
@@ -642,22 +684,15 @@ public class EspBehaviour : MonoBehaviour
         {
             ResolveTypes();
             if (_botType == null && _playerType == null) return;
-
             UpdateLocalTeam();
-
             _seenList.Clear();
             ScanTypeInternal(_botType, true, "Bot");
             ScanTypeInternal(_playerType, false, "Player");
-
             var dead = new List<int>();
-            foreach (var kv in _tracked)
-                if (!_seenList.Contains(kv.Key)) dead.Add(kv.Key);
+            foreach (var kv in _tracked) if (!_seenList.Contains(kv.Key)) dead.Add(kv.Key);
             foreach (var id in dead) _tracked.Remove(id);
         }
-        catch (Exception e)
-        {
-            LogThrottled("scan_ex", $"[ESP] DoScan EX: {e}", true);
-        }
+        catch (Exception e) { LogThrottled("scan_ex", $"[ESP] DoScan EX: {e}", true); }
     }
 
     void ScanTypeInternal(Il2CppSystem.Type type, bool isBot, string label)
@@ -667,7 +702,6 @@ public class EspBehaviour : MonoBehaviour
         {
             var arr = FindObjectsOfType(type, false);
             if (arr == null) return;
-
             for (int i = 0; i < arr.Length; i++)
             {
                 try
@@ -680,36 +714,18 @@ public class EspBehaviour : MonoBehaviour
                     if (tr == null) continue;
                     var go = c.gameObject;
                     if (go == null) continue;
-
                     int id = go.GetInstanceID();
                     if (_seenList.Contains(id)) continue;
                     _seenList.Add(id);
 
-                    int targetTeam = ReadTeam(c, isBot);
+                    int team = ReadTeam(c, isBot);
                     string name = TryGetName(c, isBot);
-
                     object biped = null;
-                    try
-                    {
-                        var bipedField = c.GetType().GetField("_characterBiped",
-                            BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (bipedField != null) biped = bipedField.GetValue(c);
-                    }
-                    catch { }
+                    try { var bf = c.GetType().GetField("_characterBiped", BindingFlags.NonPublic | BindingFlags.Instance); if (bf != null) biped = bf.GetValue(c); } catch { }
 
                     bool isNew = !_tracked.ContainsKey(id);
-                    _tracked[id] = new Tracked
-                    {
-                        Transform = tr,
-                        IsBot = isBot,
-                        Team = targetTeam,
-                        Name = name,
-                        BipedMap = biped,
-                        LastSeenFrame = Time.frameCount
-                    };
-
-                    if (isNew)
-                        Plugin.LogSource?.LogInfo($"[ESP] +Tracked {label}: name='{name}', team={targetTeam}, id={id}");
+                    _tracked[id] = new Tracked { Transform = tr, IsBot = isBot, Team = team, Name = name, BipedMap = biped };
+                    if (isNew) Plugin.LogSource?.LogInfo($"[ESP] +{label}: '{name}' team={team}");
                 }
                 catch { }
             }
@@ -721,75 +737,57 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            var props = c.GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var p in props)
-            {
+            foreach (var p in c.GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 if (p.PropertyType == typeof(string))
                 {
-                    var val = p.GetValue(c) as string;
-                    if (!string.IsNullOrEmpty(val) && val.Length < 25 && !val.Contains("Clone") && !val.Contains("Player") && !val.Contains("Bot"))
-                        return val;
+                    var v = p.GetValue(c) as string;
+                    if (!string.IsNullOrEmpty(v) && v.Length < 25 && !v.Contains("Clone") && !v.Contains("Player") && !v.Contains("Bot")) return v;
                 }
-            }
         }
         catch { }
-        try
-        {
-            string n = c.gameObject.name;
-            if (!string.IsNullOrEmpty(n) && n != "Player(Clone)" && n != "Bot" && n != "Player") return n;
-        }
-        catch { }
+        try { var n = c.gameObject.name; if (!string.IsNullOrEmpty(n) && n != "Player(Clone)" && n != "Bot" && n != "Player") return n; } catch { }
         return isBot ? "Bot" : "Player";
     }
 
-    // =========================================================
-    //                    OnGUI
-    // =========================================================
     void OnGUI()
     {
         try
         {
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
-            if (_circleTex == null) _circleTex = CreateCircleTexture(64);
+            if (_circleTex == null) _circleTex = CreateCircleTexture(256);
+            if (_ringTex == null) _ringTex = CreateRingTexture(256, 4f);
             if (_cam == null) { _cam = Camera.main; if (_cam == null) return; }
 
             if (_espBoxesEnabled || _espNamesEnabled)
-            {
                 foreach (var t in _toDraw)
                 {
                     try
                     {
                         if (t.Transform == null) continue;
+                        Vector3 hw = t.Transform.position + Vector3.up * HeadOffset;
+                        Vector3 fw = t.Transform.position - Vector3.up * FootOffset;
+                        Vector3 sh = _cam.WorldToScreenPoint(hw);
+                        Vector3 sf = _cam.WorldToScreenPoint(fw);
+                        if (sh.z < 0 || sf.z < 0) continue;
 
-                        Vector3 headWorld = t.Transform.position + Vector3.up * HeadOffset;
-                        Vector3 footWorld = t.Transform.position - Vector3.up * FootOffset;
-
-                        Vector3 screenHead = _cam.WorldToScreenPoint(headWorld);
-                        Vector3 screenFoot = _cam.WorldToScreenPoint(footWorld);
-
-                        if (screenHead.z < 0 || screenFoot.z < 0) continue;
-
-                        float x = screenHead.x;
-                        float top = Screen.height - screenHead.y;
-                        float bottom = Screen.height - screenFoot.y;
+                        float x = sh.x;
+                        float top = Screen.height - sh.y;
+                        float bottom = Screen.height - sf.y;
                         float height = Mathf.Abs(bottom - top);
                         float width = height * BoxWidthRatio;
                         if (width < 4f) width = 4f;
                         if (height < 8f) height = 8f;
-
                         float left = x - width / 2f;
                         float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
 
                         if (_espBoxesEnabled)
                         {
                             float th = 2f;
-                            Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
-                            Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
-
-                            GUI.color = fillColor;
+                            Color fill = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
+                            Color outl = t.Team == 1 ? Color.red : Color.cyan;
+                            GUI.color = fill;
                             GUI.DrawTexture(new Rect(left, top, width, height), _whiteTex);
-
-                            GUI.color = outlineColor;
+                            GUI.color = outl;
                             GUI.DrawTexture(new Rect(left, top, width, th), _whiteTex);
                             GUI.DrawTexture(new Rect(left, top + height - th, width, th), _whiteTex);
                             GUI.DrawTexture(new Rect(left, top, th, height), _whiteTex);
@@ -799,80 +797,64 @@ public class EspBehaviour : MonoBehaviour
 
                         if (_espNamesEnabled)
                         {
-                            string label = $"{t.Name}";
-                            if (_espDistanceEnabled) label += $" [{dist:F0}m]";
-
-                            float labelW = Math.Min(label.Length * 7.5f + 8f, 260f);
-                            float labelLeft = x - labelW / 2f;
-
-                            GUI.color = new Color(0f, 0f, 0f, 0.6f);
-                            GUI.DrawTexture(new Rect(labelLeft - 2f, top - 21f, labelW + 4f, 20f), _whiteTex);
+                            string lbl = t.Name + (_espDistanceEnabled ? $" [{dist:F0}m]" : "");
+                            float lw = Math.Min(lbl.Length * 7.5f + 10f, 280f);
+                            float ll = x - lw / 2f;
+                            GUI.color = new Color(0f, 0f, 0f, 0.65f);
+                            GUI.DrawTexture(new Rect(ll - 2f, top - 22f, lw + 4f, 20f), _whiteTex);
                             GUI.color = Color.white;
-                            GUI.Label(new Rect(labelLeft, top - 20f, labelW, 18f), label);
+                            GUI.Label(new Rect(ll, top - 21f, lw, 18f), lbl);
                         }
                     }
                     catch { }
                 }
-            }
 
             if (_aimbotEnabled)
             {
                 float fovScreen = _aimbotFov * (Screen.height / 90f);
-                GUI.color = new Color(1f, 1f, 1f, 0.15f);
-                GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f,
-                    Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
-                GUI.color = Color.white;
+                if (fovScreen > 0)
+                {
+                    GUI.color = new Color(1f, 1f, 1f, 0.04f);
+                    GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
+                    GUI.color = new Color(1f, 1f, 1f, 0.7f);
+                    GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _ringTex);
+                    GUI.color = Color.white;
+                }
             }
 
             if (_menuVisible) DrawMenu();
             else DrawFloatingButton();
         }
         catch { }
-        finally
-        {
-            GUI.color = Color.white;
-        }
+        finally { GUI.color = Color.white; }
     }
 
     private void DrawFloatingButton()
     {
-        if (!_buttonInitialized)
-        {
-            _buttonCenter = new Vector2(Screen.width / 2f, Screen.height / 2f);
-            _buttonInitialized = true;
-        }
-
+        if (!_buttonInitialized) { _buttonCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); _buttonInitialized = true; }
         float r = ButtonRadius;
         Rect btnRect = new Rect(_buttonCenter.x - r, _buttonCenter.y - r, r * 2f, r * 2f);
-
         Event e = Event.current;
         if (e != null)
         {
-            Vector2 mouse = e.mousePosition;
-            if (e.type == EventType.MouseDown && e.button == 0 && btnRect.Contains(mouse))
+            Vector2 m = e.mousePosition;
+            if (e.type == EventType.MouseDown && e.button == 0 && btnRect.Contains(m))
             {
-                _isDragging = true;
-                _dragMoved = false;
-                _dragOffset = mouse - _buttonCenter;
-                _dragStartMouse = mouse;
-                e.Use();
+                _isDragging = true; _dragMoved = false; _dragOffset = m - _buttonCenter; _dragStartMouse = m; e.Use();
             }
             else if (e.type == EventType.MouseDrag && _isDragging)
             {
-                if ((mouse - _dragStartMouse).sqrMagnitude > 9f) _dragMoved = true;
-                _buttonCenter = mouse - _dragOffset;
+                if ((m - _dragStartMouse).sqrMagnitude > 9f) _dragMoved = true;
+                _buttonCenter = m - _dragOffset;
                 _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, r, Screen.width - r);
                 _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, r, Screen.height - r);
                 e.Use();
             }
             else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
             {
-                _isDragging = false;
-                if (!_dragMoved) { _menuVisible = true; }
-                e.Use();
+                _isDragging = false; if (!_dragMoved) _menuVisible = true; e.Use();
             }
         }
-
         GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
         GUI.DrawTexture(btnRect, _circleTex);
         GUI.color = Color.white;
@@ -882,53 +864,36 @@ public class EspBehaviour : MonoBehaviour
     private bool CustomButton(Rect rect, string label, bool state)
     {
         Event e = Event.current;
-        bool clicked = false;
-        if (e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
-            clicked = true;
-
+        bool clicked = e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition);
         GUI.color = state ? new Color(0.2f, 0.55f, 0.3f, 0.95f) : new Color(0.55f, 0.2f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, _whiteTex);
         GUI.color = Color.white;
-
-        float labelW = Math.Min(label.Length * 7.5f + 4f, rect.width - 6f);
-        GUI.Label(new Rect(rect.x + (rect.width - labelW) / 2f,
-            rect.y + (rect.height - 16f) / 2f, labelW, 16f), label);
+        float lw = Math.Min(label.Length * 7.5f + 4f, rect.width - 6f);
+        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
         return clicked;
     }
 
     private bool TabButton(Rect rect, string label, bool active)
     {
         Event e = Event.current;
-        bool clicked = false;
-        if (e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
-            clicked = true;
-
+        bool clicked = e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition);
         GUI.color = active ? new Color(0.2f, 0.4f, 0.7f, 0.95f) : new Color(0.15f, 0.15f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, _whiteTex);
         GUI.color = Color.white;
-
-        float labelW = Math.Min(label.Length * 7.5f + 4f, rect.width - 6f);
-        GUI.Label(new Rect(rect.x + (rect.width - labelW) / 2f,
-            rect.y + (rect.height - 16f) / 2f, labelW, 16f), label);
+        float lw = Math.Min(label.Length * 7.5f + 4f, rect.width - 6f);
+        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
         return clicked;
     }
 
     private Rect GetMenuRect()
     {
-        float sw = Screen.width;
-        float sh = Screen.height;
-        float mw = MenuWidth;
-        float mh = MenuHeight;
-        float r = ButtonRadius;
-
+        float sw = Screen.width, sh = Screen.height, mw = MenuWidth, mh = MenuHeight, r = ButtonRadius;
         float x = _buttonCenter.x + r + MenuOffset;
         if (x + mw > sw) x = _buttonCenter.x - r - MenuOffset - mw;
         if (x < 0) x = Mathf.Max(0, (sw - mw) / 2f);
-
         float y = _buttonCenter.y - mh / 2f;
         if (y < 0) y = 0;
         if (y + mh > sh) y = sh - mh;
-
         return new Rect(x, y, mw, mh);
     }
 
@@ -939,23 +904,18 @@ public class EspBehaviour : MonoBehaviour
         GUI.DrawTexture(panelRect, _whiteTex);
         GUI.color = Color.white;
 
-        float bx = panelRect.x + 10;
-        float by = panelRect.y + 10;
+        float bx = panelRect.x + 10, by = panelRect.y + 10;
         float contentX = bx + TabWidth + 10f;
         float contentW = panelRect.width - (TabWidth + 30f);
 
-        // Title
         GUI.Label(new Rect(bx, by, panelRect.width - 20f, 24f), "<b>DynamicESP</b>");
         by += 30;
-
-        // Vertical tabs (left)
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", _menuTab == 0)) _menuTab = 0;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimBot", _menuTab == 1)) _menuTab = 1;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Hide", false)) _menuVisible = false;
 
-        // Content
         float cy = panelRect.y + 40;
         if (_menuTab == 0) DrawEspTab(contentX, cy, contentW);
         else DrawAimTab(contentX, cy, contentW);
@@ -964,94 +924,101 @@ public class EspBehaviour : MonoBehaviour
     private void DrawEspTab(float bx, float y, float bw)
     {
         float bh = 30;
-
         if (CustomButton(new Rect(bx, y, bw, bh), $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}", _espBoxesEnabled))
-            _espBoxesEnabled = !_espBoxesEnabled;
+        { _espBoxesEnabled = !_espBoxesEnabled; if (Plugin.CfgEspBoxes != null) Plugin.CfgEspBoxes.Value = _espBoxesEnabled; }
         y += 36;
-
         if (CustomButton(new Rect(bx, y, bw, bh), $"Names: {(_espNamesEnabled ? "ON" : "OFF")}", _espNamesEnabled))
-            _espNamesEnabled = !_espNamesEnabled;
+        { _espNamesEnabled = !_espNamesEnabled; if (Plugin.CfgEspNames != null) Plugin.CfgEspNames.Value = _espNamesEnabled; }
         y += 36;
-
         if (CustomButton(new Rect(bx, y, bw, bh), $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}", _espDistanceEnabled))
-            _espDistanceEnabled = !_espDistanceEnabled;
+        { _espDistanceEnabled = !_espDistanceEnabled; if (Plugin.CfgEspDistance != null) Plugin.CfgEspDistance.Value = _espDistanceEnabled; }
         y += 46;
 
         GUI.Label(new Rect(bx, y, bw, 22), "<b>Team filter:</b>");
         y += 26;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"TR (Terror): {(TeamFilter.ShowTr ? "ON" : "OFF")}", TeamFilter.ShowTr))
-            TeamFilter.ShowTr = !TeamFilter.ShowTr;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"TR: {(TeamFilter.ShowTr ? "ON" : "OFF")}", TeamFilter.ShowTr))
+        { TeamFilter.ShowTr = !TeamFilter.ShowTr; if (Plugin.CfgShowTr != null) Plugin.CfgShowTr.Value = TeamFilter.ShowTr; }
         y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"CT (Counter): {(TeamFilter.ShowCt ? "ON" : "OFF")}", TeamFilter.ShowCt))
-            TeamFilter.ShowCt = !TeamFilter.ShowCt;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"CT: {(TeamFilter.ShowCt ? "ON" : "OFF")}", TeamFilter.ShowCt))
+        { TeamFilter.ShowCt = !TeamFilter.ShowCt; if (Plugin.CfgShowCt != null) Plugin.CfgShowCt.Value = TeamFilter.ShowCt; }
         y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Spectator: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator))
-            TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Spec: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator))
+        { TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator; if (Plugin.CfgShowSpectator != null) Plugin.CfgShowSpectator.Value = TeamFilter.ShowSpectator; }
         y += 46;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Show only enemies: {(TeamFilter.OnlyEnemies ? "ON" : "OFF")}", TeamFilter.OnlyEnemies))
-            TeamFilter.OnlyEnemies = !TeamFilter.OnlyEnemies;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Only enemies: {(TeamFilter.OnlyEnemies ? "ON" : "OFF")}", TeamFilter.OnlyEnemies))
+        { TeamFilter.OnlyEnemies = !TeamFilter.OnlyEnemies; if (Plugin.CfgOnlyEnemies != null) Plugin.CfgOnlyEnemies.Value = TeamFilter.OnlyEnemies; }
     }
 
     private void DrawAimTab(float bx, float y, float bw)
     {
         float bh = 30;
-
         if (CustomButton(new Rect(bx, y, bw, bh), $"Aimbot: {(_aimbotEnabled ? "ON" : "OFF")}", _aimbotEnabled))
-            _aimbotEnabled = !_aimbotEnabled;
+        { _aimbotEnabled = !_aimbotEnabled; if (Plugin.CfgAimbotEnabled != null) Plugin.CfgAimbotEnabled.Value = _aimbotEnabled; }
         y += 36;
 
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {_aimbotFov:F0}°");
         y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false))
-            _aimbotFov = Mathf.Max(1f, _aimbotFov - 2f);
+        { _aimbotFov = Mathf.Max(1f, _aimbotFov - 2f); if (Plugin.CfgAimbotFov != null) Plugin.CfgAimbotFov.Value = _aimbotFov; }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true))
-            _aimbotFov = Mathf.Min(90f, _aimbotFov + 2f);
+        { _aimbotFov = Mathf.Min(90f, _aimbotFov + 2f); if (Plugin.CfgAimbotFov != null) Plugin.CfgAimbotFov.Value = _aimbotFov; }
         y += 36;
 
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {_aimbotSmooth:F0}");
         y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false))
-            _aimbotSmooth = Mathf.Max(1f, _aimbotSmooth - 5f);
+        { _aimbotSmooth = Mathf.Max(1f, _aimbotSmooth - 5f); if (Plugin.CfgAimbotSmooth != null) Plugin.CfgAimbotSmooth.Value = _aimbotSmooth; }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true))
-            _aimbotSmooth = Mathf.Min(50f, _aimbotSmooth + 5f);
+        { _aimbotSmooth = Mathf.Min(50f, _aimbotSmooth + 5f); if (Plugin.CfgAimbotSmooth != null) Plugin.CfgAimbotSmooth.Value = _aimbotSmooth; }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Aim Teammates: {(_aimbotTargetTeammates ? "ON" : "OFF")}", _aimbotTargetTeammates))
-            _aimbotTargetTeammates = !_aimbotTargetTeammates;
+        { _aimbotTargetTeammates = !_aimbotTargetTeammates; if (Plugin.CfgAimbotTargetTeammates != null) Plugin.CfgAimbotTargetTeammates.Value = _aimbotTargetTeammates; }
         y += 36;
 
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility Check: {(_aimbotVisibilityCheck ? "ON" : "OFF")}", _aimbotVisibilityCheck))
-            _aimbotVisibilityCheck = !_aimbotVisibilityCheck;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility: {(_aimbotVisibilityCheck ? "ON" : "OFF")}", _aimbotVisibilityCheck))
+        { _aimbotVisibilityCheck = !_aimbotVisibilityCheck; if (Plugin.CfgAimbotVisibilityCheck != null) Plugin.CfgAimbotVisibilityCheck.Value = _aimbotVisibilityCheck; }
         y += 36;
 
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(_aimbotToggleMode ? "TOGGLE" : "HOLD")}", _aimbotToggleMode))
-            _aimbotToggleMode = !_aimbotToggleMode;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(Plugin.AimbotToggleMode ? "TOGGLE" : "HOLD")}", Plugin.AimbotToggleMode))
+        {
+            Plugin.AimbotToggleMode = !Plugin.AimbotToggleMode;
+            if (Plugin.CfgAimbotToggleMode != null) Plugin.CfgAimbotToggleMode.Value = Plugin.AimbotToggleMode;
+        }
         y += 36;
 
-        string keyName = _aimbotKeyCapturing ? "PRESS KEY..." : _aimbotKey.ToString();
+        string keyName = _aimbotKeyCapturing ? "PRESS KEY..." : Plugin.AimbotToggleKey.ToString();
         if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", _aimbotKeyCapturing))
+        {
             _aimbotKeyCapturing = !_aimbotKeyCapturing;
+            Plugin.IsMenuOpen = _aimbotKeyCapturing;
+        }
 
+        // Захват клавиши через Event.current в OnGUI — здесь, пока меню открыто
         if (_aimbotKeyCapturing)
         {
             Event e = Event.current;
             if (e != null && e.type == EventType.KeyDown && e.keyCode != KeyCode.None)
             {
-                _aimbotKey = e.keyCode;
+                Plugin.AimbotToggleKey = e.keyCode;
                 _aimbotKeyCapturing = false;
+                Plugin.IsMenuOpen = false;
+                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = e.keyCode.ToString();
+                Plugin.LogSource?.LogInfo($"[ESP] Key set: {e.keyCode}");
                 e.Use();
             }
             else if (e != null && e.type == EventType.MouseDown)
             {
-                if (e.button == 0) _aimbotKey = KeyCode.Mouse0;
-                else if (e.button == 1) _aimbotKey = KeyCode.Mouse1;
-                else if (e.button == 2) _aimbotKey = KeyCode.Mouse2;
-                _aimbotKeyCapturing = false;
-                e.Use();
+                KeyCode kc = e.button switch { 0 => KeyCode.Mouse0, 1 => KeyCode.Mouse1, 2 => KeyCode.Mouse2, _ => KeyCode.None };
+                if (kc != KeyCode.None)
+                {
+                    Plugin.AimbotToggleKey = kc;
+                    _aimbotKeyCapturing = false;
+                    Plugin.IsMenuOpen = false;
+                    if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
+                    Plugin.LogSource?.LogInfo($"[ESP] Key set: {kc}");
+                    e.Use();
+                }
             }
         }
     }
