@@ -44,7 +44,7 @@ public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
 
-    public static ConfigFile Config;
+    public static ConfigFile ConfigFile;
     public static ConfigEntry<bool> CfgAimbotEnabled;
     public static ConfigEntry<float> CfgAimbotFov;
     public static ConfigEntry<float> CfgAimbotSmooth;
@@ -71,24 +71,24 @@ public class Plugin : BasePlugin
         try
         {
             string cfgPath = Path.Combine(Paths.ConfigPath, "explode.cfg");
-            Config = new ConfigFile(cfgPath, true);
+            ConfigFile = new ConfigFile(cfgPath, true);
             Log.LogInfo($"[ESP] Config: {cfgPath}");
 
-            CfgAimbotEnabled = Config.Bind("Aimbot", "Enabled", false);
-            CfgAimbotFov = Config.Bind("Aimbot", "Fov", 15f);
-            CfgAimbotSmooth = Config.Bind("Aimbot", "Smooth", 15f);
-            CfgAimbotTargetTeammates = Config.Bind("Aimbot", "TargetTeammates", false);
-            CfgAimbotVisibilityCheck = Config.Bind("Aimbot", "VisibilityCheck", false);
-            CfgAimbotToggleMode = Config.Bind("Aimbot", "ToggleMode", false);
-            CfgAimbotKey = Config.Bind("Aimbot", "Key", "Mouse1");
+            CfgAimbotEnabled = ConfigFile.Bind("Aimbot", "Enabled", false);
+            CfgAimbotFov = ConfigFile.Bind("Aimbot", "Fov", 15f);
+            CfgAimbotSmooth = ConfigFile.Bind("Aimbot", "Smooth", 15f);
+            CfgAimbotTargetTeammates = ConfigFile.Bind("Aimbot", "TargetTeammates", false);
+            CfgAimbotVisibilityCheck = ConfigFile.Bind("Aimbot", "VisibilityCheck", false);
+            CfgAimbotToggleMode = ConfigFile.Bind("Aimbot", "ToggleMode", false);
+            CfgAimbotKey = ConfigFile.Bind("Aimbot", "Key", "Mouse1");
 
-            CfgEspBoxes = Config.Bind("ESP", "Boxes", true);
-            CfgEspNames = Config.Bind("ESP", "Names", true);
-            CfgEspDistance = Config.Bind("ESP", "Distance", true);
-            CfgOnlyEnemies = Config.Bind("ESP", "OnlyEnemies", false);
-            CfgShowTr = Config.Bind("ESP", "ShowTr", true);
-            CfgShowCt = Config.Bind("ESP", "ShowCt", true);
-            CfgShowSpectator = Config.Bind("ESP", "ShowSpectator", false);
+            CfgEspBoxes = ConfigFile.Bind("ESP", "Boxes", true);
+            CfgEspNames = ConfigFile.Bind("ESP", "Names", true);
+            CfgEspDistance = ConfigFile.Bind("ESP", "Distance", true);
+            CfgOnlyEnemies = ConfigFile.Bind("ESP", "OnlyEnemies", false);
+            CfgShowTr = ConfigFile.Bind("ESP", "ShowTr", true);
+            CfgShowCt = ConfigFile.Bind("ESP", "ShowCt", true);
+            CfgShowSpectator = ConfigFile.Bind("ESP", "ShowSpectator", false);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
@@ -264,7 +264,6 @@ public class EspBehaviour : MonoBehaviour
     private const float MenuOffset = 30f;
     private const float TabWidth = 120f;
 
-    // Кнопка меню — квадрат, не круг
     private const float ButtonSize = 44f;
     private Vector2 _buttonCenter = new Vector2(-1f, -1f);
     private bool _buttonInitialized = false;
@@ -393,7 +392,6 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_whiteTex != null) Destroy(_whiteTex);
-            // _circleTex и _ringTex — статические, не Destroy
         }
         catch { }
     }
@@ -481,40 +479,46 @@ public class EspBehaviour : MonoBehaviour
             if (_playerManagerType == null) return;
 
             object pmInstance = null;
-            var pmType = _playerManagerType;
 
-            var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            // Все вызовы на _playerManagerType (Il2CppSystem.Type) — каст BindingFlags
+            var instProp = _playerManagerType.GetProperty("Instance",
+                (Il2CppSystem.Reflection.BindingFlags)(int)(
+                    BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
             if (instProp != null) pmInstance = instProp.GetValue(null);
 
             if (pmInstance == null)
             {
                 foreach (var n in new[] { "_instance", "s_Instance", "m_Instance", "instance" })
                 {
-                    var f = pmType.GetField(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    var f = _playerManagerType.GetField(n,
+                        (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
                     if (f != null) { pmInstance = f.GetValue(null); break; }
-                    var p = pmType.GetProperty(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    var p = _playerManagerType.GetProperty(n,
+                        (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
                     if (p != null) { pmInstance = p.GetValue(null); break; }
                 }
             }
 
             if (pmInstance == null)
             {
-                var pmc = FindObjectOfType(pmType);
+                var pmc = FindObjectOfType(_playerManagerType);
                 if (pmc != null) pmInstance = pmc;
             }
 
             if (pmInstance == null) { LogThrottled("pm_null", "[ESP] PlayerManager not found", true); return; }
 
-            // Читаем _cfog напрямую с pmInstance
+            // pmManagedType — managed System.Type
             object localPlayer = null;
             var pmManagedType = pmInstance.GetType();
 
-            var cfogProp = pmManagedType.GetProperty("cfog", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var cfogProp = pmManagedType.GetProperty("cfog",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (cfogProp != null) localPlayer = cfogProp.GetValue(pmInstance);
 
             if (localPlayer == null)
             {
-                var cfogField = pmManagedType.GetField("_cfog_k__BackingField", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var cfogField = pmManagedType.GetField("_cfog_k__BackingField",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (cfogField != null) localPlayer = cfogField.GetValue(pmInstance);
             }
 
@@ -874,7 +878,6 @@ public class EspBehaviour : MonoBehaviour
             }
         }
 
-        // Простой квадрат вместо круга — намного дешевле
         GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
         GUI.DrawTexture(btnRect, _whiteTex);
 
