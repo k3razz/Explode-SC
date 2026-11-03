@@ -64,6 +64,10 @@
       <Private>false</Private>
     </Reference>
 
+    <Reference Include="Unity.InputSystem">
+      <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- TextAnchor, FontStyle, Resources.GetBuiltinResource<Font> -->
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>libs/interop/UnityEngine.TextRenderingModule.dll</HintPath>
