@@ -274,18 +274,10 @@ public class EspBehaviour : MonoBehaviour
             object pmInstance = null;
             var pmType = _localPlayerMember.DeclaringType;
 
-            // --- ИСПРАВЛЕНИЕ: каст BindingFlags для Il2CppSystem.Type ---
-            try
-            {
-                var instProp = pmType.GetProperty("Instance",
-                    (Il2CppSystem.Reflection.BindingFlags)(int)(
-                        BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
-                if (instProp != null) pmInstance = instProp.GetValue(null);
-            }
-            catch (Exception e)
-            {
-                LogThrottled("instprop_ex", $"[ESP] PlayerManager.Instance EX: {e.Message}", true);
-            }
+            // pmType — managed System.Type, BindingFlags должен быть System.Reflection.BindingFlags
+            var instProp = pmType.GetProperty("Instance",
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            if (instProp != null) pmInstance = instProp.GetValue(null);
 
             if (pmInstance == null) return;
 
