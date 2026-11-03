@@ -2,27 +2,20 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
-using Il2CppInterop.Runtime.Injection;
+using UnityEngine;
 using System;
 using System.IO;
-using UnityEngine.SceneManagement;
+using Il2CppInterop.Runtime.Injection;
 
 namespace MyDynamicESP;
 
-[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
+[BepInPlugin("de.nuke.explode", "Explode", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
     public static ConfigFile ConfigFile;
     public static Plugin Instance;
 
-    public static ConfigEntry<bool> CfgAimbotEnabled;
-    public static ConfigEntry<float> CfgAimbotFov;
-    public static ConfigEntry<float> CfgAimbotSmooth;
-    public static ConfigEntry<bool> CfgAimbotTargetTeammates;
-    public static ConfigEntry<bool> CfgAimbotVisibilityCheck;
-    public static ConfigEntry<bool> CfgAimbotToggleMode;
-    public static ConfigEntry<string> CfgAimbotKey;
     public static ConfigEntry<bool> CfgEspBoxes;
     public static ConfigEntry<bool> CfgEspNames;
     public static ConfigEntry<bool> CfgEspDistance;
@@ -30,6 +23,16 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgShowTr;
     public static ConfigEntry<bool> CfgShowCt;
     public static ConfigEntry<bool> CfgShowSpectator;
+    public static ConfigEntry<bool> CfgAimbotEnabled;
+    public static ConfigEntry<float> CfgAimbotFov;
+    public static ConfigEntry<float> CfgAimbotSmooth;
+    public static ConfigEntry<bool> CfgAimbotTargetTeammates;
+    public static ConfigEntry<bool> CfgAimbotVisibilityCheck;
+    public static ConfigEntry<bool> CfgAimbotToggleMode;
+    public static ConfigEntry<string> CfgAimbotKey;
+    public static ConfigEntry<bool> CfgWatermarkEnabled;
+    public static ConfigEntry<float> CfgWatermarkX;
+    public static ConfigEntry<float> CfgWatermarkY;
 
     public override void Load()
     {
@@ -40,15 +43,6 @@ public class Plugin : BasePlugin
         {
             string cfgPath = Path.Combine(Paths.ConfigPath, "explode.cfg");
             ConfigFile = new ConfigFile(cfgPath, true);
-            Log.LogInfo($"[ESP] Config: {cfgPath}");
-
-            CfgAimbotEnabled = ConfigFile.Bind("Aimbot", "Enabled", false);
-            CfgAimbotFov = ConfigFile.Bind("Aimbot", "Fov", 15f);
-            CfgAimbotSmooth = ConfigFile.Bind("Aimbot", "Smooth", 15f);
-            CfgAimbotTargetTeammates = ConfigFile.Bind("Aimbot", "TargetTeammates", false);
-            CfgAimbotVisibilityCheck = ConfigFile.Bind("Aimbot", "VisibilityCheck", false);
-            CfgAimbotToggleMode = ConfigFile.Bind("Aimbot", "ToggleMode", false);
-            CfgAimbotKey = ConfigFile.Bind("Aimbot", "Key", "Mouse1");
 
             CfgEspBoxes = ConfigFile.Bind("ESP", "Boxes", true);
             CfgEspNames = ConfigFile.Bind("ESP", "Names", true);
@@ -58,16 +52,25 @@ public class Plugin : BasePlugin
             CfgShowCt = ConfigFile.Bind("ESP", "ShowCt", true);
             CfgShowSpectator = ConfigFile.Bind("ESP", "ShowSpectator", false);
 
+            CfgAimbotEnabled = ConfigFile.Bind("Aimbot", "Enabled", false);
+            CfgAimbotFov = ConfigFile.Bind("Aimbot", "Fov", 15f);
+            CfgAimbotSmooth = ConfigFile.Bind("Aimbot", "Smooth", 15f);
+            CfgAimbotTargetTeammates = ConfigFile.Bind("Aimbot", "TargetTeammates", false);
+            CfgAimbotVisibilityCheck = ConfigFile.Bind("Aimbot", "VisibilityCheck", false);
+            CfgAimbotToggleMode = ConfigFile.Bind("Aimbot", "ToggleMode", false);
+            CfgAimbotKey = ConfigFile.Bind("Aimbot", "Key", "Mouse1");
+
+            CfgWatermarkEnabled = ConfigFile.Bind("Render", "WatermarkEnabled", true);
+            CfgWatermarkX = ConfigFile.Bind("Render", "WatermarkX", -1f);
+            CfgWatermarkY = ConfigFile.Bind("Render", "WatermarkY", -1f);
+
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
             TeamFilter.ShowSpectator = CfgShowSpectator.Value;
             TeamFilter.OnlyEnemies = CfgOnlyEnemies.Value;
 
             KeybindState.ToggleMode = CfgAimbotToggleMode.Value;
-            if (Enum.TryParse(CfgAimbotKey.Value, out UnityEngine.KeyCode kc))
-                KeybindState.AimbotKey = kc;
-
-            Log.LogInfo($"[ESP] Aimbot key: {KeybindState.AimbotKey}, mode: {KeybindState.ToggleMode}");
+            if (Enum.TryParse(CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
 
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
