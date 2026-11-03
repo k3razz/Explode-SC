@@ -80,6 +80,8 @@ public class EspBehaviour : MonoBehaviour
         public bool IsBot;
         public int Team;
         public string Name;
+        public object BipedMap;
+        public int LastSeenFrame;
     }
 
     private readonly Dictionary<int, Tracked> _tracked = new();
@@ -100,15 +102,20 @@ public class EspBehaviour : MonoBehaviour
     private const float FootOffset = 0.1f;
     private const float BoxWidthRatio = 0.4f;
 
+    // ---- ESP ----
     private bool _espBoxesEnabled = true;
     private bool _espNamesEnabled = true;
     private bool _espDistanceEnabled = true;
-    private bool _menuVisible = false;
 
-    private const float MenuWidth = 340f;
-    private const float MenuHeight = 460f;
+    // ---- Menu ----
+    private bool _menuVisible = false;
+    private int _menuTab = 0; // 0 = ESP, 1 = AimBot
+
+    private const float MenuWidth = 360f;
+    private const float MenuHeight = 540f;
     private const float MenuOffset = 30f;
 
+    // ---- Floating button ----
     private const float ButtonRadius = 22f;
     private Vector2 _buttonCenter = new Vector2(-1f, -1f);
     private bool _buttonInitialized = false;
@@ -117,12 +124,23 @@ public class EspBehaviour : MonoBehaviour
     private Vector2 _dragOffset;
     private Vector2 _dragStartMouse;
 
+    // ---- Aimbot ----
+    private bool _aimbotEnabled = false;
+    private float _aimbotFov = 15f;
+    private float _aimbotSmooth = 15f;
+    private bool _aimbotTargetTeammates = false;
+    private bool _aimbotVisibilityCheck = false;
+    private bool _aimbotToggleMode = false; // false = hold, true = toggle
+    private KeyCode _aimbotKey = KeyCode.Mouse1;
+    private bool _aimbotKeyCapturing = false;
+    private bool _aimbotActive = false; // для toggle-режима
+    private bool _aimbotPrevKeyState = false;
+
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
     private static bool _resolved;
 
     private static MemberInfo _playerTeamMember;
-    private static MemberInfo _botTeamMember;
     private static MemberInfo _localPlayerMember;
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
@@ -136,16 +154,8 @@ public class EspBehaviour : MonoBehaviour
         if (_lastLogTime.TryGetValue(key, out float last) && now - last < LogCooldown) return;
         _lastLogTime[key] = now;
 
-        if (isError)
-        {
-            Debug.LogError(message);
-            Plugin.LogSource?.LogError(message);
-        }
-        else
-        {
-            Debug.Log(message);
-            Plugin.LogSource?.LogInfo(message);
-        }
+        if (isError) { Debug.LogError(message); Plugin.LogSource?.LogError(message); }
+        else { Debug.Log(message); Plugin.LogSource?.LogInfo(message); }
     }
 
     void Awake()
@@ -213,17 +223,13 @@ public class EspBehaviour : MonoBehaviour
             bool cameraOk = _cam != null;
             bool typesOk = _botType != null || _playerType != null;
 
-            if (!typesOk)
-            {
-                _resolved = false;
-                ResolveTypes();
-            }
+            if (!typesOk) { _resolved = false; ResolveTypes(); }
             if (!cameraOk) _cam = Camera.main;
 
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, playerTeam={_playerTeamMember?.Name ?? "null"}, localPlayer={_localPlayerMember?.Name ?? "null"}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, aimbot={_aimbotEnabled}, active={_aimbotActive}");
             }
         }
         catch (Exception e)
@@ -251,14 +257,10 @@ public class EspBehaviour : MonoBehaviour
                 return Convert.ToInt32(val);
             }
         }
-        catch (Exception e)
-        {
-            LogThrottled($"readteam_{target.GetHashCode()}", $"[ESP] ReadTeam EX ({member.Name}): {e.Message}", true);
-        }
+        catch { }
         return -1;
     }
 
-    // Чтение team через нативный offset (для ботов)
     int ReadByteAtOffset(object obj, int offset)
     {
         try
@@ -270,15 +272,9 @@ public class EspBehaviour : MonoBehaviour
                 ptr = comp.Pointer;
 
             if (ptr == IntPtr.Zero) return -1;
-
-            byte b = Marshal.ReadByte(ptr, offset);
-            return b;
+            return Marshal.ReadByte(ptr, offset);
         }
-        catch (Exception e)
-        {
-            LogThrottled($"readbyte_{offset}", $"[ESP] ReadByte@{offset} EX: {e.Message}", true);
-            return -1;
-        }
+        catch { return -1; }
     }
 
     int ReadTeam(Component component, bool isBot)
@@ -287,58 +283,31 @@ public class EspBehaviour : MonoBehaviour
 
         if (isBot)
         {
-            // 1) botTeamMember напрямую
-            int team = ReadTeamFromMember(_botTeamMember, component);
+            int team = ReadTeamFromMember(_playerTeamMember, component);
             if (team >= 0) return team;
 
-            // 2) Fallback: bot.crvs (PlayerController) -> playerCtrl.cfmp
+            // fallback: crvs
             try
             {
                 var t = component.GetType();
                 object playerCtrl = null;
-
                 var crvsProp = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (crvsProp != null) playerCtrl = crvsProp.GetValue(component);
-
-                if (playerCtrl == null)
-                {
-                    var crvsGetter = t.GetMethod("get_crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (crvsGetter != null) playerCtrl = crvsGetter.Invoke(component, null);
-                }
-
                 if (playerCtrl == null)
                 {
                     var crvsField = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     if (crvsField != null) playerCtrl = crvsField.GetValue(component);
                 }
-
                 if (playerCtrl != null)
                 {
                     team = ReadTeamFromMember(_playerTeamMember, playerCtrl);
-                    if (team >= 0)
-                    {
-                        LogThrottled($"bot_team_via_crvs", $"[ESP] bot team via crvs = {team}", false);
-                        return team;
-                    }
+                    if (team >= 0) return team;
                 }
             }
-            catch (Exception e)
-            {
-                LogThrottled($"bot_crvs_ex", $"[ESP] Bot crvs EX: {e.Message}", true);
-            }
+            catch { }
 
-            // 3) Fallback: Controller.cfkc по offset 0x24 (byte)
             int offTeam = ReadByteAtOffset(component, 0x24);
-            if (offTeam > 0 && offTeam <= 3)
-            {
-                LogThrottled($"bot_offset_ok", $"[ESP] bot team via offset 0x24 = {offTeam}", false);
-                return offTeam;
-            }
-            else
-            {
-                LogThrottled($"bot_offset_bad", $"[ESP] bot offset 0x24 = {offTeam} (unexpected)", false);
-            }
-
+            if (offTeam > 0 && offTeam <= 3) return offTeam;
             return -1;
         }
         else
@@ -355,19 +324,14 @@ public class EspBehaviour : MonoBehaviour
 
             object pmInstance = null;
             var pmType = _localPlayerMember.DeclaringType;
-
             var instProp = pmType.GetProperty("Instance",
                 BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (instProp != null) pmInstance = instProp.GetValue(null);
-
             if (pmInstance == null) return;
 
             object localPlayer = null;
-            if (_localPlayerMember is PropertyInfo lp)
-                localPlayer = lp.GetValue(pmInstance);
-            else if (_localPlayerMember is FieldInfo lf)
-                localPlayer = lf.GetValue(pmInstance);
-
+            if (_localPlayerMember is PropertyInfo lp) localPlayer = lp.GetValue(pmInstance);
+            else if (_localPlayerMember is FieldInfo lf) localPlayer = lf.GetValue(pmInstance);
             if (localPlayer == null) return;
 
             int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
@@ -377,12 +341,12 @@ public class EspBehaviour : MonoBehaviour
                 _localTeam = newTeam;
             }
         }
-        catch (Exception e)
-        {
-            LogThrottled("localt_ex", $"[ESP] UpdateLocalTeam EX: {e.Message}", true);
-        }
+        catch { }
     }
 
+    // =========================================================
+    //                    UPDATE
+    // =========================================================
     void Update()
     {
         try
@@ -408,24 +372,27 @@ public class EspBehaviour : MonoBehaviour
             }
 
             _toDraw.Clear();
-            int skippedOwnTeam = 0, skippedNull = 0, skippedFiltered = 0;
             foreach (var t in _tracked.Values)
             {
-                if (t.Transform == null) { skippedNull++; continue; }
-
-                if (_localTeam > 0 && t.Team == _localTeam)
-                {
-                    skippedOwnTeam++;
-                    continue;
-                }
-
-                if (!IsTeamVisible(t.Team))
-                {
-                    skippedFiltered++;
-                    continue;
-                }
-
+                if (t.Transform == null) continue;
+                if (_localTeam > 0 && t.Team == _localTeam) continue;
+                if (!IsTeamVisible(t.Team)) continue;
                 _toDraw.Add(t);
+            }
+
+            // Aimbot key handling
+            if (!_aimbotKeyCapturing)
+            {
+                bool keyDown = Input.GetKey(_aimbotKey);
+                if (_aimbotToggleMode)
+                {
+                    if (keyDown && !_aimbotPrevKeyState) _aimbotActive = !_aimbotActive;
+                    _aimbotPrevKeyState = keyDown;
+                }
+                else
+                {
+                    _aimbotActive = keyDown;
+                }
             }
         }
         catch (Exception e)
@@ -433,6 +400,103 @@ public class EspBehaviour : MonoBehaviour
             LogThrottled("update_ex", $"[ESP] Update EX: {e}", true);
             _scanTimer = 0f;
         }
+    }
+
+    // =========================================================
+    //                    AIMBOT (LateUpdate)
+    // =========================================================
+    void LateUpdate()
+    {
+        try
+        {
+            if (!_aimbotEnabled) return;
+            if (!_aimbotActive) return;
+            if (_aimbotKeyCapturing) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
+
+            Tracked best = null;
+            float bestAngle = _aimbotFov;
+            Vector3 camPos = _cam.transform.position;
+            Vector3 camForward = _cam.transform.forward;
+
+            foreach (var t in _tracked.Values)
+            {
+                if (t.Transform == null) continue;
+
+                // Teammates
+                if (!_aimbotTargetTeammates && _localTeam > 0 && t.Team == _localTeam) continue;
+
+                // Visibility
+                if (!_aimbotVisibilityCheck)
+                {
+                    // Semirage through walls — no visibility check
+                }
+                else
+                {
+                    // Only aim if visible
+                    if (!IsVisible(t, camPos)) continue;
+                }
+
+                Vector3 headPos = GetHeadPosition(t);
+                Vector3 dir = (headPos - camPos).normalized;
+                float angle = Vector3.Angle(camForward, dir);
+                if (angle < bestAngle)
+                {
+                    bestAngle = angle;
+                    best = t;
+                }
+            }
+
+            if (best == null) return;
+
+            Vector3 targetHead = GetHeadPosition(best);
+            Vector3 targetDir = (targetHead - camPos).normalized;
+            Quaternion targetRot = Quaternion.LookRotation(targetDir);
+            _cam.transform.rotation = Quaternion.Slerp(
+                _cam.transform.rotation, targetRot, _aimbotSmooth * Time.deltaTime);
+        }
+        catch (Exception e)
+        {
+            LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true);
+        }
+    }
+
+    bool IsVisible(Tracked t, Vector3 camPos)
+    {
+        try
+        {
+            Vector3 headPos = GetHeadPosition(t);
+            Vector3 dir = (headPos - camPos);
+            float dist = dir.magnitude;
+            if (dist < 0.1f) return true;
+            if (Physics.Raycast(camPos, dir.normalized, out var hit, dist))
+            {
+                // Если попали в сам объект — видно
+                return hit.transform == t.Transform || hit.transform.IsChildOf(t.Transform);
+            }
+            return true; // ничего не перекрывает
+        }
+        catch { return true; }
+    }
+
+    Vector3 GetHeadPosition(Tracked t)
+    {
+        if (t.BipedMap != null)
+        {
+            try
+            {
+                var nwh = t.BipedMap.GetType().GetMethod("nwh",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (nwh != null)
+                {
+                    var headTr = nwh.Invoke(t.BipedMap, new object[] { 0 }); // Head = 0
+                    if (headTr is Transform ht) return ht.position;
+                }
+            }
+            catch { }
+        }
+        return t.Transform.position + Vector3.up * 1.6f;
     }
 
     private bool IsTeamVisible(int team)
@@ -537,7 +601,6 @@ public class EspBehaviour : MonoBehaviour
 
             _playerTeamMember = null;
             _localPlayerMember = null;
-            _botTeamMember = null;
 
             string playerOwner = null;
             _playerTeamMember = FindTeamMember(pt, out playerOwner);
@@ -547,23 +610,13 @@ public class EspBehaviour : MonoBehaviour
             {
                 foreach (var p in pmType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                 {
-                    if (p.PropertyType == pt)
-                    {
-                        _localPlayerMember = p;
-                        Plugin.LogSource?.LogInfo($"[ESP] LocalPlayer property: {pmType.Name}.{p.Name} -> {p.PropertyType.Name}");
-                        break;
-                    }
+                    if (p.PropertyType == pt) { _localPlayerMember = p; break; }
                 }
                 if (_localPlayerMember == null)
                 {
                     foreach (var f in pmType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                     {
-                        if (f.FieldType == pt)
-                        {
-                            _localPlayerMember = f;
-                            Plugin.LogSource?.LogInfo($"[ESP] LocalPlayer field: {pmType.Name}.{f.Name} -> {f.FieldType.Name}");
-                            break;
-                        }
+                        if (f.FieldType == pt) { _localPlayerMember = f; break; }
                     }
                 }
             }
@@ -627,13 +680,25 @@ public class EspBehaviour : MonoBehaviour
 
                     int targetTeam = ReadTeam(c, isBot);
                     string name = TryGetName(c, isBot);
+
+                    object biped = null;
+                    try
+                    {
+                        var bipedField = c.GetType().GetField("_characterBiped",
+                            BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (bipedField != null) biped = bipedField.GetValue(c);
+                    }
+                    catch { }
+
                     bool isNew = !_tracked.ContainsKey(id);
                     _tracked[id] = new Tracked
                     {
                         Transform = tr,
                         IsBot = isBot,
                         Team = targetTeam,
-                        Name = name
+                        Name = name,
+                        BipedMap = biped,
+                        LastSeenFrame = Time.frameCount
                     };
 
                     if (isNew)
@@ -656,27 +721,23 @@ public class EspBehaviour : MonoBehaviour
                 {
                     var val = p.GetValue(c) as string;
                     if (!string.IsNullOrEmpty(val) && val.Length < 25 && !val.Contains("Clone") && !val.Contains("Player") && !val.Contains("Bot"))
-                    {
                         return val;
-                    }
                 }
             }
         }
         catch { }
-
         try
         {
             string n = c.gameObject.name;
-            if (!string.IsNullOrEmpty(n) && n != "Player(Clone)" && n != "Bot" && n != "Player")
-            {
-                return n;
-            }
+            if (!string.IsNullOrEmpty(n) && n != "Player(Clone)" && n != "Bot" && n != "Player") return n;
         }
         catch { }
-
         return isBot ? "Bot" : "Player";
     }
 
+    // =========================================================
+    //                    OnGUI
+    // =========================================================
     void OnGUI()
     {
         try
@@ -747,6 +808,16 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
+            // FOV circle (если аимбот включён)
+            if (_aimbotEnabled)
+            {
+                float fovScreen = _aimbotFov * (Screen.height / 90f); // примерный перевод градусов в пиксели
+                GUI.color = new Color(1f, 1f, 1f, 0.15f);
+                GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f,
+                    Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
+                GUI.color = Color.white;
+            }
+
             if (_menuVisible) DrawMenu();
             else DrawFloatingButton();
         }
@@ -791,11 +862,7 @@ public class EspBehaviour : MonoBehaviour
             else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
             {
                 _isDragging = false;
-                if (!_dragMoved)
-                {
-                    _menuVisible = true;
-                    Plugin.LogSource?.LogInfo("[ESP] Floating button clicked -> menu opened");
-                }
+                if (!_dragMoved) { _menuVisible = true; }
                 e.Use();
             }
         }
@@ -811,15 +878,29 @@ public class EspBehaviour : MonoBehaviour
         Event e = Event.current;
         bool clicked = false;
         if (e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
-        {
             clicked = true;
-        }
 
         GUI.color = state ? new Color(0.2f, 0.55f, 0.3f, 0.95f) : new Color(0.55f, 0.2f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, _whiteTex);
         GUI.color = Color.white;
 
         float approxW = Math.Min(label.Length * 6.5f, rect.width - 8f);
+        GUI.Label(new Rect(rect.x + (rect.width - approxW) / 2f, rect.y + (rect.height - 16f) / 2f, approxW + 4f, 16f), label);
+        return clicked;
+    }
+
+    private bool TabButton(Rect rect, string label, bool active)
+    {
+        Event e = Event.current;
+        bool clicked = false;
+        if (e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
+            clicked = true;
+
+        GUI.color = active ? new Color(0.2f, 0.4f, 0.7f, 0.95f) : new Color(0.15f, 0.15f, 0.2f, 0.95f);
+        GUI.DrawTexture(rect, _whiteTex);
+        GUI.color = Color.white;
+
+        float approxW = Math.Min(label.Length * 7f, rect.width - 8f);
         GUI.Label(new Rect(rect.x + (rect.width - approxW) / 2f, rect.y + (rect.height - 16f) / 2f, approxW + 4f, 16f), label);
         return clicked;
     }
@@ -850,62 +931,133 @@ public class EspBehaviour : MonoBehaviour
         GUI.DrawTexture(panelRect, _whiteTex);
         GUI.color = Color.white;
 
-        GUI.Label(new Rect(panelRect.x + 10, panelRect.y + 8, panelRect.width - 20, 25), "<b>DynamicESP</b>");
-
-        float y = panelRect.y + 40;
         float bx = panelRect.x + 10;
         float bw = panelRect.width - 20;
+        float y = panelRect.y + 8;
+
+        GUI.Label(new Rect(bx, y, bw, 25), "<b>DynamicESP</b>");
+        y += 28;
+
+        // Tabs
+        float tabW = (bw - 10f) / 2f;
+        if (TabButton(new Rect(bx, y, tabW, 26), "ESP", _menuTab == 0)) _menuTab = 0;
+        if (TabButton(new Rect(bx + tabW + 10f, y, tabW, 26), "AimBot", _menuTab == 1)) _menuTab = 1;
+        y += 34;
+
+        if (_menuTab == 0) DrawEspTab(bx, y, bw);
+        else DrawAimTab(bx, y, bw, panelRect);
+    }
+
+    private void DrawEspTab(float bx, float y, float bw)
+    {
         float bh = 30;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}", _espBoxesEnabled))
-        {
             _espBoxesEnabled = !_espBoxesEnabled;
-            Plugin.LogSource?.LogInfo($"[ESP] ESP Boxes = {_espBoxesEnabled}");
-        }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Names: {(_espNamesEnabled ? "ON" : "OFF")}", _espNamesEnabled))
-        {
             _espNamesEnabled = !_espNamesEnabled;
-            Plugin.LogSource?.LogInfo($"[ESP] Names = {_espNamesEnabled}");
-        }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}", _espDistanceEnabled))
-        {
             _espDistanceEnabled = !_espDistanceEnabled;
-            Plugin.LogSource?.LogInfo($"[ESP] Distance = {_espDistanceEnabled}");
-        }
         y += 46;
 
         GUI.Label(new Rect(bx, y, bw, 22), "<b>Team filter:</b>");
         y += 26;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"TR (Terror): {(TeamFilter.ShowTr ? "ON" : "OFF")}", TeamFilter.ShowTr))
-        {
             TeamFilter.ShowTr = !TeamFilter.ShowTr;
-            Plugin.LogSource?.LogInfo($"[ESP] Show TR = {TeamFilter.ShowTr}");
-        }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"CT (Counter): {(TeamFilter.ShowCt ? "ON" : "OFF")}", TeamFilter.ShowCt))
-        {
             TeamFilter.ShowCt = !TeamFilter.ShowCt;
-            Plugin.LogSource?.LogInfo($"[ESP] Show CT = {TeamFilter.ShowCt}");
-        }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Spectator: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator))
-        {
             TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator;
-            Plugin.LogSource?.LogInfo($"[ESP] Show Spectator = {TeamFilter.ShowSpectator}");
-        }
         y += 46;
 
         if (CustomButton(new Rect(bx, y, bw, 34), "Hide Menu", false))
-        {
             _menuVisible = false;
-            Plugin.LogSource?.LogInfo("[ESP] Menu hidden via button");
+    }
+
+    private void DrawAimTab(float bx, float y, float bw, Rect panelRect)
+    {
+        float bh = 30;
+
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Aimbot: {(_aimbotEnabled ? "ON" : "OFF")}", _aimbotEnabled))
+            _aimbotEnabled = !_aimbotEnabled;
+        y += 36;
+
+        // FOV
+        GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {_aimbotFov:F0}°");
+        y += 22;
+        if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false))
+        {
+            _aimbotFov = Mathf.Max(1f, _aimbotFov - 2f);
         }
+        if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true))
+        {
+            _aimbotFov = Mathf.Min(90f, _aimbotFov + 2f);
+        }
+        y += 36;
+
+        // Smooth
+        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {_aimbotSmooth:F0}");
+        y += 22;
+        if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false))
+            _aimbotSmooth = Mathf.Max(1f, _aimbotSmooth - 5f);
+        if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true))
+            _aimbotSmooth = Mathf.Min(50f, _aimbotSmooth + 5f);
+        y += 36;
+
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Aim Teammates: {(_aimbotTargetTeammates ? "ON" : "OFF")}", _aimbotTargetTeammates))
+            _aimbotTargetTeammates = !_aimbotTargetTeammates;
+        y += 36;
+
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility Check: {(_aimbotVisibilityCheck ? "ON" : "OFF")}", _aimbotVisibilityCheck))
+            _aimbotVisibilityCheck = !_aimbotVisibilityCheck;
+        y += 36;
+
+        // Toggle/Hold
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(_aimbotToggleMode ? "TOGGLE" : "HOLD")}", _aimbotToggleMode))
+            _aimbotToggleMode = !_aimbotToggleMode;
+        y += 36;
+
+        // Bind
+        string keyName = _aimbotKeyCapturing ? "PRESS KEY..." : _aimbotKey.ToString();
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", _aimbotKeyCapturing))
+        {
+            _aimbotKeyCapturing = !_aimbotKeyCapturing;
+        }
+
+        // Захват клавиши
+        if (_aimbotKeyCapturing)
+        {
+            Event e = Event.current;
+            if (e != null && e.type == EventType.KeyDown && e.keyCode != KeyCode.None)
+            {
+                _aimbotKey = e.keyCode;
+                _aimbotKeyCapturing = false;
+                Plugin.LogSource?.LogInfo($"[ESP] Aimbot key set to {_aimbotKey}");
+                e.Use();
+            }
+            else if (e != null && e.type == EventType.MouseDown)
+            {
+                // ПКМ/ЛКМ тоже можно назначить
+                if (e.button == 0) _aimbotKey = KeyCode.Mouse0;
+                else if (e.button == 1) _aimbotKey = KeyCode.Mouse1;
+                else if (e.button == 2) _aimbotKey = KeyCode.Mouse2;
+                _aimbotKeyCapturing = false;
+                Plugin.LogSource?.LogInfo($"[ESP] Aimbot key set to {_aimbotKey}");
+                e.Use();
+            }
+        }
+        y += 36;
+
+        if (CustomButton(new Rect(bx, y, bw, 34), "Hide Menu", false))
+            _menuVisible = false;
     }
 }
