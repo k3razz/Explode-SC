@@ -53,9 +53,6 @@ public class EspBehaviour : MonoBehaviour
     // ---- Unity UI ----
     private GameObject _menuCanvas;
     private GameObject _menuPanel;
-    private Text _boxesLabel;
-    private Text _namesLabel;
-    private Text _distLabel;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
@@ -81,7 +78,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Canvas
             _menuCanvas = new GameObject("ESP_MenuCanvas");
             DontDestroyOnLoad(_menuCanvas);
             var canvas = _menuCanvas.AddComponent<Canvas>();
@@ -92,7 +88,6 @@ public class EspBehaviour : MonoBehaviour
             scaler.referenceResolution = new Vector2(1920, 1080);
             _menuCanvas.AddComponent<GraphicRaycaster>();
 
-            // Панель
             _menuPanel = new GameObject("Panel");
             _menuPanel.transform.SetParent(_menuCanvas.transform, false);
             var panelImg = _menuPanel.AddComponent<Image>();
@@ -104,34 +99,17 @@ public class EspBehaviour : MonoBehaviour
             panelRect.anchoredPosition = new Vector2(20, -20);
             panelRect.sizeDelta = new Vector2(320, 300);
 
-            // Заголовок
             CreateLabel(_menuPanel.transform, "DynamicESP", new Vector2(10, -10), 22, FontStyle.Bold, new Color(1f, 0.8f, 0.3f));
 
-            // Переключатели
             float y = -55;
-            y = CreateToggle(_menuPanel.transform, "ESP Boxes", y, _espBoxesEnabled, v =>
-            {
-                _espBoxesEnabled = v;
-                UpdateToggleLabel(_boxesLabel, v);
-            }, out _boxesLabel);
+            y = CreateToggle(_menuPanel.transform, "ESP Boxes", y, _espBoxesEnabled, v => _espBoxesEnabled = v);
+            y = CreateToggle(_menuPanel.transform, "Names", y, _espNamesEnabled, v => _espNamesEnabled = v);
+            y = CreateToggle(_menuPanel.transform, "Distance", y, _espDistanceEnabled, v => _espDistanceEnabled = v);
 
-            y = CreateToggle(_menuPanel.transform, "Names", y, _espNamesEnabled, v =>
-            {
-                _espNamesEnabled = v;
-                UpdateToggleLabel(_namesLabel, v);
-            }, out _namesLabel);
-
-            y = CreateToggle(_menuPanel.transform, "Distance", y, _espDistanceEnabled, v =>
-            {
-                _espDistanceEnabled = v;
-                UpdateToggleLabel(_distLabel, v);
-            }, out _distLabel);
-
-            // Кнопка "Скрыть меню"
             y -= 10;
             CreateButton(_menuPanel.transform, "Hide Menu (F1)", new Vector2(10, y), () => ToggleMenu());
 
-            _menuPanel.SetActive(false); // по умолчанию скрыто
+            _menuPanel.SetActive(false);
             Debug.Log("[ESP] Menu built");
         }
         catch (Exception e)
@@ -140,9 +118,8 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    private float CreateToggle(Transform parent, string text, float y, bool initial, Action<bool> onChange, out Text label)
+    private float CreateToggle(Transform parent, string text, float y, bool initial, Action<bool> onChange)
     {
-        // Фон строки
         var row = new GameObject("Row_" + text);
         row.transform.SetParent(parent, false);
         var rowImg = row.AddComponent<Image>();
@@ -154,7 +131,6 @@ public class EspBehaviour : MonoBehaviour
         rowRect.anchoredPosition = new Vector2(10, y);
         rowRect.sizeDelta = new Vector2(300, 38);
 
-        // Текст
         var txtGo = new GameObject("Label");
         txtGo.transform.SetParent(row.transform, false);
         var txt = txtGo.AddComponent<Text>();
@@ -169,7 +145,6 @@ public class EspBehaviour : MonoBehaviour
         txtRect.offsetMin = new Vector2(10, 0);
         txtRect.offsetMax = new Vector2(-70, 0);
 
-        // Кнопка ON/OFF справа
         var btnGo = new GameObject("ToggleBtn");
         btnGo.transform.SetParent(row.transform, false);
         var btnImg = btnGo.AddComponent<Image>();
@@ -195,7 +170,6 @@ public class EspBehaviour : MonoBehaviour
         btnTextRect.offsetMin = Vector2.zero;
         btnTextRect.offsetMax = Vector2.zero;
 
-        // Кнопка
         var btn = btnGo.AddComponent<Button>();
         btn.targetGraphic = btnImg;
         bool state = initial;
@@ -207,14 +181,7 @@ public class EspBehaviour : MonoBehaviour
             onChange(state);
         }));
 
-        label = btnText;
         return y - 46;
-    }
-
-    private void UpdateToggleLabel(Text label, bool state)
-    {
-        if (label == null) return;
-        label.text = state ? "ON" : "OFF";
     }
 
     private GameObject CreateLabel(Transform parent, string text, Vector2 pos, int size, FontStyle style, Color color)
@@ -444,11 +411,16 @@ public class EspBehaviour : MonoBehaviour
     {
         if (!_espBoxesEnabled && !_espNamesEnabled) return;
 
+        // Страховка на случай, если Awake не успел выполниться
+        if (_whiteTex == null)
+        {
+            _whiteTex = new Texture2D(1, 1);
+            _whiteTex.SetPixel(0, 0, Color.white);
+            _whiteTex.Apply();
+        }
+
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
-
-        var style = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.MiddleCenter };
-        style.normal.textColor = Color.white;
 
         foreach (var t in _toDraw)
         {
@@ -461,7 +433,6 @@ public class EspBehaviour : MonoBehaviour
 
             float x = screen.x;
             float y = Screen.height - screen.y;
-
             float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
 
             if (_espBoxesEnabled)
@@ -494,13 +465,17 @@ public class EspBehaviour : MonoBehaviour
                 if (_espDistanceEnabled)
                     label += $" [{dist:F0}m]";
 
-                // Тень
-                var shadow = new GUIStyle(style);
-                shadow.normal.textColor = Color.black;
-                GUI.Label(new Rect(x - 99f, y - 17f, 200f, 20f), label, shadow);
-                GUI.Label(new Rect(x - 101f, y - 19f, 200f, 20f), label, shadow);
-                // Текст
-                GUI.Label(new Rect(x - 100f, y - 18f, 200f, 20f), label, style);
+                // Приблизительная ширина для центровки (дефолтный шрифт ~7px на символ)
+                float approxWidth = label.Length * 7f;
+                float left = x - approxWidth / 2f;
+
+                // Тень (два прохода)
+                GUI.color = Color.black;
+                GUI.Label(new Rect(left - 1f, y - 19f, approxWidth, 20f), label);
+                GUI.Label(new Rect(left + 1f, y - 17f, approxWidth, 20f), label);
+                // Основной текст
+                GUI.color = Color.white;
+                GUI.Label(new Rect(left, y - 18f, approxWidth, 20f), label);
             }
         }
         GUI.color = Color.white;
