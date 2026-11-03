@@ -10,6 +10,14 @@ using System.Reflection;
 
 namespace MyDynamicESP;
 
+// Teams: None=0, Tr=1, Ct=2, Spectator=3
+public static class TeamFilter
+{
+    public static bool ShowTr = true;
+    public static bool ShowCt = true;
+    public static bool ShowSpectator = false;
+}
+
 public static class EspManager
 {
     public static void EnsureBehaviour()
@@ -17,10 +25,7 @@ public static class EspManager
         try
         {
             var existing = UnityEngine.Object.FindObjectOfType<EspBehaviour>();
-            if (existing != null)
-            {
-                return;
-            }
+            if (existing != null) return;
 
             var go = new GameObject("ESP_Behaviour");
             UnityEngine.Object.DontDestroyOnLoad(go);
@@ -91,7 +96,6 @@ public class EspBehaviour : MonoBehaviour
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
-    // ---- Watchdog: проверка живости локального игрока ----
     private float _watchdogTimer;
     private const float WatchdogInterval = 5.0f;
     private int _watchdogTicks;
@@ -177,27 +181,18 @@ public class EspBehaviour : MonoBehaviour
         _watchdogTicks++;
         try
         {
-            // 1. Проверяем, что локальный игрок доступен
             bool localPlayerOk = CheckLocalPlayer();
-            // 2. Проверяем, что камера доступна
             bool cameraOk = _cam != null;
-            // 3. Проверяем, что типы разрешены
             bool typesOk = _botType != null || _playerType != null;
 
             Debug.Log($"[ESP] Watchdog #{_watchdogTicks}: localPlayer={localPlayerOk}, " +
                       $"camera={cameraOk}, types={typesOk}, tracked={_tracked.Count}, localTeam={_localTeam}");
 
-            // Если что-то критично сломано — пробуем восстановить
             if (!typesOk)
             {
                 Debug.LogWarning("[ESP] Watchdog: types not resolved, forcing re-resolve");
                 _resolved = false;
                 ResolveTypes();
-            }
-
-            if (!localPlayerOk)
-            {
-                Debug.LogWarning("[ESP] Watchdog: local player not available, will retry");
             }
 
             if (!cameraOk)
@@ -226,7 +221,7 @@ public class EspBehaviour : MonoBehaviour
 
             if (pmInstance == null)
             {
-                if (_watchdogTicks % 6 == 0) // раз в 30 секунд
+                if (_watchdogTicks % 6 == 0)
                     Debug.Log("[ESP] CheckLocalPlayer: PlayerManager.Instance is null");
                 return false;
             }
@@ -239,7 +234,6 @@ public class EspBehaviour : MonoBehaviour
                 return false;
             }
 
-            // Обновляем команду
             var teamObj = _teamProp.GetValue(localPlayer);
             if (teamObj != null)
             {
@@ -269,7 +263,6 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
-            // ---- Watchdog ----
             _watchdogTimer += Time.deltaTime;
             if (_watchdogTimer >= WatchdogInterval)
             {
@@ -277,12 +270,12 @@ public class EspBehaviour : MonoBehaviour
                 RunWatchdog();
             }
 
-            // ---- Ввод ----
+            // ---- Ввод: J (русская О) и Insert ----
             try
             {
-                if (Input.GetKeyDown(KeyCode.Insert))
+                if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.Insert))
                 {
-                    Debug.Log("[ESP] Insert pressed");
+                    Debug.Log("[ESP] Menu key pressed (J/Insert)");
                     _menuVisible = !_menuVisible;
                     Debug.Log($"[ESP] Menu toggled: visible={_menuVisible}");
                 }
@@ -292,7 +285,6 @@ public class EspBehaviour : MonoBehaviour
                 LogThrottled("input_ex", $"[ESP] Input EX: {e.Message}", true);
             }
 
-            // ---- Скан противников ----
             _scanTimer += Time.deltaTime;
             if (_scanTimer >= ScanInterval)
             {
@@ -300,13 +292,13 @@ public class EspBehaviour : MonoBehaviour
                 DoScan();
             }
 
-            // ---- Список для отрисовки ----
             _toDraw.Clear();
-            int skippedOwnTeam = 0, skippedNull = 0;
+            int skippedOwnTeam = 0, skippedNull = 0, skippedFiltered = 0;
             foreach (var t in _tracked.Values)
             {
                 if (t.Transform == null) { skippedNull++; continue; }
                 if (_localTeam != -1 && t.Team == _localTeam) { skippedOwnTeam++; continue; }
+                if (!IsTeamVisible(t.Team)) { skippedFiltered++; continue; }
                 _toDraw.Add(t);
             }
 
@@ -314,7 +306,7 @@ public class EspBehaviour : MonoBehaviour
             {
                 _lastUpdateLog = Time.realtimeSinceStartup;
                 Debug.Log($"[ESP] Update alive: tracked={_tracked.Count}, draw={_toDraw.Count}, " +
-                          $"skippedOwnTeam={skippedOwnTeam}, skippedNull={skippedNull}, " +
+                          $"skippedOwnTeam={skippedOwnTeam}, skippedNull={skippedNull}, skippedFiltered={skippedFiltered}, " +
                           $"localTeam={_localTeam}, menu={_menuVisible}, updates={_updateCount}");
             }
         }
@@ -322,6 +314,17 @@ public class EspBehaviour : MonoBehaviour
         {
             LogThrottled("update_ex", $"[ESP] Update EX: {e}", true);
             _scanTimer = 0f;
+        }
+    }
+
+    private bool IsTeamVisible(int team)
+    {
+        switch (team)
+        {
+            case 1: return TeamFilter.ShowTr;
+            case 2: return TeamFilter.ShowCt;
+            case 3: return TeamFilter.ShowSpectator;
+            default: return true; // None или неизвестная — показываем
         }
     }
 
@@ -390,7 +393,6 @@ public class EspBehaviour : MonoBehaviour
                 return;
             }
 
-            // Обновляем локальную команду перед сканом
             CheckLocalPlayer();
 
             _seenList.Clear();
@@ -546,6 +548,7 @@ public class EspBehaviour : MonoBehaviour
                 Debug.Log($"[ESP] Camera found: {_cam.name}");
             }
 
+            // ---- ESP ----
             if (_espBoxesEnabled || _espNamesEnabled)
             {
                 int drawn = 0, skippedBehind = 0, skippedNull = 0;
@@ -626,50 +629,14 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
+            // ---- Меню ----
             if (_menuVisible)
             {
-                Rect panelRect = new Rect(20, 20, 300, 260);
-                GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
-                GUI.DrawTexture(panelRect, _whiteTex);
-                GUI.color = Color.white;
-
-                GUI.Label(new Rect(panelRect.x + 10, panelRect.y + 10, 280, 25), "<b>DynamicESP</b>");
-
-                float y = panelRect.y + 40;
-
-                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30),
-                    $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}"))
-                {
-                    _espBoxesEnabled = !_espBoxesEnabled;
-                    Debug.Log($"[ESP] ESP Boxes = {_espBoxesEnabled}");
-                }
-                y += 36;
-
-                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30),
-                    $"Names: {(_espNamesEnabled ? "ON" : "OFF")}"))
-                {
-                    _espNamesEnabled = !_espNamesEnabled;
-                    Debug.Log($"[ESP] Names = {_espNamesEnabled}");
-                }
-                y += 36;
-
-                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30),
-                    $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}"))
-                {
-                    _espDistanceEnabled = !_espDistanceEnabled;
-                    Debug.Log($"[ESP] Distance = {_espDistanceEnabled}");
-                }
-                y += 36;
-
-                if (GUI.Button(new Rect(panelRect.x + 10, y, 280, 30), "Hide Menu (Insert)"))
-                {
-                    _menuVisible = false;
-                    Debug.Log("[ESP] Menu hidden via button");
-                }
+                DrawMenu();
             }
             else
             {
-                if (GUI.Button(new Rect(10, 10, 170, 30), "Open ESP Menu (Insert)"))
+                if (GUI.Button(new Rect(10, 10, 200, 30), "ESP Menu (J / Insert)"))
                 {
                     _menuVisible = true;
                     Debug.Log("[ESP] Menu opened via button");
@@ -683,6 +650,78 @@ public class EspBehaviour : MonoBehaviour
         finally
         {
             GUI.color = Color.white;
+        }
+    }
+
+    private void DrawMenu()
+    {
+        Rect panelRect = new Rect(20, 20, 340, 420);
+        GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
+        GUI.DrawTexture(panelRect, _whiteTex);
+        GUI.color = Color.white;
+
+        GUI.Label(new Rect(panelRect.x + 10, panelRect.y + 8, 320, 25), "<b>DynamicESP</b>");
+
+        float y = panelRect.y + 40;
+        float bx = panelRect.x + 10;
+        float bw = 320;
+
+        if (GUI.Button(new Rect(bx, y, bw, 30),
+            $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}"))
+        {
+            _espBoxesEnabled = !_espBoxesEnabled;
+            Debug.Log($"[ESP] ESP Boxes = {_espBoxesEnabled}");
+        }
+        y += 36;
+
+        if (GUI.Button(new Rect(bx, y, bw, 30),
+            $"Names: {(_espNamesEnabled ? "ON" : "OFF")}"))
+        {
+            _espNamesEnabled = !_espNamesEnabled;
+            Debug.Log($"[ESP] Names = {_espNamesEnabled}");
+        }
+        y += 36;
+
+        if (GUI.Button(new Rect(bx, y, bw, 30),
+            $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}"))
+        {
+            _espDistanceEnabled = !_espDistanceEnabled;
+            Debug.Log($"[ESP] Distance = {_espDistanceEnabled}");
+        }
+        y += 46;
+
+        // ---- Team filters ----
+        GUI.Label(new Rect(bx, y, bw, 22), "<b>Team filter:</b>");
+        y += 26;
+
+        if (GUI.Button(new Rect(bx, y, bw, 30),
+            $"TR (Terror): {(TeamFilter.ShowTr ? "ON" : "OFF")}"))
+        {
+            TeamFilter.ShowTr = !TeamFilter.ShowTr;
+            Debug.Log($"[ESP] Show TR = {TeamFilter.ShowTr}");
+        }
+        y += 36;
+
+        if (GUI.Button(new Rect(bx, y, bw, 30),
+            $"CT (Counter): {(TeamFilter.ShowCt ? "ON" : "OFF")}"))
+        {
+            TeamFilter.ShowCt = !TeamFilter.ShowCt;
+            Debug.Log($"[ESP] Show CT = {TeamFilter.ShowCt}");
+        }
+        y += 36;
+
+        if (GUI.Button(new Rect(bx, y, bw, 30),
+            $"Spectator: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}"))
+        {
+            TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator;
+            Debug.Log($"[ESP] Show Spectator = {TeamFilter.ShowSpectator}");
+        }
+        y += 46;
+
+        if (GUI.Button(new Rect(bx, y, bw, 34), "Hide Menu (J / Insert)"))
+        {
+            _menuVisible = false;
+            Debug.Log("[ESP] Menu hidden via button");
         }
     }
 }
