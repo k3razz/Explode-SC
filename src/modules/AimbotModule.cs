@@ -10,6 +10,7 @@ public static class AimbotModule
     public static float Smooth = 15f;
     public static bool TargetTeammates = false;
     public static bool VisibilityCheck = false;
+    public static bool DrawFovCircle = false; // по умолчанию выключено для FPS
 
     public static void Update(Camera cam, int localTeam, Dictionary<int, Tracked> tracked)
     {
@@ -29,8 +30,8 @@ public static class AimbotModule
                 if (!TargetTeammates && localTeam > 0 && t.Team == localTeam) continue;
                 if (VisibilityCheck && !IsVisible(t, camPos)) continue;
 
-                Vector3 hp = GetHeadPosition(t);
-                Vector3 dir = (hp - camPos).normalized;
+                Vector3 aimPoint = GetAimPoint(t);
+                Vector3 dir = (aimPoint - camPos).normalized;
                 float angle = Vector3.Angle(camForward, dir);
                 if (angle < bestAngle) { bestAngle = angle; best = t; }
             }
@@ -39,17 +40,25 @@ public static class AimbotModule
 
         if (best == null) return;
 
-        Vector3 targetHead = GetHeadPosition(best);
-        Quaternion targetRot = Quaternion.LookRotation((targetHead - camPos).normalized);
+        Vector3 target = GetAimPoint(best);
+        Quaternion targetRot = Quaternion.LookRotation((target - camPos).normalized);
         cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRot, Smooth * Time.deltaTime);
+    }
+
+    // Центр ESP-бокса: середина между головой и ногами
+    private static Vector3 GetAimPoint(Tracked t)
+    {
+        Vector3 head = t.Transform.position + Vector3.up * 1.8f;
+        Vector3 foot = t.Transform.position;
+        return (head + foot) * 0.5f + Vector3.up * 0.1f;
     }
 
     private static bool IsVisible(Tracked t, Vector3 camPos)
     {
         try
         {
-            Vector3 hp = GetHeadPosition(t);
-            Vector3 d = hp - camPos;
+            Vector3 target = GetAimPoint(t);
+            Vector3 d = target - camPos;
             float dist = d.magnitude;
             if (dist < 0.1f) return true;
             if (Physics.Raycast(camPos, d.normalized, out var hit, dist))
@@ -57,23 +66,5 @@ public static class AimbotModule
             return true;
         }
         catch { return true; }
-    }
-
-    private static Vector3 GetHeadPosition(Tracked t)
-    {
-        try
-        {
-            if (t.BipedMap != null)
-            {
-                var nwh = t.BipedMap.GetType().GetMethod("nwh", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (nwh != null)
-                {
-                    var h = nwh.Invoke(t.BipedMap, new object[] { 0 });
-                    if (h is Transform ht) return ht.position;
-                }
-            }
-        }
-        catch { }
-        return t.Transform.position + Vector3.up * 1.6f;
     }
 }
