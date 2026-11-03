@@ -29,7 +29,7 @@ public class EspBehaviour : MonoBehaviour
 
     private void LogThrottled(string key, string message, bool isError = false)
     {
-        float now = Time.realtimeSinceStartup;
+        float now = Time.time; // Time.time кэшируется, работает быстрее
         if (_lastLogTime.TryGetValue(key, out float last) && now - last < LogCooldown) return;
         _lastLogTime[key] = now;
         if (isError) { Debug.LogError(message); Plugin.LogSource?.LogError(message); }
@@ -58,7 +58,6 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
             AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
-            // Интро-анимация: запускается один раз при первом заходе
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
@@ -86,6 +85,9 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            // Кэшируем камеру один раз в Update
+            if (_cam == null) _cam = Camera.main;
+
             // Интро-анимация
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -116,6 +118,11 @@ public class EspBehaviour : MonoBehaviour
             foreach (var t in EspModule.TrackedDict.Values)
             {
                 if (t.Transform == null) continue;
+                
+                // Проверка на смерть/отключение объекта (убирает трупы)
+                var go = t.Transform.gameObject;
+                if (go == null || !go.activeInHierarchy) continue;
+
                 if (TeamFilter.OnlyEnemies && _localTeam > 0 && t.Team == _localTeam) continue;
                 if (!EspModule.IsTeamVisible(t.Team)) continue;
                 EspModule.ToDraw.Add(t);
@@ -128,7 +135,10 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            // Если аимбот выключен в меню — вообще не тратим ресурсы
+            if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
+            
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
@@ -139,19 +149,18 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
-            if (_cam == null) { _cam = Camera.main; if (_cam == null) return; }
+            // Убрали поиск Camera.main отсюда, чтобы не тормозило
+            if (_cam == null) return; 
 
             EspModule.Draw(_whiteTex);
             if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
 
-            // Интро-анимация (один раз)
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
                 MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
                 return;
             }
 
-            // Меню (после интро)
             if (UiState.MenuVisible)
                 MenuRenderer.DrawMenu(_whiteTex);
         }
@@ -175,6 +184,7 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
     }
 
+    // --- Рефлексия ---
     int ReadTeamFromMember(MemberInfo member, object target)
     {
         if (member == null || target == null) return -1;
