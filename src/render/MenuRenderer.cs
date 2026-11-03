@@ -137,6 +137,10 @@ public static class MenuRenderer
         { AimbotModule.Enabled = !AimbotModule.Enabled; Plugin.CfgAimbotEnabled.Value = AimbotModule.Enabled; }
         y += 36;
 
+        if (MenuRenderer.CustomButton(new Rect(bx, y, bw, bh), $"FOV Circle: {(AimbotModule.DrawFovCircle ? "ON" : "OFF")}", AimbotModule.DrawFovCircle, whiteTex))
+        { AimbotModule.DrawFovCircle = !AimbotModule.DrawFovCircle; }
+        y += 36;
+
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {AimbotModule.Fov:F0}°");
         y += 24;
         if (MenuRenderer.CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
