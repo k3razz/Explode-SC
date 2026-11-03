@@ -1,5 +1,6 @@
 
 |cif.Ready = 4 Триггербот / AutoFire|
+|---------------|
 |cig.Aiming = 0 Триггербот в ADS|
 |Gun/ArmorPenetration IgnoreArmor|
 |Gun/PenetrationPower WallPenetration|
