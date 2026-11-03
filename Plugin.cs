@@ -32,12 +32,13 @@ public class EspBehaviour : MonoBehaviour
 
     private readonly Dictionary<int, Tracked> _tracked = new();
     private readonly List<Tracked> _toDraw = new();
+    private readonly List<int> _seenList = new(); // Замена HashSet в параметрах
+
     private Camera _cam;
     private Texture2D _whiteTex;
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
-    // Настройки бокса
     private const float BoxWidth = 60f;
     private const float BoxHeight = 120f;
     private const float OutlineThickness = 2f;
@@ -68,25 +69,27 @@ public class EspBehaviour : MonoBehaviour
             DoScan();
         }
 
+        // 1. Применяем чамсы каждый кадр
+        foreach (var t in _tracked.Values)
+        {
+            if (t.Transform == null) continue;
+            ApplyChamsInternal(t);
+        }
+
+        // 2. Формируем список для отрисовки
         _toDraw.Clear();
         foreach (var t in _tracked.Values)
         {
             if (t.Transform == null) continue;
-            
-            // 1. Применяем чамсы (перекрашиваем модель)
-            ApplyChams(t);
-
-            // 2. Фильтруем для отрисовки боксов (только враги)
-            if (_localTeam != -1 && t.Team == _localTeam) continue;
+            if (_localTeam != -1 && t.Team == _localTeam) continue; // только враги
             _toDraw.Add(t);
         }
     }
 
-    void ApplyChams(Tracked t)
+    void ApplyChamsInternal(Tracked t)
     {
         if (t.Renderers == null || t.Renderers.Length == 0) return;
 
-        // Выбираем цвет чамсов: враги - красные, свои - синие
         Color chamColor = t.Team == 1 ? Color.red : new Color(0f, 0.5f, 1f);
 
         foreach (var r in t.Renderers)
@@ -94,13 +97,10 @@ public class EspBehaviour : MonoBehaviour
             if (r == null) continue;
             try
             {
-                // Берем экземпляр материала (создает копию для этого объекта)
                 var mat = r.material;
                 if (mat != null)
                 {
-                    // Стандартный шейдер Unity
                     if (mat.HasProperty("_Color")) mat.color = chamColor;
-                    // Шейдер URP (если игра на URP)
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", chamColor);
                 }
             }
@@ -144,18 +144,16 @@ public class EspBehaviour : MonoBehaviour
 
         UpdateLocalTeam();
 
-        var seen = new HashSet<int>();
-        ScanType(_botType, true, seen);
-        ScanType(_playerType, false, seen);
+        _seenList.Clear();
+        ScanTypeInternal(_botType, true);
+        ScanTypeInternal(_playerType, false);
 
         var dead = new List<int>();
         foreach (var id in _tracked.Keys)
-            if (!seen.Contains(id)) dead.Add(id);
+            if (!_seenList.Contains(id)) dead.Add(id);
         foreach (var id in dead) _tracked.Remove(id);
 
-        int botN = 0, playerN = 0;
-        foreach (var t in _tracked.Values) { if (t.IsBot) botN++; else playerN++; }
-        Debug.Log($"[ESP] Scan: bots={botN}, players={playerN}, localTeam={_localTeam}");
+        Debug.Log($"[ESP] Scan: tracked={_tracked.Count}, localTeam={_localTeam}");
     }
 
     void UpdateLocalTeam()
@@ -179,7 +177,8 @@ public class EspBehaviour : MonoBehaviour
         catch { }
     }
 
-    void ScanType(Il2CppSystem.Type type, bool isBot, HashSet<int> seen)
+    // Теперь метод не принимает HashSet, а использует поле _seenList
+    void ScanTypeInternal(Il2CppSystem.Type type, bool isBot)
     {
         if (type == null) return;
         try
@@ -198,8 +197,8 @@ public class EspBehaviour : MonoBehaviour
                 if (go == null) continue;
 
                 int id = go.GetInstanceID();
-                if (seen.Contains(id)) continue;
-                seen.Add(id);
+                if (_seenList.Contains(id)) continue;
+                _seenList.Add(id);
 
                 int targetTeam = -1;
                 try
@@ -212,7 +211,6 @@ public class EspBehaviour : MonoBehaviour
                 }
                 catch { }
 
-                // Для чамсов берем ВСЕ рендереры, чтобы оружие и руки тоже красились
                 var allRenderers = go.GetComponentsInChildren<Renderer>();
 
                 _tracked[id] = new Tracked
@@ -280,18 +278,15 @@ public class EspBehaviour : MonoBehaviour
             Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.15f) : new Color(0f, 0.5f, 1f, 0.15f);
             Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
 
-            // Заливка
             GUI.color = fillColor;
             GUI.DrawTexture(new Rect(left, top, bw, bh), _whiteTex);
 
-            // Обводка
             GUI.color = outlineColor;
             GUI.DrawTexture(new Rect(left, top, bw, th), _whiteTex);
             GUI.DrawTexture(new Rect(left, bottom - th, bw, th), _whiteTex);
             GUI.DrawTexture(new Rect(left, top, th, bh), _whiteTex);
             GUI.DrawTexture(new Rect(left + bw - th, top, th, bh), _whiteTex);
 
-            // Текст
             GUI.color = Color.white;
             string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
             GUI.Label(new Rect(left, top - 18f, bw + 60f, 20f), label);
