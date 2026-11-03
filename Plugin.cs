@@ -3,6 +3,7 @@ using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
@@ -62,7 +63,10 @@ public class Plugin : BasePlugin
 
     public static KeyCode AimbotToggleKey = KeyCode.Mouse1;
     public static bool AimbotToggleMode = false;
-    public static bool IsMenuOpen = false;
+
+    // Keybind capture state
+    public static bool CapturingKey = false;
+    public static KeyCode CapturingBackup = KeyCode.None;
 
     public override void Load()
     {
@@ -118,10 +122,14 @@ public class Plugin : BasePlugin
     }
 }
 
+// =========================================================
+//                    KEYBIND LISTENER
+// =========================================================
 public class KeybindListener : MonoBehaviour
 {
     private static KeybindListener _instance;
     private float _lastLog;
+    private bool _waitingForRelease = false;
 
     public static void EnsureBehaviour()
     {
@@ -145,7 +153,13 @@ public class KeybindListener : MonoBehaviour
     {
         try
         {
-            if (Plugin.IsMenuOpen) return;
+            // Захват бинда — приоритет над всем
+            if (Plugin.CapturingKey)
+            {
+                HandleCapture();
+                return;
+            }
+
             if (IsTypingInChat()) return;
             if (Plugin.AimbotToggleKey == KeyCode.None) return;
 
@@ -161,14 +175,75 @@ public class KeybindListener : MonoBehaviour
             {
                 bool kd = Input.GetKey(Plugin.AimbotToggleKey);
                 EspBehaviour.SetAimbotActive(kd);
-                if (kd && Time.realtimeSinceStartup - _lastLog > 2f)
+                if (kd && Time.realtimeSinceStartup - _lastLog > 3f)
                 {
                     _lastLog = Time.realtimeSinceStartup;
-                    Plugin.LogSource?.LogInfo($"[ESP] Aimbot active (hold) key={Plugin.AimbotToggleKey}");
+                    Plugin.LogSource?.LogInfo($"[ESP] Aimbot active (hold)");
                 }
             }
         }
         catch (Exception e) { Debug.LogError($"[ESP] KeybindListener EX: {e.Message}"); }
+    }
+
+    private void HandleCapture()
+    {
+        // Esc — отмена
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            Plugin.AimbotToggleKey = Plugin.CapturingBackup;
+            Plugin.CapturingKey = false;
+            _waitingForRelease = false;
+            if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = Plugin.AimbotToggleKey.ToString();
+            Plugin.LogSource?.LogInfo($"[ESP] Bind cancelled, restored to {Plugin.AimbotToggleKey}");
+            return;
+        }
+
+        // Игнорируем кадр, когда кнопка мыши/клавиша отпущена — чтобы не зациклиться
+        if (_waitingForRelease)
+        {
+            bool anyDown = false;
+            for (int b = 0; b < 3; b++) if (Input.GetMouseButton(b)) { anyDown = true; break; }
+            if (!anyDown)
+            {
+                foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
+                {
+                    if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
+                    if (Input.GetKey(kc)) { anyDown = true; break; }
+                }
+            }
+            if (!anyDown) _waitingForRelease = false;
+            return;
+        }
+
+        // Клавиши
+        foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
+        {
+            if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
+            if (Input.GetKeyDown(kc))
+            {
+                Plugin.AimbotToggleKey = kc;
+                Plugin.CapturingKey = false;
+                _waitingForRelease = true;
+                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
+                Plugin.LogSource?.LogInfo($"[ESP] Bind set: {kc}");
+                return;
+            }
+        }
+
+        // Кнопки мыши
+        for (int b = 0; b < 3; b++)
+        {
+            if (Input.GetMouseButtonDown(b))
+            {
+                KeyCode kc = b == 0 ? KeyCode.Mouse0 : (b == 1 ? KeyCode.Mouse1 : KeyCode.Mouse2);
+                Plugin.AimbotToggleKey = kc;
+                Plugin.CapturingKey = false;
+                _waitingForRelease = true;
+                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
+                Plugin.LogSource?.LogInfo($"[ESP] Bind set: {kc}");
+                return;
+            }
+        }
     }
 
     private bool IsTypingInChat()
@@ -199,6 +274,9 @@ public class KeybindListener : MonoBehaviour
     }
 }
 
+// =========================================================
+//                    ESP BEHAVIOUR
+// =========================================================
 public class EspBehaviour : MonoBehaviour
 {
     private class Tracked
@@ -218,7 +296,6 @@ public class EspBehaviour : MonoBehaviour
     private Texture2D _whiteTex;
     private static Texture2D _circleTex;
     private static Texture2D _ringTex;
-    private static Texture2D _btnTex;
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
@@ -242,21 +319,21 @@ public class EspBehaviour : MonoBehaviour
     private const float MenuOffset = 30f;
     private const float TabWidth = 120f;
 
-    private const float ButtonSize = 44f;
-    private Vector2 _buttonCenter = new Vector2(-1f, -1f);
-    private bool _buttonInitialized = false;
-    private bool _isDragging = false;
-    private bool _dragMoved = false;
-    private Vector2 _dragOffset;
-    private Vector2 _dragStartMouse;
+    // Unity UI кнопка (не OnGUI)
+    private GameObject _btnCanvas;
+    private RectTransform _btnRect;
+    private Vector2 _btnPos = new Vector2(-1f, -1f);
+    private bool _btnInitialized = false;
+    private bool _btnDragging = false;
+    private bool _btnMoved = false;
+    private Vector2 _btnDragOffset;
+    private Vector2 _btnDragStart;
 
     private bool _aimbotEnabled = false;
     private float _aimbotFov = 15f;
     private float _aimbotSmooth = 15f;
     private bool _aimbotTargetTeammates = false;
     private bool _aimbotVisibilityCheck = false;
-    private bool _aimbotKeyCapturing = false;
-    private KeyCode _aimbotKeyBackup = KeyCode.None;
 
     private static bool _aimbotActive = false;
     public static bool AimbotActive => _aimbotActive;
@@ -292,10 +369,11 @@ public class EspBehaviour : MonoBehaviour
 
             GetCircleTex();
             GetRingTex();
-            GetButtonTex();
 
             enabled = true;
             gameObject.SetActive(true);
+
+            BuildButtonCanvas();
 
             if (Plugin.CfgEspBoxes != null) _espBoxesEnabled = Plugin.CfgEspBoxes.Value;
             if (Plugin.CfgEspNames != null) _espNamesEnabled = Plugin.CfgEspNames.Value;
@@ -361,48 +439,134 @@ public class EspBehaviour : MonoBehaviour
         return tex;
     }
 
-    // Шакальная кнопка: 32x32, Point-фильтр, буква E прямо в текстуре
-    private static Texture2D GetButtonTex()
+    // === Unity UI кнопка "E" — создаётся один раз в Awake ===
+    private void BuildButtonCanvas()
     {
-        if (_btnTex != null) return _btnTex;
-        int size = 32;
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        tex.filterMode = FilterMode.Point;
-        tex.wrapMode = TextureWrapMode.Clamp;
-        var pixels = new Color32[size * size];
-        float center = size / 2f;
-        float radius = size / 2f - 1f;
-        string[] eGlyph = {
-            "11111",
-            "10000",
-            "10000",
-            "11110",
-            "10000",
-            "10000",
-            "11111"
-        };
-        int glyphW = 5, glyphH = 7;
-        int gx0 = (size - glyphW) / 2;
-        int gy0 = (size - glyphH) / 2;
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float dx = x - center + 0.5f, dy = y - center + 0.5f;
-                float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                if (dist > radius) { pixels[y * size + x] = new Color32(0, 0, 0, 0); continue; }
-                byte r = 40, g = 40, b = 60, a = 255;
-                int lx = x - gx0;
-                int ly = (size - 1 - y) - gy0;
-                if (lx >= 0 && lx < glyphW && ly >= 0 && ly < glyphH && eGlyph[glyphH - 1 - ly][lx] == '1')
+        try
+        {
+            _btnCanvas = new GameObject("ESP_BtnCanvas");
+            DontDestroyOnLoad(_btnCanvas);
+            var canvas = _btnCanvas.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 9998;
+            var scaler = _btnCanvas.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            _btnCanvas.AddComponent<GraphicRaycaster>();
+
+            var btnGo = new GameObject("ESP_E_Button");
+            btnGo.transform.SetParent(_btnCanvas.transform, false);
+
+            var img = btnGo.AddComponent<Image>();
+            // маленькая круглая текстура 32×32 — растянется до 44×44
+            var btnTex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+            btnTex.filterMode = FilterMode.Bilinear;
+            btnTex.wrapMode = TextureWrapMode.Clamp;
+            var pixels = new Color32[32 * 32];
+            float center = 16f;
+            float radius = 15f;
+            for (int y = 0; y < 32; y++)
+                for (int x = 0; x < 32; x++)
                 {
-                    r = 255; g = 255; b = 255;
+                    float dx = x - center + 0.5f, dy = y - center + 0.5f;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    byte a = dist <= radius ? (byte)255 : (byte)0;
+                    pixels[y * 32 + x] = new Color32(40, 40, 60, a);
                 }
-                pixels[y * size + x] = new Color32(r, g, b, a);
+            btnTex.SetPixels32(pixels);
+            btnTex.Apply();
+            img.sprite = Sprite.Create(btnTex, new Rect(0, 0, 32, 32), new Vector2(0.5f, 0.5f));
+            img.raycastTarget = true;
+
+            // Текст "E" через Text (дешевле, чем OnGUI)
+            var txtGo = new GameObject("E_Label");
+            txtGo.transform.SetParent(btnGo.transform, false);
+            var txt = txtGo.AddComponent<Text>();
+            txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            txt.fontSize = 22;
+            txt.color = Color.white;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.text = "E";
+            var txtRect = txtGo.GetComponent<RectTransform>();
+            txtRect.anchorMin = Vector2.zero;
+            txtRect.anchorMax = Vector2.one;
+            txtRect.offsetMin = Vector2.zero;
+            txtRect.offsetMax = Vector2.zero;
+
+            _btnRect = btnGo.GetComponent<RectTransform>();
+            _btnRect.anchorMin = new Vector2(0, 0);
+            _btnRect.anchorMax = new Vector2(0, 0);
+            _btnRect.pivot = new Vector2(0.5f, 0.5f);
+            _btnRect.sizeDelta = new Vector2(44, 44);
+
+            // Позиция — центр экрана
+            if (!_btnInitialized)
+            {
+                _btnPos = new Vector2(Screen.width / 2f, Screen.height / 2f);
+                _btnInitialized = true;
             }
-        tex.SetPixels32(pixels);
-        tex.Apply();
-        _btnTex = tex;
-        return tex;
+            _btnRect.anchoredPosition = _btnPos;
+
+            // Перетаскивание и клик через EventTrigger (без Button, чтобы не конфликтовать)
+            var trigger = btnGo.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+
+            var downEntry = new UnityEngine.EventSystems.EventTrigger.Entry
+            {
+                eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown
+            };
+            downEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
+            {
+                try
+                {
+                    var ped = data.TryCast<UnityEngine.EventSystems.PointerEventData>();
+                    Vector2 mouse = ped.position;
+                    _btnDragging = true;
+                    _btnMoved = false;
+                    _btnDragOffset = mouse - _btnPos;
+                    _btnDragStart = mouse;
+                }
+                catch { }
+            }));
+            trigger.triggers.Add(downEntry);
+
+            var dragEntry = new UnityEngine.EventSystems.EventTrigger.Entry
+            {
+                eventID = UnityEngine.EventSystems.EventTriggerType.Drag
+            };
+            dragEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
+            {
+                try
+                {
+                    var ped = data.TryCast<UnityEngine.EventSystems.PointerEventData>();
+                    Vector2 mouse = ped.position;
+                    if ((mouse - _btnDragStart).sqrMagnitude > 9f) _btnMoved = true;
+                    _btnPos = mouse - _btnDragOffset;
+                    _btnPos.x = Mathf.Clamp(_btnPos.x, 22f, Screen.width - 22f);
+                    _btnPos.y = Mathf.Clamp(_btnPos.y, 22f, Screen.height - 22f);
+                    _btnRect.anchoredPosition = _btnPos;
+                }
+                catch { }
+            }));
+            trigger.triggers.Add(dragEntry);
+
+            var upEntry = new UnityEngine.EventSystems.EventTrigger.Entry
+            {
+                eventID = UnityEngine.EventSystems.EventTriggerType.PointerUp
+            };
+            upEntry.callback.AddListener((Action<UnityEngine.EventSystems.BaseEventData>)(data =>
+            {
+                try
+                {
+                    _btnDragging = false;
+                    if (!_btnMoved) _menuVisible = true;
+                }
+                catch { }
+            }));
+            trigger.triggers.Add(upEntry);
+
+            _btnCanvas.SetActive(true);
+            Plugin.LogSource?.LogInfo("[ESP] Button canvas created");
+        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] BuildButtonCanvas EX: {e}"); }
     }
 
     void Start() { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
@@ -493,7 +657,6 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_playerManagerType == null) return;
-
             object pmInstance = null;
             var instProp = _playerManagerType.GetProperty("Instance",
                 (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
@@ -522,16 +685,13 @@ public class EspBehaviour : MonoBehaviour
 
             object localPlayer = null;
             var pmManagedType = pmInstance.GetType();
-
             var cfogProp = pmManagedType.GetProperty("cfog", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (cfogProp != null) localPlayer = cfogProp.GetValue(pmInstance);
-
             if (localPlayer == null)
             {
                 var cfogField = pmManagedType.GetField("_cfog_k__BackingField", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (cfogField != null) localPlayer = cfogField.GetValue(pmInstance);
             }
-
             if (localPlayer == null) { LogThrottled("cfog_null", "[ESP] localPlayer is null", true); return; }
 
             int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
@@ -548,52 +708,14 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (_menuVisible) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
-            Plugin.IsMenuOpen = _menuVisible || _aimbotKeyCapturing;
-
-            // Захват бинда — здесь, в Update, а не в OnGUI
-            if (_aimbotKeyCapturing)
+            // Кнопка видима только когда меню закрыто
+            if (_btnCanvas != null)
             {
-                if (Input.GetKeyDown(KeyCode.Escape))
-                {
-                    // Отмена: возвращаем прошлый бинд
-                    Plugin.AimbotToggleKey = _aimbotKeyBackup;
-                    _aimbotKeyCapturing = false;
-                    Plugin.LogSource?.LogInfo($"[ESP] Bind cancelled, restored to {_aimbotKeyBackup}");
-                }
-                else
-                {
-                    foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
-                    {
-                        if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
-                        if (Input.GetKeyDown(kc))
-                        {
-                            Plugin.AimbotToggleKey = kc;
-                            _aimbotKeyCapturing = false;
-                            if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                            Plugin.LogSource?.LogInfo($"[ESP] Key set: {kc}");
-                            break;
-                        }
-                    }
-                    // Проверка кнопок мыши
-                    if (_aimbotKeyCapturing)
-                    {
-                        for (int b = 0; b < 3; b++)
-                        {
-                            if (Input.GetMouseButtonDown(b))
-                            {
-                                KeyCode kc = b == 0 ? KeyCode.Mouse0 : (b == 1 ? KeyCode.Mouse1 : KeyCode.Mouse2);
-                                Plugin.AimbotToggleKey = kc;
-                                _aimbotKeyCapturing = false;
-                                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                                Plugin.LogSource?.LogInfo($"[ESP] Key set: {kc}");
-                                break;
-                            }
-                        }
-                    }
-                }
-                return; // пока захватываем — не сканируем и не двигаемся
+                bool showBtn = !_menuVisible;
+                if (_btnCanvas.activeSelf != showBtn) _btnCanvas.SetActive(showBtn);
             }
+
+            if (_menuVisible) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
 
             _watchdogTimer += Time.deltaTime;
             if (_watchdogTimer >= WatchdogInterval) { _watchdogTimer = 0f; RunWatchdog(); }
@@ -617,7 +739,7 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (!_aimbotEnabled || !AimbotActive || _aimbotKeyCapturing) return;
+            if (!_aimbotEnabled || !AimbotActive) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
 
@@ -894,45 +1016,9 @@ public class EspBehaviour : MonoBehaviour
             }
 
             if (_menuVisible) DrawMenu();
-            else DrawFloatingButton();
         }
         catch { }
         finally { GUI.color = Color.white; }
-    }
-
-    private void DrawFloatingButton()
-    {
-        if (!_buttonInitialized) { _buttonCenter = new Vector2(Screen.width / 2f, Screen.height / 2f); _buttonInitialized = true; }
-        float s = ButtonSize;
-        Rect btnRect = new Rect(_buttonCenter.x - s / 2f, _buttonCenter.y - s / 2f, s, s);
-
-        Event e = Event.current;
-        if (e != null)
-        {
-            Vector2 m = e.mousePosition;
-            if (e.type == EventType.MouseDown && e.button == 0 && btnRect.Contains(m))
-            {
-                _isDragging = true; _dragMoved = false; _dragOffset = m - _buttonCenter; _dragStartMouse = m; e.Use();
-            }
-            else if (e.type == EventType.MouseDrag && _isDragging)
-            {
-                if ((m - _dragStartMouse).sqrMagnitude > 9f) _dragMoved = true;
-                _buttonCenter = m - _dragOffset;
-                _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, s / 2f, Screen.width - s / 2f);
-                _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, s / 2f, Screen.height - s / 2f);
-                e.Use();
-            }
-            else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
-            {
-                _isDragging = false; if (!_dragMoved) _menuVisible = true; e.Use();
-            }
-        }
-
-        // Одна текстура — без GUI.Label
-        var btnTex = GetButtonTex();
-        GUI.color = _isDragging ? new Color(0.5f, 0.8f, 1f, 0.9f) : Color.white;
-        GUI.DrawTexture(btnRect, btnTex);
-        GUI.color = Color.white;
     }
 
     private bool CustomButton(Rect rect, string label, bool state)
@@ -961,11 +1047,11 @@ public class EspBehaviour : MonoBehaviour
 
     private Rect GetMenuRect()
     {
-        float sw = Screen.width, sh = Screen.height, mw = MenuWidth, mh = MenuHeight, r = ButtonSize / 2f;
-        float x = _buttonCenter.x + r + MenuOffset;
-        if (x + mw > sw) x = _buttonCenter.x - r - MenuOffset - mw;
+        float sw = Screen.width, sh = Screen.height, mw = MenuWidth, mh = MenuHeight;
+        float x = _btnPos.x + 22f + MenuOffset;
+        if (x + mw > sw) x = _btnPos.x - 22f - MenuOffset - mw;
         if (x < 0) x = Mathf.Max(0, (sw - mw) / 2f);
-        float y = _buttonCenter.y - mh / 2f;
+        float y = _btnPos.y - mh / 2f;
         if (y < 0) y = 0;
         if (y + mh > sh) y = sh - mh;
         return new Rect(x, y, mw, mh);
@@ -1061,19 +1147,18 @@ public class EspBehaviour : MonoBehaviour
         }
         y += 36;
 
-        string keyName = _aimbotKeyCapturing ? "PRESS KEY... (Esc to cancel)" : Plugin.AimbotToggleKey.ToString();
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", _aimbotKeyCapturing))
+        string keyName = Plugin.CapturingKey ? "PRESS KEY... (Esc)" : Plugin.AimbotToggleKey.ToString();
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", Plugin.CapturingKey))
         {
-            if (!_aimbotKeyCapturing)
+            if (!Plugin.CapturingKey)
             {
-                _aimbotKeyBackup = Plugin.AimbotToggleKey;
-                _aimbotKeyCapturing = true;
+                Plugin.CapturingBackup = Plugin.AimbotToggleKey;
+                Plugin.CapturingKey = true;
             }
             else
             {
-                // повторное нажатие — отмена
-                Plugin.AimbotToggleKey = _aimbotKeyBackup;
-                _aimbotKeyCapturing = false;
+                Plugin.AimbotToggleKey = Plugin.CapturingBackup;
+                Plugin.CapturingKey = false;
             }
         }
     }
