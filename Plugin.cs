@@ -111,7 +111,7 @@ public class EspBehaviour : MonoBehaviour
 
     // ---- Круглая кнопка ----
     private const float ButtonRadius = 22f;
-    private Vector2 _buttonCenter = new Vector2(-1f, -1f); // -1 = не инициализировано
+    private Vector2 _buttonCenter = new Vector2(-1f, -1f);
     private bool _buttonInitialized = false;
     private bool _isDragging = false;
     private Vector2 _dragOffset;
@@ -293,7 +293,6 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
-            // Держим курсор разблокированным, пока меню открыто
             if (_menuVisible)
             {
                 Cursor.visible = true;
@@ -666,7 +665,7 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    // ---- Плавающая круглая кнопка ----
+    // ---- Плавающая круглая кнопка (без GUIStyle) ----
     private void DrawFloatingButton()
     {
         if (!_buttonInitialized)
@@ -679,7 +678,6 @@ public class EspBehaviour : MonoBehaviour
         float r = ButtonRadius;
         Rect btnRect = new Rect(_buttonCenter.x - r, _buttonCenter.y - r, r * 2f, r * 2f);
 
-        // Обработка мыши
         Event e = Event.current;
         if (e != null)
         {
@@ -695,7 +693,6 @@ public class EspBehaviour : MonoBehaviour
             else if (e.type == EventType.MouseDrag && _isDragging)
             {
                 _buttonCenter = mouse - _dragOffset;
-                // Ограничиваем в пределах экрана
                 _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, r, Screen.width - r);
                 _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, r, Screen.height - r);
                 e.Use();
@@ -703,7 +700,6 @@ public class EspBehaviour : MonoBehaviour
             else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
             {
                 _isDragging = false;
-                // Если мышь почти не двигалась — считаем это кликом
                 if ((mouse - (_buttonCenter + _dragOffset)).sqrMagnitude < 25f)
                 {
                     _menuVisible = true;
@@ -717,19 +713,21 @@ public class EspBehaviour : MonoBehaviour
             }
         }
 
-        // Рисуем круг
-        GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
+        // Круг
+        GUI.color = _isDragging
+            ? new Color(0.3f, 0.6f, 1f, 0.9f)
+            : new Color(0.15f, 0.15f, 0.2f, 0.85f);
         GUI.DrawTexture(btnRect, _circleTex);
 
-        // Рисуем букву E по центру
+        // Буква E по центру (без GUIStyle — interop не поддерживает)
         GUI.color = Color.white;
-        var style = new GUIStyle(GUI.skin.label)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 22,
-            fontStyle = FontStyle.Bold
-        };
-        GUI.Label(btnRect, "E", style);
+        float letterW = 14f;
+        float letterH = 20f;
+        GUI.Label(new Rect(
+            _buttonCenter.x - letterW / 2f,
+            _buttonCenter.y - letterH / 2f,
+            letterW,
+            letterH), "E");
     }
 
     // ---- Меню ----
