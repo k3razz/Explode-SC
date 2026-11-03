@@ -53,17 +53,32 @@ jobs:
             unzip -o "$z" -d artifacts/extracted
           done
 
-      - name: List files to release
+      - name: Compute next release number
+        id: next_release
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "DLLs found:"
-          find artifacts -name '*.dll' -type f
+          # Получаем все теги релизов, отфильтровываем те, что соответствуют формату pre-release-N
+          TAGS=$(gh release list --repo "${{ github.repository }}" --limit 100 --json tagName --jq '.[].tagName' || true)
+          MAX_NUM=0
+          for tag in $TAGS; do
+            if [[ "$tag" =~ ^pre-release-([0-9]+)$ ]]; then
+              num="${BASH_REMATCH[1]}"
+              if (( num > MAX_NUM )); then
+                MAX_NUM=$num
+              fi
+            fi
+          done
+          NEXT_NUM=$((MAX_NUM + 1))
+          echo "tag=pre-release-${NEXT_NUM}" >> "$GITHUB_OUTPUT"
+          echo "name=Pre-Release ${NEXT_NUM}" >> "$GITHUB_OUTPUT"
 
-      - name: Create or Update Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: testing
-          name: Pre-Release
+          tag_name: ${{ steps.next_release.outputs.tag }}
+          name: ${{ steps.next_release.outputs.name }}
           body: Testing release dll
           prerelease: true
           files: |
