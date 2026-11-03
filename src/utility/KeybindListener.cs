@@ -48,16 +48,30 @@ public class KeybindListener : MonoBehaviour
             if (Time.realtimeSinceStartup - _lastLog > 5f)
             {
                 _lastLog = Time.realtimeSinceStartup;
-                Plugin.LogSource?.LogInfo($"[KB] Tick key={KeybindState.AimbotKey} menu={KeybindState.MenuOpen}");
+                Plugin.LogSource?.LogInfo($"[KB] Tick key={KeybindState.AimbotKey} intro={KeybindState.IntroActive} menu={KeybindState.MenuOpen}");
             }
 
-            var kb = Keyboard.current;
+            // Если идёт интро — любая клавиша/мышь (кроме Insert) отменяет его
+            if (KeybindState.IntroActive)
+            {
+                bool anyPressed = AnyKeyOrMousePressed();
+                if (anyPressed)
+                {
+                    KeybindState.IntroActive = false;
+                    KeybindState.IntroDone = true;
+                    KeybindState.IntroAnimTime = 0f;
+                    KeybindState.MenuOpen = true;
+                    UiState.MenuVisible = true;
+                    Plugin.LogSource?.LogInfo("[ESP] Intro cancelled by input, menu opened");
+                }
+                return;
+            }
 
-            // Insert — открыть/закрыть меню
-            if (kb != null && kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing)
+            // Insert — открыть/закрыть меню (только после интро)
+            var kb = Keyboard.current;
+            if (kb != null && kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing && KeybindState.IntroDone)
             {
                 KeybindState.MenuOpen = !KeybindState.MenuOpen;
-                KeybindState.MenuAnimTime = KeybindState.MenuOpen ? 0f : 1f;
                 UiState.MenuVisible = KeybindState.MenuOpen;
                 UiState.MenuTab = 0;
                 Plugin.LogSource?.LogInfo($"[ESP] Menu {(KeybindState.MenuOpen ? "opened" : "closed")}");
@@ -67,18 +81,10 @@ public class KeybindListener : MonoBehaviour
             if (IsTypingInChat()) return;
             if (KeybindState.AimbotKey == KeyCode.None) return;
 
-            // Оптимизация: сначала проверяем, что кнопка вообще нажата (быстрый путь)
             bool kd = false, kdDown = false;
             GetKeyState(KeybindState.AimbotKey, out kd, out kdDown);
 
-            // Если состояние не изменилось и не ToggleMode — не делаем ничего
-            if (!KeybindState.ToggleMode)
-            {
-                if (kd == KeybindState.LastKeyState) return;
-                KeybindState.LastKeyState = kd;
-                AimbotState.Active = kd;
-            }
-            else
+            if (KeybindState.ToggleMode)
             {
                 if (kdDown)
                 {
@@ -86,8 +92,39 @@ public class KeybindListener : MonoBehaviour
                     Plugin.LogSource?.LogInfo($"[ESP] Aimbot toggled: {AimbotState.Active}");
                 }
             }
+            else
+            {
+                if (kd == KeybindState.LastKeyState) return;
+                KeybindState.LastKeyState = kd;
+                AimbotState.Active = kd;
+            }
         }
         catch (Exception e) { Debug.LogError($"[KB] EX: {e.Message}"); }
+    }
+
+    private bool AnyKeyOrMousePressed()
+    {
+        var kb = Keyboard.current;
+        var mouse = Mouse.current;
+
+        if (mouse != null)
+        {
+            if (mouse.leftButton.wasPressedThisFrame) return true;
+            if (mouse.rightButton.wasPressedThisFrame) return true;
+            if (mouse.middleButton.wasPressedThisFrame) return true;
+        }
+
+        if (kb != null)
+        {
+            // Insert не считается «отменой» — он открывает меню после интро
+            foreach (var ctrl in kb.allKeys)
+            {
+                if (ctrl == null) continue;
+                if (ctrl.keyCode == Key.Insert) continue;
+                if (ctrl.wasPressedThisFrame) return true;
+            }
+        }
+        return false;
     }
 
     private void GetKeyState(KeyCode kc, out bool pressed, out bool pressedThisFrame)
@@ -98,14 +135,12 @@ public class KeybindListener : MonoBehaviour
         var kb = Keyboard.current;
         var mouse = Mouse.current;
 
-        // Мышь — отдельные поля, без словаря
         if (kc == KeyCode.Mouse0) { pressed = mouse != null && mouse.leftButton.isPressed; pressedThisFrame = mouse != null && mouse.leftButton.wasPressedThisFrame; return; }
         if (kc == KeyCode.Mouse1) { pressed = mouse != null && mouse.rightButton.isPressed; pressedThisFrame = mouse != null && mouse.rightButton.wasPressedThisFrame; return; }
         if (kc == KeyCode.Mouse2) { pressed = mouse != null && mouse.middleButton.isPressed; pressedThisFrame = mouse != null && mouse.middleButton.wasPressedThisFrame; return; }
 
         if (kb == null) return;
 
-        // Клавиатура — сначала словарь, потом Enum.TryParse (один раз при первом вызове)
         if (KeyMap.TryGetValue(kc, out Key key))
         {
             var ctrl = kb[key];
