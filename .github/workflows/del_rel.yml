@@ -1,0 +1,83 @@
+name: Delete Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of the release to delete (e.g. v16 or pre-release-3)'
+        type: string
+        required: true
+      delete_git_tag:
+        description: 'Also delete the git tag?'
+        type: choice
+        options:
+          - 'Yes'
+          - 'No'
+        default: 'Yes'
+
+jobs:
+  delete-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Validate tag input
+        id: validate
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          TAG="${INPUT_TAG}"
+          if [[ -z "${TAG}" ]]; then
+            echo "::error::Тег не указан."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Check release exists
+        id: check
+        shell: bash
+        env:
+          TAG: ${{ steps.validate.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Релиз с тегом '${TAG}' не найден."
+            exit 1
+          fi
+
+      - name: Delete release
+        if: steps.check.outputs.exists == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.validate.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Deleting release '${TAG}'..."
+          gh release delete "${TAG}" --repo "${{ github.repository }}" --yes
+
+      - name: Delete git tag
+        if: steps.check.outputs.exists == 'true' && github.event.inputs.delete_git_tag == 'Yes'
+        shell: bash
+        env:
+          TAG: ${{ steps.validate.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Deleting git tag '${TAG}'..."
+          # Удаляем тег и на удалённом репозитории, и локально (локально не обязательно, но безопасно)
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/${TAG}" || true
+
+      - name: Summary
+        shell: bash
+        env:
+          TAG: ${{ steps.validate.outputs.tag }}
+          DELETE_TAG: ${{ github.event.inputs.delete_git_tag }}
+        run: |
+          echo "### Release deleted" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Git tag deleted: \`${DELETE_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
