@@ -25,6 +25,7 @@ public static class EspModule
     public const float HeadOffset = 1.8f;
     public const float FootOffset = 0.1f;
     public const float BoxWidthRatio = 0.4f;
+    public const float NameMaxDist = 100f;
 
     public static void Draw(Texture2D whiteTex)
     {
@@ -67,7 +68,7 @@ public static class EspModule
                     GUI.color = Color.white;
                 }
 
-                if (NamesEnabled)
+                if (NamesEnabled && dist < NameMaxDist)
                 {
                     string lbl = t.Name + (DistanceEnabled ? $" [{dist:F0}m]" : "");
                     float lw = Mathf.Min(lbl.Length * 7.5f + 10f, 280f);
