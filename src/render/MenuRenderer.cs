@@ -60,12 +60,6 @@ public static class MenuRenderer
         GUI.color = Color.white;
     }
 
-    // === ИНТРО-АНИМАЦИЯ (один раз при заходе) ===
-    // 0.0–0.3: фон появляется
-    // 0.3–0.8: "Explode" появляется
-    // 0.8–1.2: логотип держится
-    // 1.2–1.6: логотип исчезает
-    // 1.6–2.0: фон исчезает
     public static void DrawIntroAnimation(Texture2D whiteTex, float t)
     {
         float sw = Screen.width, sh = Screen.height;
@@ -74,7 +68,7 @@ public static class MenuRenderer
         if (t >= 0f && t < 0.3f) bgAlpha = Mathf.Lerp(0f, 0.65f, (t - 0f) / 0.3f);
         else if (t >= 0.3f && t < 1.6f) bgAlpha = 0.65f;
         else if (t >= 1.6f && t < 2.0f) bgAlpha = Mathf.Lerp(0.65f, 0f, (t - 1.6f) / 0.4f);
-        else if (t >= 2.0f) bgAlpha = 0f;
+        else bgAlpha = 0f;
 
         if (bgAlpha > 0f)
         {
@@ -87,7 +81,7 @@ public static class MenuRenderer
         if (t >= 0.3f && t < 0.8f) logoAlpha = Mathf.Lerp(0f, 1f, (t - 0.3f) / 0.5f);
         else if (t >= 0.8f && t < 1.2f) logoAlpha = 1f;
         else if (t >= 1.2f && t < 1.6f) logoAlpha = Mathf.Lerp(1f, 0f, (t - 1.2f) / 0.4f);
-        else if (t >= 1.6f) logoAlpha = 0f;
+        else logoAlpha = 0f;
 
         if (logoAlpha > 0f)
         {
@@ -95,30 +89,21 @@ public static class MenuRenderer
             string rest = "xplode";
             float logoY = sh * 0.35f;
 
-            var style = new GUIStyle(GUI.skin.label);
-            style.fontSize = 96;
-            style.fontStyle = FontStyle.Bold;
-            style.alignment = TextAnchor.MiddleCenter;
-
-            Vector2 sizeE = style.CalcSize(new GUIContent(eLetter));
-            Vector2 sizeRest = style.CalcSize(new GUIContent(rest));
-            float totalWidth = sizeE.x + sizeRest.x;
+            float eWidth = 55f;
+            float restWidth = rest.Length * 55f;
+            float totalWidth = eWidth + restWidth;
             float startX = sw / 2f - totalWidth / 2f;
 
-            // Тень
             GUI.color = new Color(0f, 0f, 0f, logoAlpha * 0.6f);
-            GUI.Label(new Rect(startX + 3f, logoY + 3f, totalWidth, 120f), eLetter + rest, style);
-            // E красная
+            GUI.Label(new Rect(startX + 3f, logoY + 3f, totalWidth, 120f), eLetter + rest);
             GUI.color = new Color(1f, 0.2f, 0.2f, logoAlpha);
-            GUI.Label(new Rect(startX, logoY, sizeE.x + 4f, 120f), eLetter, style);
-            // xplode белое
+            GUI.Label(new Rect(startX, logoY, eWidth + 4f, 120f), eLetter);
             GUI.color = new Color(1f, 1f, 1f, logoAlpha);
-            GUI.Label(new Rect(startX + sizeE.x, logoY, sizeRest.x + 4f, 120f), rest, style);
+            GUI.Label(new Rect(startX + eWidth, logoY, restWidth + 4f, 120f), rest);
             GUI.color = Color.white;
         }
     }
 
-    // === МЕНЮ (после интро) ===
     public static void DrawMenu(Texture2D whiteTex)
     {
         float sw = Screen.width, sh = Screen.height;
