@@ -114,7 +114,9 @@ public class EspBehaviour : MonoBehaviour
     private Vector2 _buttonCenter = new Vector2(-1f, -1f);
     private bool _buttonInitialized = false;
     private bool _isDragging = false;
+    private bool _dragMoved = false;
     private Vector2 _dragOffset;
+    private Vector2 _dragStartMouse;
 
     private static Il2CppSystem.Type _botType;
     private static Il2CppSystem.Type _playerType;
@@ -665,7 +667,7 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    // ---- Плавающая круглая кнопка (без GUIStyle) ----
+    // ---- Плавающая круглая кнопка ----
     private void DrawFloatingButton()
     {
         if (!_buttonInitialized)
@@ -686,12 +688,17 @@ public class EspBehaviour : MonoBehaviour
             if (e.type == EventType.MouseDown && e.button == 0 && btnRect.Contains(mouse))
             {
                 _isDragging = true;
+                _dragMoved = false;
                 _dragOffset = mouse - _buttonCenter;
+                _dragStartMouse = mouse;
                 e.Use();
                 Debug.Log("[ESP] Floating button drag started");
             }
             else if (e.type == EventType.MouseDrag && _isDragging)
             {
+                if ((mouse - _dragStartMouse).sqrMagnitude > 9f)
+                    _dragMoved = true;
+
                 _buttonCenter = mouse - _dragOffset;
                 _buttonCenter.x = Mathf.Clamp(_buttonCenter.x, r, Screen.width - r);
                 _buttonCenter.y = Mathf.Clamp(_buttonCenter.y, r, Screen.height - r);
@@ -700,7 +707,9 @@ public class EspBehaviour : MonoBehaviour
             else if (e.type == EventType.MouseUp && e.button == 0 && _isDragging)
             {
                 _isDragging = false;
-                if ((mouse - (_buttonCenter + _dragOffset)).sqrMagnitude < 25f)
+
+                // Открываем меню только если это был клик (без перемещения)
+                if (!_dragMoved)
                 {
                     _menuVisible = true;
                     Debug.Log("[ESP] Floating button clicked -> menu opened");
@@ -719,7 +728,7 @@ public class EspBehaviour : MonoBehaviour
             : new Color(0.15f, 0.15f, 0.2f, 0.85f);
         GUI.DrawTexture(btnRect, _circleTex);
 
-        // Буква E по центру (без GUIStyle — interop не поддерживает)
+        // Буква E по центру
         GUI.color = Color.white;
         float letterW = 14f;
         float letterH = 20f;
@@ -730,7 +739,39 @@ public class EspBehaviour : MonoBehaviour
             letterH), "E");
     }
 
-    // ---- Меню ----
+    // =========================================================
+    //           Ручная кнопка (без GUI.Button)
+    // =========================================================
+    private bool CustomButton(Rect rect, string label, bool state)
+    {
+        Event e = Event.current;
+        bool clicked = false;
+
+        if (e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
+        {
+            clicked = true;
+            Debug.Log($"[ESP] CustomButton '{label}' clicked");
+        }
+
+        // Фон
+        GUI.color = state
+            ? new Color(0.2f, 0.55f, 0.3f, 0.95f)
+            : new Color(0.55f, 0.2f, 0.2f, 0.95f);
+        GUI.DrawTexture(rect, _whiteTex);
+
+        // Текст по центру (без GUIStyle)
+        GUI.color = Color.white;
+        float approxW = label.Length * 7f;
+        GUI.Label(new Rect(
+            rect.x + (rect.width - approxW) / 2f,
+            rect.y + (rect.height - 16f) / 2f,
+            approxW,
+            16f), label);
+
+        return clicked;
+    }
+
+    // ---- Меню (все кнопки — ручные, без GUI.Button) ----
     private void DrawMenu()
     {
         Rect panelRect = new Rect(20, 20, 340, 460);
@@ -743,25 +784,23 @@ public class EspBehaviour : MonoBehaviour
         float y = panelRect.y + 40;
         float bx = panelRect.x + 10;
         float bw = 320;
+        float bh = 30;
 
-        if (GUI.Button(new Rect(bx, y, bw, 30),
-            $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}"))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}", _espBoxesEnabled))
         {
             _espBoxesEnabled = !_espBoxesEnabled;
             Debug.Log($"[ESP] ESP Boxes = {_espBoxesEnabled}");
         }
         y += 36;
 
-        if (GUI.Button(new Rect(bx, y, bw, 30),
-            $"Names: {(_espNamesEnabled ? "ON" : "OFF")}"))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Names: {(_espNamesEnabled ? "ON" : "OFF")}", _espNamesEnabled))
         {
             _espNamesEnabled = !_espNamesEnabled;
             Debug.Log($"[ESP] Names = {_espNamesEnabled}");
         }
         y += 36;
 
-        if (GUI.Button(new Rect(bx, y, bw, 30),
-            $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}"))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}", _espDistanceEnabled))
         {
             _espDistanceEnabled = !_espDistanceEnabled;
             Debug.Log($"[ESP] Distance = {_espDistanceEnabled}");
@@ -771,31 +810,28 @@ public class EspBehaviour : MonoBehaviour
         GUI.Label(new Rect(bx, y, bw, 22), "<b>Team filter:</b>");
         y += 26;
 
-        if (GUI.Button(new Rect(bx, y, bw, 30),
-            $"TR (Terror): {(TeamFilter.ShowTr ? "ON" : "OFF")}"))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"TR (Terror): {(TeamFilter.ShowTr ? "ON" : "OFF")}", TeamFilter.ShowTr))
         {
             TeamFilter.ShowTr = !TeamFilter.ShowTr;
             Debug.Log($"[ESP] Show TR = {TeamFilter.ShowTr}");
         }
         y += 36;
 
-        if (GUI.Button(new Rect(bx, y, bw, 30),
-            $"CT (Counter): {(TeamFilter.ShowCt ? "ON" : "OFF")}"))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"CT (Counter): {(TeamFilter.ShowCt ? "ON" : "OFF")}", TeamFilter.ShowCt))
         {
             TeamFilter.ShowCt = !TeamFilter.ShowCt;
             Debug.Log($"[ESP] Show CT = {TeamFilter.ShowCt}");
         }
         y += 36;
 
-        if (GUI.Button(new Rect(bx, y, bw, 30),
-            $"Spectator: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}"))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Spectator: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator))
         {
             TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator;
             Debug.Log($"[ESP] Show Spectator = {TeamFilter.ShowSpectator}");
         }
         y += 46;
 
-        if (GUI.Button(new Rect(bx, y, bw, 34), "Hide Menu"))
+        if (CustomButton(new Rect(bx, y, bw, 34), "Hide Menu", false))
         {
             _menuVisible = false;
             Debug.Log("[ESP] Menu hidden via button");
