@@ -222,7 +222,7 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, teamMember={_teamMember?.Name ?? "null"}, teamStatic={_teamStaticMember?.Name ?? "null"}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={_tracked.Count}, localTeam={_localTeam}, teamMember={_teamMember?.Name ?? "null"}, teamStatic={_teamStaticMember?.Name ?? "null"}, playerType={(_playerType != null ? "found" : "null")}, botType={(_botType != null ? "found" : "null")}");
             }
         }
         catch (Exception e)
@@ -274,7 +274,6 @@ public class EspBehaviour : MonoBehaviour
             object pmInstance = null;
             var pmType = _localPlayerMember.DeclaringType;
 
-            // pmType — managed System.Type, BindingFlags должен быть System.Reflection.BindingFlags
             var instProp = pmType.GetProperty("Instance",
                 BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (instProp != null) pmInstance = instProp.GetValue(null);
@@ -401,24 +400,50 @@ public class EspBehaviour : MonoBehaviour
         return t.IsEnum && (t.Name == "Team" || t.FullName.EndsWith(".Team"));
     }
 
+    // =========================================================
+    //                    TYPE RESOLUTION (FIXED)
+    // =========================================================
+    private static Type FindTypeByName(string shortName, out string foundFullName)
+    {
+        foundFullName = null;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                // 1) Пробуем прямое полное имя
+                var direct = asm.GetType(shortName);
+                if (direct != null) { foundFullName = direct.FullName; return direct; }
+            }
+            catch { }
+
+            try
+            {
+                // 2) Перебираем все типы и ищем по короткому имени
+                foreach (var t in asm.GetTypes())
+                {
+                    if (t.Name == shortName)
+                    {
+                        foundFullName = t.FullName;
+                        return t;
+                    }
+                }
+            }
+            catch { }
+        }
+        return null;
+    }
+
     private static void ResolveTypes()
     {
         if (_resolved) return;
         _resolved = true;
         try
         {
-            Type bt = null, pt = null, pmType = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try
-                {
-                    bt ??= asm.GetType("BotPlayerController");
-                    pt ??= asm.GetType("PlayerController");
-                    pmType ??= asm.GetType("PlayerManager");
-                }
-                catch { }
-                if (bt != null && pt != null && pmType != null) break;
-            }
+            Type bt = FindTypeByName("BotPlayerController", out var btName);
+            Type pt = FindTypeByName("PlayerController", out var ptName);
+            Type pmType = FindTypeByName("PlayerManager", out var pmName);
+
+            Plugin.LogSource?.LogInfo($"[ESP] FindType: Bot='{btName ?? "null"}', Player='{ptName ?? "null"}', PM='{pmName ?? "null"}'");
 
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
