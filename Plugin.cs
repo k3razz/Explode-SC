@@ -3,6 +3,7 @@ using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
@@ -87,7 +88,6 @@ public class Plugin : BasePlugin
 
             Log.LogInfo($"[ESP] Aimbot key: {AimbotToggleKey}, mode: {AimbotToggleMode}");
 
-            // КРИТИЧНО: используем AddComponent<T>() от BasePlugin
             AddComponent<EspBehaviour>();
             AddComponent<KeybindListener>();
 
@@ -105,40 +105,26 @@ public class KeybindListener : MonoBehaviour
     private float _lastLog;
     private bool _waitingForRelease = false;
 
-    void Awake()
-    {
-        Plugin.LogSource?.LogInfo("[KB] Awake");
-    }
-
-    void OnDestroy()
-    {
-        Plugin.LogSource?.LogInfo("[KB] OnDestroy");
-    }
+    void Awake() { Plugin.LogSource?.LogInfo("[KB] Awake"); }
+    void OnDestroy() { Plugin.LogSource?.LogInfo("[KB] OnDestroy"); }
 
     void Update()
     {
         try
         {
-            // Лог раз в 3 секунды, чтобы видеть, что Update жив
             if (Time.realtimeSinceStartup - _lastLog > 3f)
             {
                 _lastLog = Time.realtimeSinceStartup;
                 Plugin.LogSource?.LogInfo($"[KB] Tick key={Plugin.AimbotToggleKey} capture={Plugin.CapturingKey}");
             }
 
-            if (Plugin.CapturingKey)
-            {
-                HandleCapture();
-                return;
-            }
-
+            if (Plugin.CapturingKey) { HandleCapture(); return; }
             if (IsTypingInChat()) return;
             if (Plugin.AimbotToggleKey == KeyCode.None) return;
 
             bool kd = false, kdDown = false;
             try
             {
-                // Мышь и клавиши обрабатываем по-разному
                 if (Plugin.AimbotToggleKey == KeyCode.Mouse0) { kd = Input.GetMouseButton(0); kdDown = Input.GetMouseButtonDown(0); }
                 else if (Plugin.AimbotToggleKey == KeyCode.Mouse1) { kd = Input.GetMouseButton(1); kdDown = Input.GetMouseButtonDown(1); }
                 else if (Plugin.AimbotToggleKey == KeyCode.Mouse2) { kd = Input.GetMouseButton(2); kdDown = Input.GetMouseButtonDown(2); }
@@ -283,12 +269,10 @@ public class EspBehaviour : MonoBehaviour
     private const float MenuOffset = 30f;
     private const float TabWidth = 120f;
 
-    // Кнопка — Unity UI, не OnGUI
     private GameObject _btnCanvas;
     private RectTransform _btnRect;
     private Vector2 _btnPos = new Vector2(-1f, -1f);
     private bool _btnInitialized = false;
-    private bool _btnDragging = false;
     private bool _btnMoved = false;
     private Vector2 _btnDragOffset;
     private Vector2 _btnDragStart;
@@ -419,7 +403,7 @@ public class EspBehaviour : MonoBehaviour
             var btnGo = new GameObject("ESP_E_Button");
             btnGo.transform.SetParent(_btnCanvas.transform, false);
 
-            var img = btnGo.AddComponent<UnityEngine.UI.Image>();
+            var img = btnGo.AddComponent<Image>();
             var btnTex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
             btnTex.filterMode = FilterMode.Point;
             btnTex.wrapMode = TextureWrapMode.Clamp;
@@ -441,7 +425,7 @@ public class EspBehaviour : MonoBehaviour
 
             var txtGo = new GameObject("E_Label");
             txtGo.transform.SetParent(btnGo.transform, false);
-            var txt = txtGo.AddComponent<UnityEngine.UI.Text>();
+            var txt = txtGo.AddComponent<Text>();
             txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             txt.fontSize = 22;
             txt.color = Color.white;
@@ -475,7 +459,6 @@ public class EspBehaviour : MonoBehaviour
                 {
                     var ped = data.TryCast<UnityEngine.EventSystems.PointerEventData>();
                     Vector2 mouse = ped.position;
-                    _btnDragging = true;
                     _btnMoved = false;
                     _btnDragOffset = mouse - _btnPos;
                     _btnDragStart = mouse;
@@ -506,7 +489,6 @@ public class EspBehaviour : MonoBehaviour
             {
                 try
                 {
-                    _btnDragging = false;
                     if (!_btnMoved) _menuVisible = true;
                 }
                 catch { }
