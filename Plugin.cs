@@ -1,5 +1,6 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
+using BepInEx.Logging;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Il2CppInterop.Runtime;
@@ -32,16 +33,16 @@ public static class EspManager
             if (type != null)
             {
                 go.AddComponent(type);
-                Debug.Log("[ESP] EnsureBehaviour: created new instance");
+                Plugin.LogSource?.LogInfo("[ESP] EnsureBehaviour: created new instance");
             }
             else
             {
-                Debug.LogError("[ESP] EnsureBehaviour: failed to get Il2CppType");
+                Plugin.LogSource?.LogError("[ESP] EnsureBehaviour: failed to get Il2CppType");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"[ESP] EnsureBehaviour EX: {e}");
+            Plugin.LogSource?.LogError($"[ESP] EnsureBehaviour EX: {e}");
         }
     }
 }
@@ -49,8 +50,11 @@ public static class EspManager
 [BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
+    public static ManualLogSource LogSource;
+
     public override void Load()
     {
+        LogSource = Log;
         Log.LogInfo("[ESP] ===== Plugin.Load() =====");
         try
         {
@@ -71,7 +75,7 @@ public class Plugin : BasePlugin
 
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        Debug.Log($"[ESP] Scene loaded: '{scene.name}' ({mode}) -> recreating behaviour");
+        LogSource?.LogInfo($"[ESP] Scene loaded: '{scene.name}' ({mode}) -> recreating behaviour");
         EspManager.EnsureBehaviour();
     }
 }
@@ -94,10 +98,10 @@ public class EspBehaviour : MonoBehaviour
     private Texture2D _whiteTex;
     private Texture2D _circleTex;
     private float _scanTimer;
-    private const float ScanInterval = 1.0f;
+    private const float ScanInterval = 0.5f;
 
     private float _watchdogTimer;
-    private const float WatchdogInterval = 5.0f;
+    private const float WatchdogInterval = 3.0f;
     private int _watchdogTicks;
 
     private const float HeadOffset = 1.8f;
@@ -130,10 +134,9 @@ public class EspBehaviour : MonoBehaviour
     private static PropertyInfo _localPlayerProp;
     private static PropertyInfo _teamProp;
     private int _localTeam = -1;
-    private int _lastLoggedTeam = -2;
 
     private readonly Dictionary<string, float> _lastLogTime = new();
-    private const float LogCooldown = 2.0f;
+    private const float LogCooldown = 1.5f;
 
     private int _updateCount;
     private float _lastUpdateLog;
@@ -146,13 +149,22 @@ public class EspBehaviour : MonoBehaviour
         if (_lastLogTime.TryGetValue(key, out float last) && now - last < LogCooldown)
             return;
         _lastLogTime[key] = now;
-        if (isError) Debug.LogError(message);
-        else Debug.Log(message);
+        
+        if (isError)
+        {
+            Debug.LogError(message);
+            Plugin.LogSource?.LogError(message);
+        }
+        else
+        {
+            Debug.Log(message);
+            Plugin.LogSource?.LogInfo(message);
+        }
     }
 
     void Awake()
     {
-        Debug.Log("[ESP] ===== Awake() =====");
+        Plugin.LogSource?.LogInfo("[ESP] ===== Awake() =====");
         try
         {
             _whiteTex = new Texture2D(1, 1);
@@ -161,17 +173,15 @@ public class EspBehaviour : MonoBehaviour
 
             _circleTex = CreateCircleTexture(64);
         }
-        catch (Exception e) { Debug.LogError($"[ESP] Awake texture EX: {e}"); }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake texture EX: {e}"); }
 
         try
         {
             enabled = true;
             gameObject.SetActive(true);
-            Debug.Log($"[ESP] Awake state: enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
+            Plugin.LogSource?.LogInfo($"[ESP] Awake state: enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
         }
-        catch (Exception e) { Debug.LogError($"[ESP] Awake activate EX: {e}"); }
-
-        Debug.Log("[ESP] ===== Awake() done =====");
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake activate EX: {e}"); }
     }
 
     private Texture2D CreateCircleTexture(int size)
@@ -203,26 +213,22 @@ public class EspBehaviour : MonoBehaviour
 
     void Start()
     {
-        Debug.Log($"[ESP] ===== Start() ===== enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
+        Plugin.LogSource?.LogInfo($"[ESP] ===== Start() ===== enabled={enabled}, activeInHierarchy={gameObject.activeInHierarchy}");
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
-        Debug.Log("[ESP] Cursor unlocked");
     }
 
     void OnDestroy()
     {
-        Debug.Log("[ESP] OnDestroy() - behaviour destroyed");
+        Plugin.LogSource?.LogInfo("[ESP] OnDestroy() - behaviour destroyed");
         try
         {
             if (_whiteTex != null) Destroy(_whiteTex);
             if (_circleTex != null) Destroy(_circleTex);
         }
-        catch (Exception e) { Debug.LogError($"[ESP] OnDestroy EX: {e}"); }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] OnDestroy EX: {e}"); }
     }
 
-    // =========================================================
-    //                       WATCHDOG
-    // =========================================================
     void RunWatchdog()
     {
         _watchdogTicks++;
@@ -232,12 +238,10 @@ public class EspBehaviour : MonoBehaviour
             bool cameraOk = _cam != null;
             bool typesOk = _botType != null || _playerType != null;
 
-            Debug.Log($"[ESP] Watchdog #{_watchdogTicks}: localPlayer={localPlayerOk}, " +
-                      $"camera={cameraOk}, types={typesOk}, tracked={_tracked.Count}, localTeam={_localTeam}");
+            Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: localPlayer={localPlayerOk}, camera={cameraOk}, types={typesOk}, tracked={_tracked.Count}, localTeam={_localTeam}");
 
             if (!typesOk)
             {
-                Debug.LogWarning("[ESP] Watchdog: types not resolved, forcing re-resolve");
                 _resolved = false;
                 ResolveTypes();
             }
@@ -245,12 +249,11 @@ public class EspBehaviour : MonoBehaviour
             if (!cameraOk)
             {
                 _cam = Camera.main;
-                Debug.Log($"[ESP] Watchdog: camera re-fetched, result={(_cam != null ? _cam.name : "null")}");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"[ESP] Watchdog EX: {e}");
+            Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}");
         }
     }
 
@@ -258,18 +261,21 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (_localPlayerProp == null || _teamProp == null)
-            {
-                if (_watchdogTicks % 6 == 0)
-                    Debug.LogWarning($"[ESP] CheckLocalPlayer: props null (localPlayer={_localPlayerProp != null}, team={_teamProp != null})");
-                return false;
-            }
+            if (_localPlayerProp == null || _teamProp == null) return false;
 
             var pmType = _localPlayerProp.DeclaringType;
+            if (pmType == null) return false;
+
             object pmInstance = null;
-            var instProp = pmType.GetProperty("Instance",
-                BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            var instProp = pmType.GetProperty("Instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (instProp != null) pmInstance = instProp.GetValue(null);
+
+            if (pmInstance == null)
+            {
+                // Пробуем найти через FindObjectOfType если Instance не сработал
+                var pmObj = FindObjectOfType(Il2CppType.From(pmType).TryCast<Il2CppSystem.Type>(), false);
+                if (pmObj != null) pmInstance = pmObj;
+            }
 
             if (pmInstance == null) return false;
 
@@ -282,13 +288,8 @@ public class EspBehaviour : MonoBehaviour
                 int newTeam = Convert.ToInt32(teamObj);
                 if (newTeam != _localTeam)
                 {
-                    Debug.Log($"[ESP] Watchdog: Local team changed: {_localTeam} -> {newTeam}");
+                    Plugin.LogSource?.LogInfo($"[ESP] Local team changed: {_localTeam} -> {newTeam}");
                     _localTeam = newTeam;
-                    _lastLoggedTeam = newTeam;
-                }
-                else if (_watchdogTicks % 6 == 0)
-                {
-                    Debug.Log($"[ESP] CheckLocalPlayer: team={newTeam}");
                 }
             }
             return true;
@@ -300,9 +301,6 @@ public class EspBehaviour : MonoBehaviour
         }
     }
 
-    // =========================================================
-    //                       UPDATE
-    // =========================================================
     void Update()
     {
         try
@@ -335,7 +333,7 @@ public class EspBehaviour : MonoBehaviour
             {
                 if (t.Transform == null) { skippedNull++; continue; }
 
-                // Свою команду скрываем только если она валидна (не None, не -1)
+                // Фильтрация своей команды (если локальная команда валидна и больше 0)
                 if (_localTeam > 0 && t.Team == _localTeam)
                 {
                     skippedOwnTeam++;
@@ -351,12 +349,10 @@ public class EspBehaviour : MonoBehaviour
                 _toDraw.Add(t);
             }
 
-            if (Time.realtimeSinceStartup - _lastUpdateLog > 5f)
+            if (Time.realtimeSinceStartup - _lastUpdateLog > 3f)
             {
                 _lastUpdateLog = Time.realtimeSinceStartup;
-                Debug.Log($"[ESP] Update alive: tracked={_tracked.Count}, draw={_toDraw.Count}, " +
-                          $"skippedOwnTeam={skippedOwnTeam}, skippedNull={skippedNull}, skippedFiltered={skippedFiltered}, " +
-                          $"localTeam={_localTeam}, menu={_menuVisible}, updates={_updateCount}");
+                Plugin.LogSource?.LogInfo($"[ESP] Alive: tracked={_tracked.Count}, draw={_toDraw.Count}, localTeam={_localTeam}, skippedOwn={skippedOwnTeam}, skippedFilter={skippedFiltered}");
             }
         }
         catch (Exception e)
@@ -370,22 +366,19 @@ public class EspBehaviour : MonoBehaviour
     {
         switch (team)
         {
-            case 0: return false;              // None
-            case 1: return TeamFilter.ShowTr;  // Tr
-            case 2: return TeamFilter.ShowCt;  // Ct
+            case 0: return false;                  // None / None Team
+            case 1: return TeamFilter.ShowTr;      // Terrorists
+            case 2: return TeamFilter.ShowCt;      // Counter-Terrorists
             case 3: return TeamFilter.ShowSpectator; // Spectator
-            default: return true;              // неизвестно — показываем
+            default: return true;                  // Неизвестные команды показываем по умолчанию
         }
     }
 
-    // =========================================================
-    //                       SCAN
-    // =========================================================
     private static void ResolveTypes()
     {
         if (_resolved) return;
         _resolved = true;
-        Debug.Log("[ESP] ResolveTypes() start");
+        Plugin.LogSource?.LogInfo("[ESP] ResolveTypes() start");
         try
         {
             Type bt = null, pt = null, pmType = null;
@@ -399,66 +392,34 @@ public class EspBehaviour : MonoBehaviour
                 }
                 catch (Exception e)
                 {
-                    Debug.LogWarning($"[ESP] ResolveTypes asm '{asm.GetName().Name}' EX: {e.Message}");
+                    Plugin.LogSource?.LogWarning($"[ESP] ResolveTypes asm '{asm.GetName().Name}' EX: {e.Message}");
                 }
                 if (bt != null && pt != null && pmType != null) break;
             }
-
-            Debug.Log($"[ESP] Found types: Bot={bt?.FullName ?? "null"}, Player={pt?.FullName ?? "null"}, PM={pmType?.FullName ?? "null"}");
 
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
 
             if (pmType != null && pt != null)
             {
-                _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+                _localPlayerProp = pmType.GetProperty("DEEBDAFCBHCGFBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
 
-                // Ищем свойство Team вверх по иерархии: PlayerController -> Controller -> ...
                 PropertyInfo foundTeam = null;
-                Type teamOwner = null;
                 Type searchType = pt;
-                int depth = 0;
-                while (searchType != null && searchType != typeof(object) && depth < 10)
+                while (searchType != null && searchType != typeof(object))
                 {
-                    var p = searchType.GetProperty("CGGHFHCAFFBBCBB",
-                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (p != null)
-                    {
-                        foundTeam = p;
-                        teamOwner = searchType;
-                        Debug.Log($"[ESP] Team property found on: {searchType.FullName} (depth={depth})");
-                        break;
-                    }
-                    // Пробуем также как field (если обфускатор сделал поле вместо свойства)
-                    var f = searchType.GetField("CGGHFHCAFFBBCBB",
-                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (f != null)
-                    {
-                        Debug.LogWarning($"[ESP] Team is a FIELD on {searchType.FullName}, not property!");
-                    }
+                    foundTeam = searchType.GetProperty("CGGHFHCAFFBBCBB", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (foundTeam != null) break;
                     searchType = searchType.BaseType;
-                    depth++;
-                }
-
-                if (foundTeam == null)
-                {
-                    Debug.LogError("[ESP] Team property 'CGGHFHCAFFBBCBB' NOT FOUND in hierarchy!");
                 }
                 _teamProp = foundTeam;
 
-                Debug.Log($"[ESP] Properties: LocalPlayer={(_localPlayerProp != null)}, " +
-                          $"Team={(_teamProp != null)} (owner={teamOwner?.FullName ?? "null"})");
+                Plugin.LogSource?.LogInfo($"[ESP] Resolved: LocalPlayer={_localPlayerProp != null}, Team={_teamProp != null}");
             }
-
-            if (_botType == null && _playerType == null)
-                Debug.LogError("[ESP] ResolveTypes: NO types resolved! ESP will not work.");
-            else
-                Debug.Log($"[ESP] ResolveTypes OK: Bot={_botType != null}, Player={_playerType != null}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[ESP] ResolveTypes FATAL EX: {e}");
+            Plugin.LogSource?.LogError($"[ESP] ResolveTypes FATAL EX: {e}");
         }
     }
 
@@ -481,15 +442,6 @@ public class EspBehaviour : MonoBehaviour
             foreach (var kv in _tracked)
                 if (!_seenList.Contains(kv.Key)) dead.Add(kv.Key);
             foreach (var id in dead) _tracked.Remove(id);
-
-            int added = _tracked.Count - beforeCount + dead.Count;
-            int removed = dead.Count;
-
-            if (removed > 0 || added > 0 || _scanCount % 5 == 0)
-            {
-                Debug.Log($"[ESP] Scan #{_scanCount}: tracked={_tracked.Count} " +
-                          $"(added={added}, removed={removed}), localTeam={_localTeam}");
-            }
         }
         catch (Exception e)
         {
@@ -523,7 +475,6 @@ public class EspBehaviour : MonoBehaviour
                     _seenList.Add(id);
 
                     int targetTeam = -1;
-                    string rawTeam = "null";
                     if (_teamProp != null)
                     {
                         try
@@ -531,15 +482,10 @@ public class EspBehaviour : MonoBehaviour
                             var teamObj = _teamProp.GetValue(c);
                             if (teamObj != null)
                             {
-                                rawTeam = teamObj.ToString();
-                                try { targetTeam = Convert.ToInt32(teamObj); }
-                                catch { targetTeam = -1; }
+                                targetTeam = Convert.ToInt32(teamObj);
                             }
                         }
-                        catch (Exception e)
-                        {
-                            LogThrottled($"team_{label}_{id}", $"[ESP] Get team EX ({label} id={id}): {e.Message}", true);
-                        }
+                        catch { targetTeam = -1; }
                     }
 
                     string name = TryGetName(c, isBot);
@@ -553,7 +499,7 @@ public class EspBehaviour : MonoBehaviour
                     };
 
                     if (isNew)
-                        Debug.Log($"[ESP] +Tracked {label}: name='{name}', team={targetTeam} (raw='{rawTeam}'), id={id}");
+                        Plugin.LogSource?.LogInfo($"[ESP] +Tracked {label}: name='{name}', team={targetTeam}, id={id}");
                 }
                 catch (Exception e)
                 {
@@ -571,15 +517,13 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var prop = c.GetType().GetProperty("HBBBCEFBCFEFBBA", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (prop != null)
             {
                 var pp = prop.GetValue(c);
                 if (pp != null)
                 {
-                    var nickProp = pp.GetType().GetProperty("NickName",
-                        BindingFlags.Public | BindingFlags.Instance);
+                    var nickProp = pp.GetType().GetProperty("NickName", BindingFlags.Public | BindingFlags.Instance);
                     if (nickProp != null)
                     {
                         var nick = nickProp.GetValue(pp) as string;
@@ -588,10 +532,7 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
         }
-        catch (Exception e)
-        {
-            LogThrottled($"name_ex_{isBot}", $"[ESP] TryGetName EX (isBot={isBot}): {e.Message}", true);
-        }
+        catch { }
         try
         {
             var n = c.gameObject.name;
@@ -601,9 +542,6 @@ public class EspBehaviour : MonoBehaviour
         return isBot ? "BOT" : "PLAYER";
     }
 
-    // =========================================================
-    //                       OnGUI
-    // =========================================================
     void OnGUI()
     {
         _guiFrameCount++;
@@ -623,22 +561,16 @@ public class EspBehaviour : MonoBehaviour
             if (_cam == null)
             {
                 _cam = Camera.main;
-                if (_cam == null)
-                {
-                    LogThrottled("no_cam", "[ESP] OnGUI: Camera.main is null!", true);
-                    return;
-                }
-                Debug.Log($"[ESP] Camera found: {_cam.name}");
+                if (_cam == null) return;
             }
 
             if (_espBoxesEnabled || _espNamesEnabled)
             {
-                int drawn = 0, skippedBehind = 0, skippedNull = 0;
                 foreach (var t in _toDraw)
                 {
                     try
                     {
-                        if (t.Transform == null) { skippedNull++; continue; }
+                        if (t.Transform == null) continue;
 
                         Vector3 headWorld = t.Transform.position + Vector3.up * HeadOffset;
                         Vector3 footWorld = t.Transform.position - Vector3.up * FootOffset;
@@ -646,7 +578,7 @@ public class EspBehaviour : MonoBehaviour
                         Vector3 screenHead = _cam.WorldToScreenPoint(headWorld);
                         Vector3 screenFoot = _cam.WorldToScreenPoint(footWorld);
 
-                        if (screenHead.z < 0 || screenFoot.z < 0) { skippedBehind++; continue; }
+                        if (screenHead.z < 0 || screenFoot.z < 0) continue;
 
                         float x = screenHead.x;
                         float top = Screen.height - screenHead.y;
@@ -662,9 +594,7 @@ public class EspBehaviour : MonoBehaviour
                         if (_espBoxesEnabled)
                         {
                             float th = 2f;
-                            Color fillColor = t.Team == 1
-                                ? new Color(1f, 0f, 0f, 0.12f)
-                                : new Color(0f, 0.5f, 1f, 0.12f);
+                            Color fillColor = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
                             Color outlineColor = t.Team == 1 ? Color.red : Color.cyan;
 
                             GUI.color = fillColor;
@@ -680,11 +610,8 @@ public class EspBehaviour : MonoBehaviour
 
                         if (_espNamesEnabled)
                         {
-                            string label = string.IsNullOrEmpty(t.Name)
-                                ? (t.IsBot ? "BOT" : "PLAYER")
-                                : t.Name;
-                            if (_espDistanceEnabled)
-                                label += $" [{dist:F0}m]";
+                            string label = string.IsNullOrEmpty(t.Name) ? (t.IsBot ? "BOT" : "PLAYER") : t.Name;
+                            if (_espDistanceEnabled) label += $" [{dist:F0}m]";
 
                             float approxWidth = label.Length * 7f;
                             float labelLeft = x - approxWidth / 2f;
@@ -695,19 +622,11 @@ public class EspBehaviour : MonoBehaviour
                             GUI.color = Color.white;
                             GUI.Label(new Rect(labelLeft, top - 18f, approxWidth, 20f), label);
                         }
-
-                        drawn++;
                     }
                     catch (Exception e)
                     {
                         LogThrottled("gui_item", $"[ESP] OnGUI item EX: {e.Message}", true);
                     }
-                }
-
-                if (_guiFrameCount % 600 == 0 && _toDraw.Count > 0)
-                {
-                    Debug.Log($"[ESP] OnGUI: drawn={drawn}, total={_toDraw.Count}, " +
-                              $"skippedBehind={skippedBehind}, skippedNull={skippedNull}");
                 }
             }
 
@@ -736,7 +655,6 @@ public class EspBehaviour : MonoBehaviour
         {
             _buttonCenter = new Vector2(Screen.width / 2f, Screen.height / 2f);
             _buttonInitialized = true;
-            Debug.Log($"[ESP] Floating button initialized at center: {_buttonCenter}");
         }
 
         float r = ButtonRadius;
@@ -772,25 +690,16 @@ public class EspBehaviour : MonoBehaviour
                 if (!_dragMoved)
                 {
                     _menuVisible = true;
-                    Debug.Log("[ESP] Floating button clicked -> menu opened");
                 }
                 e.Use();
             }
         }
 
-        GUI.color = _isDragging
-            ? new Color(0.3f, 0.6f, 1f, 0.9f)
-            : new Color(0.15f, 0.15f, 0.2f, 0.85f);
+        GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
         GUI.DrawTexture(btnRect, _circleTex);
 
         GUI.color = Color.white;
-        float letterW = 14f;
-        float letterH = 20f;
-        GUI.Label(new Rect(
-            _buttonCenter.x - letterW / 2f,
-            _buttonCenter.y - letterH / 2f,
-            letterW,
-            letterH), "E");
+        GUI.Label(new Rect(_buttonCenter.x - 7f, _buttonCenter.y - 10f, 14f, 20f), "E");
     }
 
     private bool CustomButton(Rect rect, string label, bool state)
@@ -803,9 +712,7 @@ public class EspBehaviour : MonoBehaviour
             clicked = true;
         }
 
-        GUI.color = state
-            ? new Color(0.2f, 0.55f, 0.3f, 0.95f)
-            : new Color(0.55f, 0.2f, 0.2f, 0.95f);
+        GUI.color = state ? new Color(0.2f, 0.55f, 0.3f, 0.95f) : new Color(0.55f, 0.2f, 0.2f, 0.95f);
         GUI.DrawTexture(rect, _whiteTex);
 
         GUI.color = Color.white;
@@ -813,11 +720,7 @@ public class EspBehaviour : MonoBehaviour
         float approxW = label.Length * approxCharW;
         if (approxW > rect.width - 8f) approxW = rect.width - 8f;
 
-        GUI.Label(new Rect(
-            rect.x + (rect.width - approxW) / 2f,
-            rect.y + (rect.height - 16f) / 2f,
-            approxW + 4f,
-            16f), label);
+        GUI.Label(new Rect(rect.x + (rect.width - approxW) / 2f, rect.y + (rect.height - 16f) / 2f, approxW + 4f, 16f), label);
 
         return clicked;
     }
@@ -832,14 +735,12 @@ public class EspBehaviour : MonoBehaviour
         float offset = MenuOffset;
 
         float x = _buttonCenter.x + r + offset;
-        if (x + mw > sw)
-            x = _buttonCenter.x - r - offset - mw;
+        if (x + mw > sw) x = _buttonCenter.x - r - offset - mw;
         if (x < 0) x = Mathf.Max(0, (sw - mw) / 2f);
 
         float y = _buttonCenter.y - mh / 2f;
         if (y < 0) y = 0;
         if (y + mh > sh) y = sh - mh;
-        if (y < 0) y = 0;
 
         return new Rect(x, y, mw, mh);
     }
@@ -861,21 +762,18 @@ public class EspBehaviour : MonoBehaviour
         if (CustomButton(new Rect(bx, y, bw, bh), $"ESP Boxes: {(_espBoxesEnabled ? "ON" : "OFF")}", _espBoxesEnabled))
         {
             _espBoxesEnabled = !_espBoxesEnabled;
-            Debug.Log($"[ESP] ESP Boxes = {_espBoxesEnabled}");
         }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Names: {(_espNamesEnabled ? "ON" : "OFF")}", _espNamesEnabled))
         {
             _espNamesEnabled = !_espNamesEnabled;
-            Debug.Log($"[ESP] Names = {_espNamesEnabled}");
         }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Distance: {(_espDistanceEnabled ? "ON" : "OFF")}", _espDistanceEnabled))
         {
             _espDistanceEnabled = !_espDistanceEnabled;
-            Debug.Log($"[ESP] Distance = {_espDistanceEnabled}");
         }
         y += 46;
 
@@ -885,28 +783,24 @@ public class EspBehaviour : MonoBehaviour
         if (CustomButton(new Rect(bx, y, bw, bh), $"TR (Terror): {(TeamFilter.ShowTr ? "ON" : "OFF")}", TeamFilter.ShowTr))
         {
             TeamFilter.ShowTr = !TeamFilter.ShowTr;
-            Debug.Log($"[ESP] Show TR = {TeamFilter.ShowTr}");
         }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"CT (Counter): {(TeamFilter.ShowCt ? "ON" : "OFF")}", TeamFilter.ShowCt))
         {
             TeamFilter.ShowCt = !TeamFilter.ShowCt;
-            Debug.Log($"[ESP] Show CT = {TeamFilter.ShowCt}");
         }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Spectator: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator))
         {
             TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator;
-            Debug.Log($"[ESP] Show Spectator = {TeamFilter.ShowSpectator}");
         }
         y += 46;
 
         if (CustomButton(new Rect(bx, y, bw, 34), "Hide Menu", false))
         {
             _menuVisible = false;
-            Debug.Log("[ESP] Menu hidden via button");
         }
     }
 }
