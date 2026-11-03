@@ -43,8 +43,8 @@ public static class EspManager
 public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
-
     public static ConfigFile ConfigFile;
+
     public static ConfigEntry<bool> CfgAimbotEnabled;
     public static ConfigEntry<float> CfgAimbotFov;
     public static ConfigEntry<float> CfgAimbotSmooth;
@@ -118,9 +118,6 @@ public class Plugin : BasePlugin
     }
 }
 
-// =========================================================
-//                    KEYBIND LISTENER
-// =========================================================
 public class KeybindListener : MonoBehaviour
 {
     private static KeybindListener _instance;
@@ -137,20 +134,12 @@ public class KeybindListener : MonoBehaviour
             var go = new GameObject("ESP_KeybindListener");
             UnityEngine.Object.DontDestroyOnLoad(go);
             var type = Il2CppType.From(typeof(KeybindListener)).TryCast<Il2CppSystem.Type>();
-            if (type != null)
-            {
-                go.AddComponent(type);
-                Plugin.LogSource?.LogInfo("[ESP] KeybindListener created");
-            }
+            if (type != null) { go.AddComponent(type); Plugin.LogSource?.LogInfo("[ESP] KeybindListener created"); }
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] KeybindListener Ensure EX: {e}"); }
     }
 
-    void Awake()
-    {
-        _instance = this;
-        DontDestroyOnLoad(gameObject);
-    }
+    void Awake() { _instance = this; DontDestroyOnLoad(gameObject); }
 
     void Update()
     {
@@ -172,7 +161,6 @@ public class KeybindListener : MonoBehaviour
             {
                 bool kd = Input.GetKey(Plugin.AimbotToggleKey);
                 EspBehaviour.SetAimbotActive(kd);
-
                 if (kd && Time.realtimeSinceStartup - _lastLog > 2f)
                 {
                     _lastLog = Time.realtimeSinceStartup;
@@ -190,26 +178,18 @@ public class KeybindListener : MonoBehaviour
             Type hudType = null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
-                try
-                {
-                    foreach (var t in asm.GetTypes())
-                        if (t.Name == "HudManager") { hudType = t; break; }
-                }
-                catch { }
+                try { foreach (var t in asm.GetTypes()) if (t.Name == "HudManager") { hudType = t; break; } } catch { }
                 if (hudType != null) break;
             }
             if (hudType == null) return false;
-
             var instProp = hudType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
             if (instProp == null) return false;
             var hud = instProp.GetValue(null);
             if (hud == null) return false;
-
             var chatProp = hudType.GetProperty("Chat", BindingFlags.Public | BindingFlags.Instance);
             if (chatProp == null) return false;
             var chat = chatProp.GetValue(hud);
             if (chat == null) return false;
-
             var openProp = chat.GetType().GetProperty("IsOpenOrOpening", BindingFlags.Public | BindingFlags.Instance);
             if (openProp == null) return false;
             var open = openProp.GetValue(chat);
@@ -219,9 +199,6 @@ public class KeybindListener : MonoBehaviour
     }
 }
 
-// =========================================================
-//                    ESP BEHAVIOUR
-// =========================================================
 public class EspBehaviour : MonoBehaviour
 {
     private class Tracked
@@ -241,6 +218,7 @@ public class EspBehaviour : MonoBehaviour
     private Texture2D _whiteTex;
     private static Texture2D _circleTex;
     private static Texture2D _ringTex;
+    private static Texture2D _btnTex;
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
@@ -278,6 +256,7 @@ public class EspBehaviour : MonoBehaviour
     private bool _aimbotTargetTeammates = false;
     private bool _aimbotVisibilityCheck = false;
     private bool _aimbotKeyCapturing = false;
+    private KeyCode _aimbotKeyBackup = KeyCode.None;
 
     private static bool _aimbotActive = false;
     public static bool AimbotActive => _aimbotActive;
@@ -313,6 +292,7 @@ public class EspBehaviour : MonoBehaviour
 
             GetCircleTex();
             GetRingTex();
+            GetButtonTex();
 
             enabled = true;
             gameObject.SetActive(true);
@@ -381,19 +361,55 @@ public class EspBehaviour : MonoBehaviour
         return tex;
     }
 
-    void Start()
+    // Шакальная кнопка: 32x32, Point-фильтр, буква E прямо в текстуре
+    private static Texture2D GetButtonTex()
     {
-        Cursor.visible = true;
-        Cursor.lockState = CursorLockMode.None;
+        if (_btnTex != null) return _btnTex;
+        int size = 32;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Point;
+        tex.wrapMode = TextureWrapMode.Clamp;
+        var pixels = new Color32[size * size];
+        float center = size / 2f;
+        float radius = size / 2f - 1f;
+        string[] eGlyph = {
+            "11111",
+            "10000",
+            "10000",
+            "11110",
+            "10000",
+            "10000",
+            "11111"
+        };
+        int glyphW = 5, glyphH = 7;
+        int gx0 = (size - glyphW) / 2;
+        int gy0 = (size - glyphH) / 2;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = x - center + 0.5f, dy = y - center + 0.5f;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                if (dist > radius) { pixels[y * size + x] = new Color32(0, 0, 0, 0); continue; }
+                byte r = 40, g = 40, b = 60, a = 255;
+                int lx = x - gx0;
+                int ly = (size - 1 - y) - gy0;
+                if (lx >= 0 && lx < glyphW && ly >= 0 && ly < glyphH && eGlyph[glyphH - 1 - ly][lx] == '1')
+                {
+                    r = 255; g = 255; b = 255;
+                }
+                pixels[y * size + x] = new Color32(r, g, b, a);
+            }
+        tex.SetPixels32(pixels);
+        tex.Apply();
+        _btnTex = tex;
+        return tex;
     }
+
+    void Start() { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
 
     void OnDestroy()
     {
-        try
-        {
-            if (_whiteTex != null) Destroy(_whiteTex);
-        }
-        catch { }
+        try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
     }
 
     void RunWatchdog()
@@ -479,11 +495,8 @@ public class EspBehaviour : MonoBehaviour
             if (_playerManagerType == null) return;
 
             object pmInstance = null;
-
-            // Все вызовы на _playerManagerType (Il2CppSystem.Type) — каст BindingFlags
             var instProp = _playerManagerType.GetProperty("Instance",
-                (Il2CppSystem.Reflection.BindingFlags)(int)(
-                    BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
+                (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
             if (instProp != null) pmInstance = instProp.GetValue(null);
 
             if (pmInstance == null)
@@ -507,18 +520,15 @@ public class EspBehaviour : MonoBehaviour
 
             if (pmInstance == null) { LogThrottled("pm_null", "[ESP] PlayerManager not found", true); return; }
 
-            // pmManagedType — managed System.Type
             object localPlayer = null;
             var pmManagedType = pmInstance.GetType();
 
-            var cfogProp = pmManagedType.GetProperty("cfog",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var cfogProp = pmManagedType.GetProperty("cfog", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (cfogProp != null) localPlayer = cfogProp.GetValue(pmInstance);
 
             if (localPlayer == null)
             {
-                var cfogField = pmManagedType.GetField("_cfog_k__BackingField",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var cfogField = pmManagedType.GetField("_cfog_k__BackingField", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (cfogField != null) localPlayer = cfogField.GetValue(pmInstance);
             }
 
@@ -539,7 +549,51 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_menuVisible) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
-            Plugin.IsMenuOpen = _menuVisible;
+            Plugin.IsMenuOpen = _menuVisible || _aimbotKeyCapturing;
+
+            // Захват бинда — здесь, в Update, а не в OnGUI
+            if (_aimbotKeyCapturing)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    // Отмена: возвращаем прошлый бинд
+                    Plugin.AimbotToggleKey = _aimbotKeyBackup;
+                    _aimbotKeyCapturing = false;
+                    Plugin.LogSource?.LogInfo($"[ESP] Bind cancelled, restored to {_aimbotKeyBackup}");
+                }
+                else
+                {
+                    foreach (KeyCode kc in Enum.GetValues(typeof(KeyCode)))
+                    {
+                        if (kc == KeyCode.None || kc == KeyCode.Escape) continue;
+                        if (Input.GetKeyDown(kc))
+                        {
+                            Plugin.AimbotToggleKey = kc;
+                            _aimbotKeyCapturing = false;
+                            if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
+                            Plugin.LogSource?.LogInfo($"[ESP] Key set: {kc}");
+                            break;
+                        }
+                    }
+                    // Проверка кнопок мыши
+                    if (_aimbotKeyCapturing)
+                    {
+                        for (int b = 0; b < 3; b++)
+                        {
+                            if (Input.GetMouseButtonDown(b))
+                            {
+                                KeyCode kc = b == 0 ? KeyCode.Mouse0 : (b == 1 ? KeyCode.Mouse1 : KeyCode.Mouse2);
+                                Plugin.AimbotToggleKey = kc;
+                                _aimbotKeyCapturing = false;
+                                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
+                                Plugin.LogSource?.LogInfo($"[ESP] Key set: {kc}");
+                                break;
+                            }
+                        }
+                    }
+                }
+                return; // пока захватываем — не сканируем и не двигаемся
+            }
 
             _watchdogTimer += Time.deltaTime;
             if (_watchdogTimer >= WatchdogInterval) { _watchdogTimer = 0f; RunWatchdog(); }
@@ -650,11 +704,7 @@ public class EspBehaviour : MonoBehaviour
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
             try { var d = asm.GetType(shortName); if (d != null) { full = d.FullName; return d; } } catch { }
-            try
-            {
-                foreach (var t in asm.GetTypes()) if (t.Name == shortName) { full = t.FullName; return t; }
-            }
-            catch { }
+            try { foreach (var t in asm.GetTypes()) if (t.Name == shortName) { full = t.FullName; return t; } } catch { }
         }
         return null;
     }
@@ -878,12 +928,11 @@ public class EspBehaviour : MonoBehaviour
             }
         }
 
-        GUI.color = _isDragging ? new Color(0.3f, 0.6f, 1f, 0.9f) : new Color(0.15f, 0.15f, 0.2f, 0.85f);
-        GUI.DrawTexture(btnRect, _whiteTex);
-
+        // Одна текстура — без GUI.Label
+        var btnTex = GetButtonTex();
+        GUI.color = _isDragging ? new Color(0.5f, 0.8f, 1f, 0.9f) : Color.white;
+        GUI.DrawTexture(btnRect, btnTex);
         GUI.color = Color.white;
-        float lw = 14f;
-        GUI.Label(new Rect(_buttonCenter.x - lw / 2f, _buttonCenter.y - 10f, lw, 20f), "E");
     }
 
     private bool CustomButton(Rect rect, string label, bool state)
@@ -1012,37 +1061,19 @@ public class EspBehaviour : MonoBehaviour
         }
         y += 36;
 
-        string keyName = _aimbotKeyCapturing ? "PRESS KEY..." : Plugin.AimbotToggleKey.ToString();
+        string keyName = _aimbotKeyCapturing ? "PRESS KEY... (Esc to cancel)" : Plugin.AimbotToggleKey.ToString();
         if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", _aimbotKeyCapturing))
         {
-            _aimbotKeyCapturing = !_aimbotKeyCapturing;
-            Plugin.IsMenuOpen = _aimbotKeyCapturing;
-        }
-
-        if (_aimbotKeyCapturing)
-        {
-            Event e = Event.current;
-            if (e != null && e.type == EventType.KeyDown && e.keyCode != KeyCode.None)
+            if (!_aimbotKeyCapturing)
             {
-                Plugin.AimbotToggleKey = e.keyCode;
-                _aimbotKeyCapturing = false;
-                Plugin.IsMenuOpen = false;
-                if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = e.keyCode.ToString();
-                Plugin.LogSource?.LogInfo($"[ESP] Key set: {e.keyCode}");
-                e.Use();
+                _aimbotKeyBackup = Plugin.AimbotToggleKey;
+                _aimbotKeyCapturing = true;
             }
-            else if (e != null && e.type == EventType.MouseDown)
+            else
             {
-                KeyCode kc = e.button switch { 0 => KeyCode.Mouse0, 1 => KeyCode.Mouse1, 2 => KeyCode.Mouse2, _ => KeyCode.None };
-                if (kc != KeyCode.None)
-                {
-                    Plugin.AimbotToggleKey = kc;
-                    _aimbotKeyCapturing = false;
-                    Plugin.IsMenuOpen = false;
-                    if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-                    Plugin.LogSource?.LogInfo($"[ESP] Key set: {kc}");
-                    e.Use();
-                }
+                // повторное нажатие — отмена
+                Plugin.AimbotToggleKey = _aimbotKeyBackup;
+                _aimbotKeyCapturing = false;
             }
         }
     }
