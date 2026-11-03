@@ -119,7 +119,7 @@ public class EspBehaviour : MonoBehaviour
 
             if (!UiState.MenuVisible) MenuRenderer.DrawButton(_whiteTex);
             EspModule.Draw(_whiteTex);
-            if (AimbotModule.Enabled) MenuRenderer.DrawFovCircle();
+            if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
             if (UiState.MenuVisible) MenuRenderer.DrawMenu(_whiteTex);
         }
         catch { }
