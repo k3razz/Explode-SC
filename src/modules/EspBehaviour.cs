@@ -29,7 +29,7 @@ public class EspBehaviour : MonoBehaviour
 
     private void LogThrottled(string key, string message, bool isError = false)
     {
-        float now = Time.time; // Time.time кэшируется, работает быстрее
+        float now = Time.time;
         if (_lastLogTime.TryGetValue(key, out float last) && now - last < LogCooldown) return;
         _lastLogTime[key] = now;
         if (isError) { Debug.LogError(message); Plugin.LogSource?.LogError(message); }
@@ -58,6 +58,9 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
             AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
+            WatermarkModule.Enabled = Plugin.CfgWatermarkEnabled.Value;
+            WatermarkModule.Position = new Vector2(Plugin.CfgWatermarkX.Value, Plugin.CfgWatermarkY.Value);
+
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
@@ -85,10 +88,10 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Кэшируем камеру один раз в Update
             if (_cam == null) _cam = Camera.main;
 
-            // Интро-анимация
+            WatermarkModule.Update();
+
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
                 KeybindState.IntroAnimTime += Time.deltaTime;
@@ -118,8 +121,6 @@ public class EspBehaviour : MonoBehaviour
             foreach (var t in EspModule.TrackedDict.Values)
             {
                 if (t.Transform == null) continue;
-                
-                // Проверка на смерть/отключение объекта (убирает трупы)
                 var go = t.Transform.gameObject;
                 if (go == null || !go.activeInHierarchy) continue;
 
@@ -135,10 +136,8 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Если аимбот выключен в меню — вообще не тратим ресурсы
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
-            
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
@@ -149,11 +148,11 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
-            // Убрали поиск Camera.main отсюда, чтобы не тормозило
-            if (_cam == null) return; 
+            if (_cam == null) return;
 
             EspModule.Draw(_whiteTex);
             if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
+            Watermark.Draw(_whiteTex);
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
