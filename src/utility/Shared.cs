@@ -17,10 +17,13 @@ public static class KeybindState
     public static bool Capturing = false;
     public static KeyCode CapturingBackup = KeyCode.None;
 
-    // Меню
     public static KeyCode MenuKey = KeyCode.Insert;
     public static bool MenuOpen = false;
-    public static float MenuAnimTime = 0f; // секунды с момента открытия
+    public static float MenuAnimTime = 0f;
+    public static bool IntroPlayed = false;
+
+    // Оптимизация: последнее состояние клавиши, чтобы не дёргать Input каждый кадр
+    public static bool LastKeyState = false;
 }
 
 public static class AimbotState
