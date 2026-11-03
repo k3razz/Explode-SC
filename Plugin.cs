@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
 using System.Collections.Generic;
@@ -8,6 +9,38 @@ using System;
 using System.Reflection;
 
 namespace MyDynamicESP;
+
+public static class EspManager
+{
+    public static void EnsureBehaviour()
+    {
+        try
+        {
+            var existing = UnityEngine.Object.FindObjectOfType<EspBehaviour>();
+            if (existing != null)
+            {
+                return;
+            }
+
+            var go = new GameObject("ESP_Behaviour");
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            var type = Il2CppType.From(typeof(EspBehaviour)).TryCast<Il2CppSystem.Type>();
+            if (type != null)
+            {
+                go.AddComponent(type);
+                Debug.Log("[ESP] EnsureBehaviour: created new instance");
+            }
+            else
+            {
+                Debug.LogError("[ESP] EnsureBehaviour: failed to get Il2CppType");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[ESP] EnsureBehaviour EX: {e}");
+        }
+    }
+}
 
 [BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
@@ -17,61 +50,25 @@ public class Plugin : BasePlugin
         Log.LogInfo("[ESP] ===== Plugin.Load() =====");
         try
         {
-            // 1. Регистрируем тип в IL2CPP-домене
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             Log.LogInfo("[ESP] EspBehaviour registered in IL2CPP");
 
-            // 2. Создаём GameObject
-            var go = new GameObject("ESP_Behaviour");
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            Log.LogInfo("[ESP] GameObject 'ESP_Behaviour' created");
+            SceneManager.sceneLoaded += (Action<Scene, LoadSceneMode>)OnSceneLoaded;
+            Log.LogInfo("[ESP] Subscribed to sceneLoaded");
 
-            // 3. Пытаемся добавить компонент non-generic способом
-            bool added = false;
-            try
-            {
-                var il2cppType = Il2CppType.From(typeof(EspBehaviour)).TryCast<Il2CppSystem.Type>();
-                if (il2cppType != null)
-                {
-                    go.AddComponent(il2cppType);
-                    added = true;
-                    Log.LogInfo("[ESP] EspBehaviour added via non-generic AddComponent(Type)");
-                }
-                else
-                {
-                    Log.LogWarning("[ESP] Il2CppType.From returned null after TryCast");
-                }
-            }
-            catch (Exception inner)
-            {
-                Log.LogWarning($"[ESP] Non-generic AddComponent failed: {inner.GetType().Name}: {inner.Message}");
-            }
-
-            // 4. Fallback на generic
-            if (!added)
-            {
-                try
-                {
-                    go.AddComponent<EspBehaviour>();
-                    added = true;
-                    Log.LogInfo("[ESP] EspBehaviour added via generic AddComponent<T>()");
-                }
-                catch (Exception inner)
-                {
-                    Log.LogError($"[ESP] Generic AddComponent also failed: {inner}");
-                }
-            }
-
-            if (added)
-                Log.LogInfo("[ESP] EspBehaviour successfully attached");
-            else
-                Log.LogError("[ESP] FAILED to attach EspBehaviour - ESP will not work");
+            EspManager.EnsureBehaviour();
         }
         catch (Exception e)
         {
             Log.LogError($"[ESP] Failed to add EspBehaviour: {e}");
         }
         Log.LogInfo("[ESP] ===== Plugin.Load() done =====");
+    }
+
+    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        Debug.Log($"[ESP] Scene loaded: '{scene.name}' ({mode}) -> recreating behaviour");
+        EspManager.EnsureBehaviour();
     }
 }
 
@@ -94,11 +91,15 @@ public class EspBehaviour : MonoBehaviour
     private float _scanTimer;
     private const float ScanInterval = 1.0f;
 
+    // ---- Watchdog: проверка живости локального игрока ----
+    private float _watchdogTimer;
+    private const float WatchdogInterval = 5.0f;
+    private int _watchdogTicks;
+
     private const float HeadOffset = 1.8f;
     private const float FootOffset = 0.1f;
     private const float BoxWidthRatio = 0.4f;
 
-    // ---- Настройки функций ----
     private bool _espBoxesEnabled = true;
     private bool _espNamesEnabled = true;
     private bool _espDistanceEnabled = true;
@@ -131,9 +132,6 @@ public class EspBehaviour : MonoBehaviour
         else Debug.Log(message);
     }
 
-    // =========================================================
-    //                       LIFECYCLE
-    // =========================================================
     void Awake()
     {
         Debug.Log("[ESP] ===== Awake() =====");
@@ -166,9 +164,100 @@ public class EspBehaviour : MonoBehaviour
 
     void OnDestroy()
     {
-        Debug.Log("[ESP] OnDestroy() - cleaning up");
+        Debug.Log("[ESP] OnDestroy() - behaviour destroyed");
         try { if (_whiteTex != null) Destroy(_whiteTex); }
         catch (Exception e) { Debug.LogError($"[ESP] OnDestroy EX: {e}"); }
+    }
+
+    // =========================================================
+    //                       WATCHDOG
+    // =========================================================
+    void RunWatchdog()
+    {
+        _watchdogTicks++;
+        try
+        {
+            // 1. Проверяем, что локальный игрок доступен
+            bool localPlayerOk = CheckLocalPlayer();
+            // 2. Проверяем, что камера доступна
+            bool cameraOk = _cam != null;
+            // 3. Проверяем, что типы разрешены
+            bool typesOk = _botType != null || _playerType != null;
+
+            Debug.Log($"[ESP] Watchdog #{_watchdogTicks}: localPlayer={localPlayerOk}, " +
+                      $"camera={cameraOk}, types={typesOk}, tracked={_tracked.Count}, localTeam={_localTeam}");
+
+            // Если что-то критично сломано — пробуем восстановить
+            if (!typesOk)
+            {
+                Debug.LogWarning("[ESP] Watchdog: types not resolved, forcing re-resolve");
+                _resolved = false;
+                ResolveTypes();
+            }
+
+            if (!localPlayerOk)
+            {
+                Debug.LogWarning("[ESP] Watchdog: local player not available, will retry");
+            }
+
+            if (!cameraOk)
+            {
+                _cam = Camera.main;
+                Debug.Log($"[ESP] Watchdog: camera re-fetched, result={(_cam != null ? _cam.name : "null")}");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[ESP] Watchdog EX: {e}");
+        }
+    }
+
+    bool CheckLocalPlayer()
+    {
+        try
+        {
+            if (_localPlayerProp == null || _teamProp == null) return false;
+
+            var pmType = _localPlayerProp.DeclaringType;
+            object pmInstance = null;
+            var instProp = pmType.GetProperty("Instance",
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            if (instProp != null) pmInstance = instProp.GetValue(null);
+
+            if (pmInstance == null)
+            {
+                if (_watchdogTicks % 6 == 0) // раз в 30 секунд
+                    Debug.Log("[ESP] CheckLocalPlayer: PlayerManager.Instance is null");
+                return false;
+            }
+
+            var localPlayer = _localPlayerProp.GetValue(pmInstance);
+            if (localPlayer == null)
+            {
+                if (_watchdogTicks % 6 == 0)
+                    Debug.Log("[ESP] CheckLocalPlayer: localPlayer is null (not spawned)");
+                return false;
+            }
+
+            // Обновляем команду
+            var teamObj = _teamProp.GetValue(localPlayer);
+            if (teamObj != null)
+            {
+                int newTeam = Convert.ToInt32(teamObj);
+                if (newTeam != _localTeam)
+                {
+                    Debug.Log($"[ESP] Watchdog: Local team changed: {_localTeam} -> {newTeam}");
+                    _localTeam = newTeam;
+                    _lastLoggedTeam = newTeam;
+                }
+            }
+            return true;
+        }
+        catch (Exception e)
+        {
+            LogThrottled("checklocal_ex", $"[ESP] CheckLocalPlayer EX: {e.Message}", true);
+            return false;
+        }
     }
 
     // =========================================================
@@ -180,6 +269,15 @@ public class EspBehaviour : MonoBehaviour
         {
             _updateCount++;
 
+            // ---- Watchdog ----
+            _watchdogTimer += Time.deltaTime;
+            if (_watchdogTimer >= WatchdogInterval)
+            {
+                _watchdogTimer = 0f;
+                RunWatchdog();
+            }
+
+            // ---- Ввод ----
             try
             {
                 if (Input.GetKeyDown(KeyCode.Insert))
@@ -194,6 +292,7 @@ public class EspBehaviour : MonoBehaviour
                 LogThrottled("input_ex", $"[ESP] Input EX: {e.Message}", true);
             }
 
+            // ---- Скан противников ----
             _scanTimer += Time.deltaTime;
             if (_scanTimer >= ScanInterval)
             {
@@ -201,6 +300,7 @@ public class EspBehaviour : MonoBehaviour
                 DoScan();
             }
 
+            // ---- Список для отрисовки ----
             _toDraw.Clear();
             int skippedOwnTeam = 0, skippedNull = 0;
             foreach (var t in _tracked.Values)
@@ -290,7 +390,8 @@ public class EspBehaviour : MonoBehaviour
                 return;
             }
 
-            UpdateLocalTeam();
+            // Обновляем локальную команду перед сканом
+            CheckLocalPlayer();
 
             _seenList.Clear();
             int beforeCount = _tracked.Count;
@@ -314,57 +415,6 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e)
         {
             LogThrottled("scan_ex", $"[ESP] DoScan EX: {e}", true);
-        }
-    }
-
-    void UpdateLocalTeam()
-    {
-        try
-        {
-            if (_localPlayerProp == null || _teamProp == null) return;
-
-            var pmType = _localPlayerProp.DeclaringType;
-            object pmInstance = null;
-            var instProp = pmType.GetProperty("Instance",
-                BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            if (instProp != null) pmInstance = instProp.GetValue(null);
-
-            if (pmInstance == null)
-            {
-                if (_localTeam != _lastLoggedTeam)
-                {
-                    Debug.LogWarning("[ESP] UpdateLocalTeam: PlayerManager.Instance is null");
-                    _lastLoggedTeam = _localTeam;
-                }
-                return;
-            }
-
-            var localPlayer = _localPlayerProp.GetValue(pmInstance);
-            if (localPlayer == null)
-            {
-                if (_localTeam != _lastLoggedTeam)
-                {
-                    Debug.Log("[ESP] UpdateLocalTeam: localPlayer is null (not spawned yet?)");
-                    _lastLoggedTeam = _localTeam;
-                }
-                return;
-            }
-
-            var teamObj = _teamProp.GetValue(localPlayer);
-            if (teamObj != null)
-            {
-                int newTeam = Convert.ToInt32(teamObj);
-                if (newTeam != _localTeam)
-                {
-                    Debug.Log($"[ESP] Local team changed: {_localTeam} -> {newTeam}");
-                    _localTeam = newTeam;
-                    _lastLoggedTeam = newTeam;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            LogThrottled("localteam_ex", $"[ESP] UpdateLocalTeam EX: {e.Message}", true);
         }
     }
 
@@ -471,7 +521,7 @@ public class EspBehaviour : MonoBehaviour
     }
 
     // =========================================================
-    //                       OnGUI (ESP + IMGUI меню)
+    //                       OnGUI
     // =========================================================
     void OnGUI()
     {
@@ -496,7 +546,6 @@ public class EspBehaviour : MonoBehaviour
                 Debug.Log($"[ESP] Camera found: {_cam.name}");
             }
 
-            // ---- ESP отрисовка ----
             if (_espBoxesEnabled || _espNamesEnabled)
             {
                 int drawn = 0, skippedBehind = 0, skippedNull = 0;
@@ -577,7 +626,6 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // ---- IMGUI меню ----
             if (_menuVisible)
             {
                 Rect panelRect = new Rect(20, 20, 300, 260);
