@@ -58,14 +58,15 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
             AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
-            // Автоматическая анимация при первом запуске
+            // Интро-анимация: запускается один раз при первом заходе
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
-                KeybindState.MenuOpen = true;
-                KeybindState.MenuAnimTime = 0f;
-                UiState.MenuVisible = true;
-                UiState.MenuTab = 0;
+                KeybindState.IntroActive = true;
+                KeybindState.IntroDone = false;
+                KeybindState.IntroAnimTime = 0f;
+                KeybindState.MenuOpen = false;
+                UiState.MenuVisible = false;
                 Plugin.LogSource?.LogInfo("[ESP] Intro animation started");
             }
 
@@ -85,12 +86,24 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            // Интро-анимация
+            if (KeybindState.IntroActive && !KeybindState.IntroDone)
+            {
+                KeybindState.IntroAnimTime += Time.deltaTime;
+                if (KeybindState.IntroAnimTime >= 2.0f)
+                {
+                    KeybindState.IntroActive = false;
+                    KeybindState.IntroDone = true;
+                    KeybindState.MenuOpen = true;
+                    UiState.MenuVisible = true;
+                    Plugin.LogSource?.LogInfo("[ESP] Intro finished, menu opened");
+                }
+            }
+
             if (UiState.MenuVisible)
             {
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
-                if (KeybindState.MenuAnimTime < 1.0f)
-                    KeybindState.MenuAnimTime += Time.deltaTime;
             }
 
             _watchdogTimer += Time.deltaTime;
@@ -131,8 +144,16 @@ public class EspBehaviour : MonoBehaviour
             EspModule.Draw(_whiteTex);
             if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
 
-            if (UiState.MenuVisible || KeybindState.MenuAnimTime < 1.0f)
-                MenuRenderer.DrawMenuAnimation(_whiteTex, KeybindState.MenuAnimTime);
+            // Интро-анимация (один раз)
+            if (KeybindState.IntroActive && !KeybindState.IntroDone)
+            {
+                MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
+                return;
+            }
+
+            // Меню (после интро)
+            if (UiState.MenuVisible)
+                MenuRenderer.DrawMenu(_whiteTex);
         }
         catch { }
         finally { GUI.color = Color.white; }
