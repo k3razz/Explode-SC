@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- BepInEx core (в libs/) -->
     <Reference Include="BepInEx.Core">
       <HintPath>libs/BepInEx.Core.dll</HintPath>
       <Private>false</Private>
@@ -26,7 +25,6 @@
       <Private>false</Private>
     </Reference>
 
-    <!-- Unity interop (в libs/interop/) -->
     <Reference Include="Il2Cppmscorlib">
       <HintPath>libs/interop/Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
@@ -43,34 +41,16 @@
       <HintPath>libs/interop/UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
-    <!-- Unity UI -->
-    <Reference Include="UnityEngine.UIModule">
-      <HintPath>libs/interop/UnityEngine.UIModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.UI">
-      <HintPath>libs/interop/UnityEngine.UI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-
-    <!-- Input (legacy + внутренний модуль) -->
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>libs/interop/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityEngine.InputModule">
-      <HintPath>libs/interop/UnityEngine.InputModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-
-    <Reference Include="Unity.InputSystem">
-      <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!-- TextAnchor, FontStyle, Resources.GetBuiltinResource<Font> -->
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>libs/interop/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.InputSystem">
+      <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
