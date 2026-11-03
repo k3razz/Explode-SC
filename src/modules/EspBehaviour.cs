@@ -58,6 +58,17 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
             AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
+            // Автоматическая анимация при первом запуске
+            if (!KeybindState.IntroPlayed)
+            {
+                KeybindState.IntroPlayed = true;
+                KeybindState.MenuOpen = true;
+                KeybindState.MenuAnimTime = 0f;
+                UiState.MenuVisible = true;
+                UiState.MenuTab = 0;
+                Plugin.LogSource?.LogInfo("[ESP] Intro animation started");
+            }
+
             Debug.Log("[ESP] ===== Awake() done =====");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
@@ -78,7 +89,8 @@ public class EspBehaviour : MonoBehaviour
             {
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
-                KeybindState.MenuAnimTime += Time.deltaTime;
+                if (KeybindState.MenuAnimTime < 1.0f)
+                    KeybindState.MenuAnimTime += Time.deltaTime;
             }
 
             _watchdogTimer += Time.deltaTime;
@@ -118,7 +130,9 @@ public class EspBehaviour : MonoBehaviour
 
             EspModule.Draw(_whiteTex);
             if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
-            if (UiState.MenuVisible) MenuRenderer.DrawMenuAnimation(_whiteTex, KeybindState.MenuAnimTime);
+
+            if (UiState.MenuVisible || KeybindState.MenuAnimTime < 1.0f)
+                MenuRenderer.DrawMenuAnimation(_whiteTex, KeybindState.MenuAnimTime);
         }
         catch { }
         finally { GUI.color = Color.white; }
