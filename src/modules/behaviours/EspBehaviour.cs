@@ -11,6 +11,9 @@ namespace MyDynamicESP;
 
 public class EspBehaviour : MonoBehaviour
 {
+    public static EspBehaviour Instance { get; private set; }
+    public Transform MainCameraHolder => _mainCameraHolder;
+
     private Camera _cam;
     private Texture2D _whiteTex;
     private float _scanTimer;
@@ -34,10 +37,6 @@ public class EspBehaviour : MonoBehaviour
     private float _holderCheckTimer;
     private const float HolderCheckInterval = 2.0f;
 
-    // Il2Cpp-делегат для Camera.onPreCull
-    private Camera.CameraCallback _preCullDelegate;
-    private bool _preCullSubscribed;
-
     private const int OFF_PM_CFOG = 0x40;
     private const int OFF_BOT_TEAM = 0x24;
     private const int OFF_PC_CFMP = 0x159;
@@ -59,6 +58,7 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            Instance = this;
             Debug.Log("[ESP] ===== Awake() =====");
             _whiteTex = new Texture2D(1, 1);
             _whiteTex.SetPixel(0, 0, Color.white);
@@ -105,48 +105,31 @@ public class EspBehaviour : MonoBehaviour
     {
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
+        AttachAimHook();
     }
 
     void OnDestroy()
     {
-        try
-        {
-            if (_preCullSubscribed && _preCullDelegate != null)
-            {
-                Camera.onPreCull = (Camera.CameraCallback)Delegate.Remove(Camera.onPreCull, _preCullDelegate);
-                _preCullSubscribed = false;
-                _preCullDelegate = null;
-            }
-        }
-        catch { }
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
+        if (Instance == this) Instance = null;
     }
 
-    void OnCamPreCull(Camera cam)
+    [HideFromIl2Cpp]
+    void AttachAimHook()
     {
         try
         {
-            if (!AimbotModule.Enabled) return;
-            if (!KeybindState.AimbotActive) return;
-            if (!AimbotModule.HasTarget) return;
-            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
-            if (cam == null) return;
-            if (_cam != null && cam != _cam) return;
+            var mainCam = Camera.main;
+            if (mainCam == null) return;
+            if (mainCam.GetComponent<AimCameraHook>() != null) return;
 
-            Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
-            Vector3 e = look.eulerAngles;
-            Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
-
-            if (_mainCameraHolder != null)
-            {
-                _mainCameraHolder.rotation = targetRot;
-            }
-            else
-            {
-                cam.transform.rotation = targetRot;
-            }
+            mainCam.gameObject.AddComponent<AimCameraHook>();
+            Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to Main Camera");
         }
-        catch { }
+        catch (Exception e)
+        {
+            LogThrottled("aimhook_ex", $"[ESP] AttachAimHook EX: {e.Message}", true);
+        }
     }
 
     void Update()
@@ -181,6 +164,7 @@ public class EspBehaviour : MonoBehaviour
             {
                 _holderCheckTimer = 0f;
                 if (_mainCameraHolder == null) FindMainCameraHolder();
+                AttachAimHook();
             }
 
             _watchdogTimer += Time.deltaTime;
@@ -208,6 +192,7 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            // Обновляем цель/направление каждый кадр. Поворот камеры — в AimCameraHook.OnPreCull.
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
