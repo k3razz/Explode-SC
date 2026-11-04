@@ -8,7 +8,7 @@ public static class AimbotModule
     public static bool Enabled = false;
     public static float Fov = 15f;
     public static float Smooth = 15f;
-    public static bool TargetTeammates = false;
+    public static bool TargetTeammates = true;  // всегда true — аим на всех (поле оставлено для совместимости)
     public static bool VisibilityCheck = false;
     public static bool DrawFovCircle = false;
 
@@ -28,17 +28,15 @@ public static class AimbotModule
         Vector3 camPos, camForward;
         try { camPos = cam.transform.position; camForward = cam.transform.forward; } catch { return; }
 
-        // Ищем цель раз в 0.25 сек
         _targetTimer -= Time.deltaTime;
         if (_currentTarget == null || _currentTarget.Transform == null || _targetTimer <= 0f)
         {
             _targetTimer = 0.25f;
-            _currentTarget = FindBestTarget(camPos, camForward, localTeam, tracked);
+            _currentTarget = FindBestTarget(camPos, camForward, tracked);
         }
 
         if (_currentTarget == null || _currentTarget.Transform == null) return;
 
-        // Центр ESP-бокса: (голова + ноги) / 2
         Vector3 head = _currentTarget.Transform.position + Vector3.up * 1.8f;
         Vector3 foot = _currentTarget.Transform.position;
         Vector3 center = (head + foot) * 0.5f + Vector3.up * 0.1f;
@@ -50,7 +48,11 @@ public static class AimbotModule
         HasTarget = true;
     }
 
-    private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, int localTeam, Dictionary<int, Tracked> tracked)
+    /// <summary>
+    /// Выбираем ближайшего по углу в пределах FOV. Без фильтра по команде —
+    /// целься в любого бота/игрока, пока аимбот активен.
+    /// </summary>
+    private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
     {
         Tracked best = null;
         float bestAngle = Fov;
@@ -58,7 +60,6 @@ public static class AimbotModule
         foreach (var t in tracked.Values)
         {
             if (t.Transform == null) continue;
-            if (!TargetTeammates && localTeam > 0 && t.Team == localTeam) continue;
 
             Vector3 head = t.Transform.position + Vector3.up * 1.8f;
             Vector3 foot = t.Transform.position;
