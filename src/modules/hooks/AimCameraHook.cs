@@ -9,14 +9,10 @@ public class AimCameraHook : MonoBehaviour
     private float _checkTimer;
     private const float CheckInterval = 1.0f;
 
-    void Awake()
-    {
-        _cam = GetComponent<Camera>();
-    }
+    void Awake() { _cam = GetComponent<Camera>(); }
 
     void Update()
     {
-        // Периодически обновляем ссылку на holder (мог появиться позже)
         _checkTimer += Time.deltaTime;
         if (_checkTimer >= CheckInterval)
         {
@@ -36,7 +32,6 @@ public class AimCameraHook : MonoBehaviour
             if (!AimbotModule.HasTarget) return;
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
-            // Обновляем holder, если ещё не нашли
             if (_holder == null && EspBehaviour.Instance != null)
                 _holder = EspBehaviour.Instance.MainCameraHolder;
 
