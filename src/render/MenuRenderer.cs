@@ -58,10 +58,6 @@ public static class MenuRenderer
         return size;
     }
 
-    /// <summary>
-    /// FOV-круг: едва заметная заливка + чёткая белая обводка.
-    /// Рисуется только если включён DrawFovCircle и aimbot активен.
-    /// </summary>
     public static void DrawFovCircle()
     {
         EnsureTextures();
@@ -76,11 +72,9 @@ public static class MenuRenderer
             Screen.height / 2f - fovScreen / 2f,
             fovScreen, fovScreen);
 
-        // Прозрачная заливка (очень лёгкая)
         GUI.color = new Color(1f, 1f, 1f, 0.04f);
         GUI.DrawTexture(rect, _circleTex);
 
-        // Чёткая белая обводка
         GUI.color = new Color(1f, 1f, 1f, 0.85f);
         GUI.DrawTexture(rect, _ringTex);
 
@@ -180,6 +174,17 @@ public static class MenuRenderer
             Plugin.CfgWatermarkX.Value = WatermarkModule.Position.x;
             Plugin.CfgWatermarkY.Value = WatermarkModule.Position.y;
         }
+        y += 46;
+
+        // Bind list переключатель — теперь в Render
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Show Bind List: {(BindListState.Enabled ? "ON" : "OFF")}", BindListState.Enabled, whiteTex))
+        {
+            BindListState.Enabled = !BindListState.Enabled;
+            Plugin.CfgShowBindList.Value = BindListState.Enabled;
+        }
+        y += 36;
+
+        GUI.Label(new Rect(bx, y, bw, 22), "Active binds are shown in the top-right corner.");
     }
 
     private static void DrawEspTab(float bx, float y, float bw, Texture2D whiteTex)
@@ -205,7 +210,6 @@ public static class MenuRenderer
         y += 36;
         if (CustomButton(new Rect(bx, y, bw, bh), $"Spec: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator, whiteTex))
         { TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator; Plugin.CfgShowSpectator.Value = TeamFilter.ShowSpectator; }
-        // OnlyEnemies убран — не отображаем
     }
 
     private static void DrawAimTab(float bx, float y, float bw, Texture2D whiteTex)
@@ -234,8 +238,6 @@ public static class MenuRenderer
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
         { AimbotModule.Smooth = Mathf.Min(50f, AimbotModule.Smooth + 5f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
         y += 36;
-
-        // Кнопка "Aim Teammates" убрана — теперь аим всегда на всех
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility: {(AimbotModule.VisibilityCheck ? "ON" : "OFF")}", AimbotModule.VisibilityCheck, whiteTex))
         { AimbotModule.VisibilityCheck = !AimbotModule.VisibilityCheck; Plugin.CfgAimbotVisibilityCheck.Value = AimbotModule.VisibilityCheck; }
