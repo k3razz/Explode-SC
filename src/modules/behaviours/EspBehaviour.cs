@@ -104,42 +104,13 @@ public class EspBehaviour : MonoBehaviour
     {
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
-        AttachAimHook();
     }
 
     void OnDestroy()
     {
+        AimRenderHook.Unsubscribe();
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
         if (Instance == this) Instance = null;
-    }
-
-    [HideFromIl2Cpp]
-    void AttachAimHook()
-    {
-        try
-        {
-            var mainCam = Camera.main;
-            if (mainCam == null) return;
-
-            // Проверка по имени типа через MonoBehaviours (GetComponent<T>() в Il2Cpp не всегда находит)
-            var behaviours = mainCam.GetComponents<MonoBehaviour>();
-            if (behaviours != null)
-            {
-                foreach (var b in behaviours)
-                {
-                    if (b == null) continue;
-                    if (b.GetType().Name == "AimCameraHook") return;
-                }
-            }
-
-            mainCam.gameObject.AddComponent<AimCameraHook>();
-            AimShared.MainCamera = mainCam;
-            Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to Main Camera");
-        }
-        catch (Exception e)
-        {
-            LogThrottled("aimhook_ex", $"[ESP] AttachAimHook EX: {e.Message}", true);
-        }
     }
 
     void Update()
@@ -174,7 +145,6 @@ public class EspBehaviour : MonoBehaviour
             {
                 _holderCheckTimer = 0f;
                 if (_mainCameraHolder == null || AimShared.MainCameraHolder == null) FindMainCameraHolder();
-                AttachAimHook();
             }
 
             _watchdogTimer += Time.deltaTime;
@@ -226,7 +196,6 @@ public class EspBehaviour : MonoBehaviour
             IntPtr ptr = Marshal.ReadIntPtr(localPlayer.Pointer, OFF_PC_MAINCAMHOLDER);
             if (ptr == IntPtr.Zero)
             {
-                // Не сбрасываем AimShared.MainCameraHolder, если уже был найден
                 Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null (offset 0x20 empty)");
                 return;
             }
