@@ -162,20 +162,42 @@ public class EspBehaviour : MonoBehaviour
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
 
-            // 1. Обновляем цель
+            // 1. Обновляем цель и направление на её актуальный центр бокса (каждый кадр)
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
 
-            // 2. Применяем поворот камеры прямо здесь (работает в любом рендер-пайплайне)
             if (!AimbotModule.HasTarget) return;
-            if (AimbotModule.TargetDirection.sqrMagnitude < 0.01f) return;
+            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
-            Vector3 camForward = _cam.transform.forward;
-            Quaternion delta = Quaternion.FromToRotation(camForward, AimbotModule.TargetDirection);
+            var camTr = _cam.transform;
+            Vector3 camForward = camTr.forward;
+            float angleToTarget = Vector3.Angle(camForward, AimbotModule.TargetDirection);
 
-            float t = Mathf.Clamp01(AimbotModule.Smooth * Time.deltaTime);
-            Quaternion smoothDelta = Quaternion.Slerp(Quaternion.identity, delta, t);
+            // 2. Мгновенный лок: Smooth <= 1 → жёстко ставим forward на цель.
+            //    Продолжает работать каждый кадр → камера "прилипает" и следует за целью.
+            if (AimbotModule.Smooth <= 1.01f)
+            {
+                // Сохраняем up-вектор, чтобы не было roll
+                camTr.rotation = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
+                return;
+            }
 
-            _cam.transform.rotation = smoothDelta * _cam.transform.rotation;
+            // 3. Плавный режим: скорость 720 / Smooth градусов в секунду.
+            float smooth = Mathf.Max(1.01f, AimbotModule.Smooth);
+            float maxDegPerSec = 720f / smooth;
+            float maxStep = maxDegPerSec * Time.deltaTime;
+
+            // Не поворачиваем больше, чем осталось до цели
+            float step = Mathf.Min(maxStep, angleToTarget);
+            if (step <= 0f) return;
+
+            Vector3 newForward = Vector3.RotateTowards(
+                camForward,
+                AimbotModule.TargetDirection,
+                step * Mathf.Deg2Rad,
+                0f);
+
+            Quaternion delta = Quaternion.FromToRotation(camForward, newForward);
+            camTr.rotation = delta * camTr.rotation;
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
     }
@@ -261,7 +283,6 @@ public class EspBehaviour : MonoBehaviour
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
 
-            // Панель активных биндов — всегда, независимо от меню
             BindListRenderer.Draw();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
