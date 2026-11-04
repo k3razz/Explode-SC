@@ -38,22 +38,18 @@ public static class BindListRenderer
         return v;
     }
 
-    /// <summary>
-    /// Рисует панель активных биндов. Показывается всегда, если есть хоть один активный бинд.
-    /// Строка = один бинд: "Aimbot [Mouse0] HOLD".
-    /// </summary>
     public static void Draw()
     {
         if (!BindListState.Enabled) return;
-        if (!KeybindState.IntroDone) return; // в интро не мешаем
+        if (!KeybindState.IntroDone) return;
 
         var active = new List<string>();
 
-        // Aimbot — показываем, только когда он реально активен
+        // AimLock — только когда активен по бинду
         if (AimbotModule.Enabled && KeybindState.AimbotActive)
         {
             string mode = KeybindState.ToggleMode ? "TOGGLE" : "HOLD";
-            active.Add($"Aimbot [{KeybindState.AimbotKey}] {mode}");
+            active.Add($"AimLock [{KeybindState.AimbotKey}] {mode}");
         }
 
         if (active.Count == 0) return;
