@@ -142,7 +142,7 @@ public static class MenuRenderer
         by += 30;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", UiState.MenuTab == 0, whiteTex)) UiState.MenuTab = 0;
         by += 34;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimBot", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimLock", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
         by += 34;
@@ -154,7 +154,7 @@ public static class MenuRenderer
 
         float cy = panelRect.y + 40;
         if (UiState.MenuTab == 0) DrawEspTab(contentX, cy, contentW, whiteTex);
-        else if (UiState.MenuTab == 1) DrawAimTab(contentX, cy, contentW, whiteTex);
+        else if (UiState.MenuTab == 1) DrawAimLockTab(contentX, cy, contentW, whiteTex);
         else if (UiState.MenuTab == 2) DrawRenderTab(contentX, cy, contentW, whiteTex);
     }
 
@@ -176,7 +176,6 @@ public static class MenuRenderer
         }
         y += 46;
 
-        // Bind list переключатель — в Render
         if (CustomButton(new Rect(bx, y, bw, bh), $"Show Bind List: {(BindListState.Enabled ? "ON" : "OFF")}", BindListState.Enabled, whiteTex))
         {
             BindListState.Enabled = !BindListState.Enabled;
@@ -212,37 +211,30 @@ public static class MenuRenderer
         { TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator; Plugin.CfgShowSpectator.Value = TeamFilter.ShowSpectator; }
     }
 
-    private static void DrawAimTab(float bx, float y, float bw, Texture2D whiteTex)
+    private static void DrawAimLockTab(float bx, float y, float bw, Texture2D whiteTex)
     {
         float bh = 30;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Aimbot: {(AimbotModule.Enabled ? "ON" : "OFF")}", AimbotModule.Enabled, whiteTex))
+
+        // Глобальное вкл/выкл
+        if (CustomButton(new Rect(bx, y, bw, bh), $"AimLock: {(AimbotModule.Enabled ? "ON" : "OFF")}", AimbotModule.Enabled, whiteTex))
         { AimbotModule.Enabled = !AimbotModule.Enabled; Plugin.CfgAimbotEnabled.Value = AimbotModule.Enabled; }
         y += 36;
 
+        // FOV Circle (визуал)
         if (CustomButton(new Rect(bx, y, bw, bh), $"FOV Circle: {(AimbotModule.DrawFovCircle ? "ON" : "OFF")}", AimbotModule.DrawFovCircle, whiteTex))
         { AimbotModule.DrawFovCircle = !AimbotModule.DrawFovCircle; }
         y += 36;
 
+        // FOV (радиус, в котором ищется цель)
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {AimbotModule.Fov:F0}°");
         y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
         { AimbotModule.Fov = Mathf.Max(1f, AimbotModule.Fov - 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Fov = Mathf.Min(90f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
+        { AimbotModule.Fov = Mathf.Min(180f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         y += 36;
 
-        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {AimbotModule.Smooth:F0} (1 = LOCK)");
-        y += 24;
-        if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
-        { AimbotModule.Smooth = Mathf.Max(1f, AimbotModule.Smooth - 1f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
-        if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Smooth = Mathf.Min(50f, AimbotModule.Smooth + 1f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility: {(AimbotModule.VisibilityCheck ? "ON" : "OFF")}", AimbotModule.VisibilityCheck, whiteTex))
-        { AimbotModule.VisibilityCheck = !AimbotModule.VisibilityCheck; Plugin.CfgAimbotVisibilityCheck.Value = AimbotModule.VisibilityCheck; }
-        y += 36;
-
+        // Mode
         if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}", KeybindState.ToggleMode, whiteTex))
         {
             KeybindState.ToggleMode = !KeybindState.ToggleMode;
@@ -250,6 +242,7 @@ public static class MenuRenderer
         }
         y += 36;
 
+        // Bind
         string keyName = KeybindState.Capturing ? "PRESS KEY... (Esc)" : KeybindState.AimbotKey.ToString();
         if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", KeybindState.Capturing, whiteTex))
         {
