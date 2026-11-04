@@ -12,8 +12,8 @@ public static class Watermark
     private static void EnsureRoundedTexture()
     {
         if (_roundedTex != null) return;
-        int size = 32;
-        int radius = 8;
+        int size = 64;
+        int radius = 16;
         _roundedTex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         _roundedTex.filterMode = FilterMode.Bilinear;
         _roundedTex.wrapMode = TextureWrapMode.Clamp;
@@ -30,12 +30,11 @@ public static class Watermark
                 else if (y >= size - radius) dy = y - (size - radius - 1);
 
                 float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                byte a = dist <= radius ? (byte)255 : (byte)0;
-                // Сглаживание
-                if (dist > radius - 1 && dist <= radius + 1)
-                    a = (byte)(Mathf.Clamp01(radius + 1 - dist) * 255);
+                byte a = 0;
+                if (dist <= radius - 1) a = 255;
+                else if (dist <= radius + 1) a = (byte)(Mathf.Clamp01(radius + 1 - dist) * 255);
 
-                pixels[y * size + x] = new Color32(0, 0, 0, a); // Черный цвет с прозрачностью
+                pixels[y * size + x] = new Color32(0, 0, 0, a);
             }
         }
         _roundedTex.SetPixels32(pixels);
@@ -51,8 +50,8 @@ public static class Watermark
             _lastText = text;
             _lastUpdate = Time.time;
         }
-        float padX = 12f;
-        float padY = 6f;
+        float padX = 14f;
+        float padY = 8f;
         float w = _lastSize.x + padX * 2f;
         float h = _lastSize.y + padY * 2f;
         return new Rect(WatermarkModule.Position.x - w / 2f, WatermarkModule.Position.y - h / 2f, w, h);
@@ -63,7 +62,7 @@ public static class Watermark
         if (!WatermarkModule.Enabled) return;
         Rect rect = GetRect();
         GUI.color = Color.white;
-        GUI.Label(new Rect(rect.x + 12f, rect.y + 6f, rect.width - 24f, rect.height - 12f), _lastText);
+        GUI.Label(new Rect(rect.x + 14f, rect.y + 8f, rect.width - 28f, rect.height - 16f), _lastText);
         GUI.color = Color.white;
     }
 
@@ -100,8 +99,8 @@ public static class Watermark
         if (!WatermarkModule.Enabled) return;
         EnsureRoundedTexture();
         Rect rect = GetRect();
-        GUI.color = new Color(0f, 0f, 0f, 0.85f);
-        GUI.DrawTexture(rect, _roundedTex); // Используем кастомную скругленную текстуру
+        GUI.color = new Color(1f, 1f, 1f, 0.85f);
+        GUI.DrawTexture(rect, _roundedTex);
         GUI.color = Color.white;
     }
 }
