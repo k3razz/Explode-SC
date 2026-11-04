@@ -34,6 +34,8 @@ public class EspBehaviour : MonoBehaviour
     private float _holderCheckTimer;
     private const float HolderCheckInterval = 2.0f;
 
+    // Il2Cpp-делегат для Camera.onPreCull
+    private Camera.CameraCallback _preCullDelegate;
     private bool _preCullSubscribed;
 
     private const int OFF_PM_CFOG = 0x40;
@@ -83,10 +85,11 @@ public class EspBehaviour : MonoBehaviour
 
             BindListState.Enabled = Plugin.CfgShowBindList.Value;
 
-            // Подписка на Camera.onPreCull — выполняется ПОСЛЕ всех LateUpdate игры
+            // Подписка на Camera.onPreCull (Il2Cpp: не event, а делегат-поле)
             try
             {
-                Camera.onPreCull += OnCamPreCull;
+                _preCullDelegate = new Camera.CameraCallback(OnCamPreCull);
+                Camera.onPreCull = (Camera.CameraCallback)Delegate.Combine(Camera.onPreCull, _preCullDelegate);
                 _preCullSubscribed = true;
                 Plugin.LogSource?.LogInfo("[ESP] Subscribed to Camera.onPreCull");
             }
@@ -118,20 +121,17 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (_preCullSubscribed)
+            if (_preCullSubscribed && _preCullDelegate != null)
             {
-                Camera.onPreCull -= OnCamPreCull;
+                Camera.onPreCull = (Camera.CameraCallback)Delegate.Remove(Camera.onPreCull, _preCullDelegate);
                 _preCullSubscribed = false;
+                _preCullDelegate = null;
             }
         }
         catch { }
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
     }
 
-    /// <summary>
-    /// Вызывается ПЕРЕД рендером камеры, ПОСЛЕ всех LateUpdate игры.
-    /// Здесь ставим rotation _mainCameraHolder — до рендера и до стрельбы следующего кадра.
-    /// </summary>
     void OnCamPreCull(Camera cam)
     {
         try
@@ -140,12 +140,9 @@ public class EspBehaviour : MonoBehaviour
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
-
-            // Только для активной камеры
-            if (_cam != null && cam != _cam) return;
             if (cam == null) return;
+            if (_cam != null && cam != _cam) return;
 
-            // Поворот без roll: yaw+pitch, z=0
             Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
             Vector3 e = look.eulerAngles;
             Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
@@ -221,7 +218,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Только обновляем цель/направление каждый кадр. Поворот — в OnCamPreCull.
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
