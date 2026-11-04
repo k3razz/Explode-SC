@@ -12,31 +12,14 @@ public static class TeamFilter
 
 public static class KeybindState
 {
-    public static KeyCode AimbotKey = KeyCode.Mouse1;
-    public static bool ToggleMode = false;
-    public static bool Capturing = false;
-    public static KeyCode CapturingBackup = KeyCode.None;
-
     public static KeyCode MenuKey = KeyCode.Insert;
 
-    public static bool IntroPlayed = false;  
-    public static bool IntroActive = false;   
+    public static bool IntroPlayed = false;
+    public static bool IntroActive = false;
     public static float IntroAnimTime = 0f;
-    public static bool IntroDone = false;   
+    public static bool IntroDone = false;
 
     public static bool MenuOpen = false;
-    public static float MenuAnimTime = 0f;  
-    public static bool LastKeyState = false;
-}
-
-public static class AimbotState
-{
-    private static bool _active = false;
-    public static bool Active
-    {
-        get => _active;
-        set { _active = value; }
-    }
 }
 
 public static class UiState
