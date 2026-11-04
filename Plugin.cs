@@ -77,8 +77,6 @@ public class Plugin : BasePlugin
             AddComponent<KeybindListener>();
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
 
-            AimRenderHook.Subscribe();
-
             Log.LogInfo("[ESP] Components added");
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
