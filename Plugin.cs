@@ -73,10 +73,11 @@ public class Plugin : BasePlugin
 
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
-            ClassInjector.RegisterTypeInIl2Cpp<AimCameraHook>();
 
             AddComponent<KeybindListener>();
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
+
+            AimRenderHook.Subscribe();
 
             Log.LogInfo("[ESP] Components added");
         }
