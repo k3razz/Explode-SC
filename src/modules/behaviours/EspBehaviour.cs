@@ -203,9 +203,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Обновляем цель/направление каждый кадр.
-            // Поворот _mainCameraHolder делает AimControllerPatches (Harmony Postfix на Controller.Tick)
-            // или AimCameraHook.OnPreCull как fallback.
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
@@ -219,8 +216,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            _mainCameraHolder = null;
-
             var pm = FindPlayerManager();
             if (pm == null) return;
 
@@ -232,8 +227,8 @@ public class EspBehaviour : MonoBehaviour
             IntPtr ptr = Marshal.ReadIntPtr(localPlayer.Pointer, OFF_PC_MAINCAMHOLDER);
             if (ptr == IntPtr.Zero)
             {
+                // Не сбрасываем AimShared.MainCameraHolder, если уже был найден
                 Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null (offset 0x20 empty)");
-                AimShared.MainCameraHolder = null;
                 return;
             }
 
@@ -248,8 +243,6 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e)
         {
             Plugin.LogSource?.LogError($"[ESP] FindMainCameraHolder EX: {e.Message}");
-            _mainCameraHolder = null;
-            AimShared.MainCameraHolder = null;
         }
     }
 
