@@ -58,15 +58,32 @@ public static class MenuRenderer
         return size;
     }
 
+    /// <summary>
+    /// FOV-круг: едва заметная заливка + чёткая белая обводка.
+    /// Рисуется только если включён DrawFovCircle и aimbot активен.
+    /// </summary>
     public static void DrawFovCircle()
     {
-        MenuRenderer.EnsureTextures();
+        EnsureTextures();
+        if (!AimbotModule.DrawFovCircle) return;
+        if (!AimbotModule.Enabled) return;
+
         float fovScreen = AimbotModule.Fov * (Screen.height / 90f);
         if (fovScreen <= 0) return;
+
+        var rect = new Rect(
+            Screen.width / 2f - fovScreen / 2f,
+            Screen.height / 2f - fovScreen / 2f,
+            fovScreen, fovScreen);
+
+        // Прозрачная заливка (очень лёгкая)
         GUI.color = new Color(1f, 1f, 1f, 0.04f);
-        GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
-        GUI.color = new Color(1f, 1f, 1f, 0.7f);
-        GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _ringTex);
+        GUI.DrawTexture(rect, _circleTex);
+
+        // Чёткая белая обводка
+        GUI.color = new Color(1f, 1f, 1f, 0.85f);
+        GUI.DrawTexture(rect, _ringTex);
+
         GUI.color = Color.white;
     }
 
@@ -188,9 +205,7 @@ public static class MenuRenderer
         y += 36;
         if (CustomButton(new Rect(bx, y, bw, bh), $"Spec: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator, whiteTex))
         { TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator; Plugin.CfgShowSpectator.Value = TeamFilter.ShowSpectator; }
-        y += 46;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Only enemies: {(TeamFilter.OnlyEnemies ? "ON" : "OFF")}", TeamFilter.OnlyEnemies, whiteTex))
-        { TeamFilter.OnlyEnemies = !TeamFilter.OnlyEnemies; Plugin.CfgOnlyEnemies.Value = TeamFilter.OnlyEnemies; }
+        // OnlyEnemies убран — не отображаем
     }
 
     private static void DrawAimTab(float bx, float y, float bw, Texture2D whiteTex)
@@ -220,9 +235,7 @@ public static class MenuRenderer
         { AimbotModule.Smooth = Mathf.Min(50f, AimbotModule.Smooth + 5f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
         y += 36;
 
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Aim Teammates: {(AimbotModule.TargetTeammates ? "ON" : "OFF")}", AimbotModule.TargetTeammates, whiteTex))
-        { AimbotModule.TargetTeammates = !AimbotModule.TargetTeammates; Plugin.CfgAimbotTargetTeammates.Value = AimbotModule.TargetTeammates; }
-        y += 36;
+        // Кнопка "Aim Teammates" убрана — теперь аим всегда на всех
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility: {(AimbotModule.VisibilityCheck ? "ON" : "OFF")}", AimbotModule.VisibilityCheck, whiteTex))
         { AimbotModule.VisibilityCheck = !AimbotModule.VisibilityCheck; Plugin.CfgAimbotVisibilityCheck.Value = AimbotModule.VisibilityCheck; }
