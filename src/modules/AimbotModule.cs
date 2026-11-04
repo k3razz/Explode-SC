@@ -10,6 +10,7 @@ public static class AimbotModule
     public static float Smooth = 15f;
     public static bool TargetTeammates = false;
     public static bool VisibilityCheck = false;
+    public static bool DrawFovCircle = false;
 
     public static void Update(Camera cam, int localTeam, Dictionary<int, Tracked> tracked)
     {
