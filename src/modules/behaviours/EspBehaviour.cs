@@ -85,16 +85,6 @@ public class EspBehaviour : MonoBehaviour
 
             BindListState.Enabled = Plugin.CfgShowBindList.Value;
 
-            // Подписка на Camera.onPreCull (Il2Cpp: не event, а делегат-поле)
-            try
-            {
-                _preCullDelegate = new Camera.CameraCallback(OnCamPreCull);
-                Camera.onPreCull = (Camera.CameraCallback)Delegate.Combine(Camera.onPreCull, _preCullDelegate);
-                _preCullSubscribed = true;
-                Plugin.LogSource?.LogInfo("[ESP] Subscribed to Camera.onPreCull");
-            }
-            catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] onPreCull subscribe EX: {e.Message}"); }
-
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
