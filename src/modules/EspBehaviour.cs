@@ -76,13 +76,6 @@ public class EspBehaviour : MonoBehaviour
                 Plugin.LogSource?.LogInfo("[ESP] Intro animation started");
             }
 
-            var camObj = Camera.main;
-            if (camObj != null && camObj.GetComponent<AimCameraHook>() == null)
-            {
-                camObj.gameObject.AddComponent<AimCameraHook>();
-                Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to camera");
-            }
-
             Debug.Log("[ESP] ===== Awake() done =====");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
@@ -322,48 +315,89 @@ public class EspBehaviour : MonoBehaviour
         return ReadTeamFromMember(_playerTeamMember, component);
     }
 
+    // =========================================================
+    //           ЛОКАЛЬНЫЙ ИГРОК (PlayerManager : LazySingleton)
+    // =========================================================
     void UpdateLocalTeam()
     {
         try
         {
             if (_playerManagerType == null) return;
+
+            // 1. Ищем Instance через LazySingleton<PlayerManager>
             object pmInstance = null;
+
             var instProp = _playerManagerType.GetProperty("Instance",
-                (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
+                (Il2CppSystem.Reflection.BindingFlags)(int)(
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy));
             if (instProp != null) pmInstance = instProp.GetValue(null);
 
             if (pmInstance == null)
             {
-                foreach (var n in new[] { "_instance", "s_Instance", "m_Instance", "instance" })
+                foreach (var n in new[] { "_instance", "s_Instance", "m_Instance" })
                 {
                     var f = _playerManagerType.GetField(n,
-                        (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+                        (Il2CppSystem.Reflection.BindingFlags)(int)(
+                            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
                     if (f != null) { pmInstance = f.GetValue(null); break; }
-                    var p = _playerManagerType.GetProperty(n,
-                        (Il2CppSystem.Reflection.BindingFlags)(int)(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
-                    if (p != null) { pmInstance = p.GetValue(null); break; }
                 }
             }
 
             if (pmInstance == null)
             {
-                var pmc = FindObjectOfType(_playerManagerType);
-                if (pmc != null) pmInstance = pmc;
+                var baseType = _playerManagerType.BaseType;
+                if (baseType != null)
+                {
+                    var baseInst = baseType.GetProperty("Instance",
+                        (Il2CppSystem.Reflection.BindingFlags)(int)(
+                            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy));
+                    if (baseInst != null) pmInstance = baseInst.GetValue(null);
+
+                    if (pmInstance == null)
+                    {
+                        var baseField = baseType.GetField("_instance",
+                            (Il2CppSystem.Reflection.BindingFlags)(int)(
+                                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+                        if (baseField != null) pmInstance = baseField.GetValue(null);
+                    }
+                }
             }
 
-            if (pmInstance == null) { LogThrottled("pm_null", "[ESP] PlayerManager not found", true); return; }
+            if (pmInstance == null)
+            {
+                LogThrottled("pm_null", "[ESP] PlayerManager.Instance not found", true);
+                return;
+            }
 
+            // 2. Читаем локального игрока
             object localPlayer = null;
             var pmManagedType = pmInstance.GetType();
-            var cfogProp = pmManagedType.GetProperty("cfog", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            var cfogProp = pmManagedType.GetProperty("cfog",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (cfogProp != null) localPlayer = cfogProp.GetValue(pmInstance);
+
             if (localPlayer == null)
             {
-                var cfogField = pmManagedType.GetField("_cfog_k__BackingField", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var cfogField = pmManagedType.GetField("<cfog>k__BackingField",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (cfogField != null) localPlayer = cfogField.GetValue(pmInstance);
             }
-            if (localPlayer == null) { LogThrottled("cfog_null", "[ESP] localPlayer is null", true); return; }
 
+            if (localPlayer == null)
+            {
+                var ofc = pmManagedType.GetMethod("ofc",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (ofc != null) localPlayer = ofc.Invoke(pmInstance, null);
+            }
+
+            if (localPlayer == null)
+            {
+                LogThrottled("cfog_null", "[ESP] localPlayer is null", true);
+                return;
+            }
+
+            // 3. Читаем команду
             int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
             if (newTeam != _localTeam && newTeam >= 0)
             {
