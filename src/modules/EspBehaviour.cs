@@ -53,6 +53,15 @@ public class EspBehaviour : MonoBehaviour
             EspModule.NamesEnabled = Plugin.CfgEspNames.Value;
             EspModule.DistanceEnabled = Plugin.CfgEspDistance.Value;
 
+            AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
+            AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
+            AimbotModule.Smooth = Plugin.CfgAimbotSmooth.Value;
+            AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
+            AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
+
+            KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
+            if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
+
             WatermarkModule.Enabled = Plugin.CfgWatermarkEnabled.Value;
             WatermarkModule.Position = new Vector2(Plugin.CfgWatermarkX.Value, Plugin.CfgWatermarkY.Value);
 
@@ -125,6 +134,18 @@ public class EspBehaviour : MonoBehaviour
             }
         }
         catch (Exception e) { LogThrottled("update_ex", $"[ESP] Update EX: {e}", true); _scanTimer = 0f; }
+    }
+
+    void LateUpdate()
+    {
+        try
+        {
+            if (!AimbotModule.Enabled || !KeybindState.AimbotActive) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
+            AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
+        }
+        catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
     }
 
     void OnGUI()
@@ -228,7 +249,7 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimbot={AimbotModule.Enabled}, active={KeybindState.AimbotActive}");
             }
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
