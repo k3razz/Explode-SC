@@ -5,7 +5,7 @@ namespace MyDynamicESP;
 
 public static class BindListState
 {
-    public static bool Enabled = true; // управляется из Misc
+    public static bool Enabled = true;
 }
 
 public static class BindListRenderer
@@ -17,8 +17,8 @@ public static class BindListRenderer
     private const float PadY = 6f;
     private const float RowH = 18f;
     private const float Gap = 6f;
-    private const float BaseY = 80f;      // от верхнего края
-    private const float RightOffset = 20f; // от правого края
+    private const float BaseY = 80f;
+    private const float RightOffset = 20f;
 
     public static void EnsureTextures()
     {
@@ -39,42 +39,32 @@ public static class BindListRenderer
     }
 
     /// <summary>
-    /// Рисует панель активных биндов. Если ничего не активно — панель не показывается.
+    /// Рисует панель активных биндов. Показывается всегда, если есть хоть один активный бинд.
+    /// Строка = один бинд: "Aimbot [Mouse0] HOLD".
     /// </summary>
     public static void Draw()
     {
         if (!BindListState.Enabled) return;
-        if (!KeybindState.IntroDone || !KeybindState.MenuOpen) return; // не мешаем в интро/закрытом меню
+        if (!KeybindState.IntroDone) return; // в интро не мешаем
 
-        // Собираем активные бинды
-        var active = new List<(string label, bool on)>();
+        var active = new List<string>();
 
-        // Aimbot: активен, если AimbotModule.Enabled
-        if (AimbotModule.Enabled)
-            active.Add(("Aimbot", true));
-
-        // Toggle/Hold-статус — только если сам aimbot включён
+        // Aimbot — показываем, только когда он реально активен
         if (AimbotModule.Enabled && KeybindState.AimbotActive)
-            active.Add(("Aimbot [HOLD]" + (KeybindState.ToggleMode ? " (toggle)" : ""), true));
-
-        // ESP
-        if (EspModule.BoxesEnabled) active.Add(("ESP Boxes", true));
-        if (EspModule.NamesEnabled) active.Add(("ESP Names", true));
-        if (EspModule.DistanceEnabled) active.Add(("ESP Distance", true));
-
-        // Watermark
-        if (WatermarkModule.Enabled) active.Add(("Watermark", true));
+        {
+            string mode = KeybindState.ToggleMode ? "TOGGLE" : "HOLD";
+            active.Add($"Aimbot [{KeybindState.AimbotKey}] {mode}");
+        }
 
         if (active.Count == 0) return;
 
         EnsureTextures();
         if (_bgTex == null) return;
 
-        // Вычисляем ширину/высоту панели
         float maxW = 0f;
-        foreach (var a in active)
+        foreach (var s in active)
         {
-            var sz = Size(a.label);
+            var sz = Size(s);
             if (sz.x > maxW) maxW = sz.x;
         }
         float panelW = maxW + PadX * 2f;
@@ -83,19 +73,16 @@ public static class BindListRenderer
         float px = Screen.width - panelW - RightOffset;
         float py = BaseY;
 
-        // Фон
         GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.85f);
         GUI.DrawTexture(new Rect(px, py, panelW, panelH), _bgTex);
-        // Акцентная полоса слева
         GUI.color = new Color(1f, 0.2f, 0.2f, 1f);
         GUI.DrawTexture(new Rect(px, py, 3f, panelH), _bgTex);
         GUI.color = Color.white;
 
-        // Строки
         float y = py + PadY;
-        foreach (var a in active)
+        foreach (var s in active)
         {
-            GUI.Label(new Rect(px + PadX, y, panelW - PadX, RowH), a.label);
+            GUI.Label(new Rect(px + PadX, y, panelW - PadX, RowH), s);
             y += RowH + Gap;
         }
 
