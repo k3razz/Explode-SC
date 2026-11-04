@@ -5,43 +5,29 @@ namespace MyDynamicESP;
 public class AimCameraHook : MonoBehaviour
 {
     private Camera _cam;
-    private Transform _holder;
-    private float _checkTimer;
-    private const float CheckInterval = 1.0f;
 
-    void Awake() { _cam = GetComponent<Camera>(); }
-
-    void Update()
+    void Awake()
     {
-        _checkTimer += Time.deltaTime;
-        if (_checkTimer >= CheckInterval)
-        {
-            _checkTimer = 0f;
-            if (_holder == null && EspBehaviour.Instance != null)
-                _holder = EspBehaviour.Instance.MainCameraHolder;
-        }
+        _cam = GetComponent<Camera>();
     }
 
     void OnPreCull()
     {
         try
         {
-            if (_cam == null) return;
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
-            if (_holder == null && EspBehaviour.Instance != null)
-                _holder = EspBehaviour.Instance.MainCameraHolder;
-
             Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
             Vector3 e = look.eulerAngles;
             Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
 
-            if (_holder != null)
-                _holder.rotation = targetRot;
-            else
+            var holder = AimShared.MainCameraHolder;
+            if (holder != null)
+                holder.rotation = targetRot;
+            else if (_cam != null)
                 _cam.transform.rotation = targetRot;
         }
         catch { }
