@@ -23,6 +23,16 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgShowTr;
     public static ConfigEntry<bool> CfgShowCt;
     public static ConfigEntry<bool> CfgShowSpectator;
+
+    // --- AIMBOT CONFIGS ---
+    public static ConfigEntry<bool> CfgAimbotEnabled;
+    public static ConfigEntry<float> CfgAimbotFov;
+    public static ConfigEntry<float> CfgAimbotSmooth;
+    public static ConfigEntry<bool> CfgAimbotTargetTeammates;
+    public static ConfigEntry<bool> CfgAimbotVisibilityCheck;
+    public static ConfigEntry<bool> CfgAimbotToggleMode;
+    public static ConfigEntry<string> CfgAimbotKey;
+
     public static ConfigEntry<bool> CfgWatermarkEnabled;
     public static ConfigEntry<float> CfgWatermarkX;
     public static ConfigEntry<float> CfgWatermarkY;
@@ -44,6 +54,14 @@ public class Plugin : BasePlugin
             CfgShowTr = ConfigFile.Bind("ESP", "ShowTr", true);
             CfgShowCt = ConfigFile.Bind("ESP", "ShowCt", true);
             CfgShowSpectator = ConfigFile.Bind("ESP", "ShowSpectator", false);
+
+            CfgAimbotEnabled = ConfigFile.Bind("Aimbot", "Enabled", false);
+            CfgAimbotFov = ConfigFile.Bind("Aimbot", "Fov", 15f);
+            CfgAimbotSmooth = ConfigFile.Bind("Aimbot", "Smooth", 15f);
+            CfgAimbotTargetTeammates = ConfigFile.Bind("Aimbot", "TargetTeammates", false);
+            CfgAimbotVisibilityCheck = ConfigFile.Bind("Aimbot", "VisibilityCheck", false);
+            CfgAimbotToggleMode = ConfigFile.Bind("Aimbot", "ToggleMode", false);
+            CfgAimbotKey = ConfigFile.Bind("Aimbot", "Key", "Mouse1");
 
             CfgWatermarkEnabled = ConfigFile.Bind("Render", "WatermarkEnabled", true);
             CfgWatermarkX = ConfigFile.Bind("Render", "WatermarkX", -1f);
