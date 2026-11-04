@@ -26,15 +26,15 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
 
-    // Кэш локального PlayerManager (MonoBehaviour, ищем FindObjectOfType)
+    // Кэш локального PlayerManager
     private Component _cachedPm;
     private float _pmRetryTimer;
     private const float PmRetryInterval = 2.0f;
 
     // Оффсеты из дампа v2_07
-    private const int OFF_PM_CFOG        = 0x40;  // PlayerManager.<cfog>k__BackingField (PlayerController)
-    private const int OFF_PC_CFMP        = 0x159; // PlayerController.<cfmp>k__BackingField (byte Team)
-    private const int OFF_PC_CFLV        = 0xC8;  // PlayerController.<cflv>k__BackingField (BotPlayerController)
+    private const int OFF_PM_CFOG = 0x40;   // PlayerManager.<cfog>k__BackingField (PlayerController)
+    private const int OFF_BOT_TEAM = 0x24;  // BotPlayerController: рабочий оффсет команды (как было)
+    private const int OFF_PC_CFMP = 0x159;  // PlayerController.<cfmp>k__BackingField (byte Team)
 
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 1.5f;
@@ -268,7 +268,7 @@ public class EspBehaviour : MonoBehaviour
     }
 
     // =========================================================
-    //   ХЕЛПЕРЫ (HideFromIl2Cpp, чтобы Il2CppInterop их не маршалил)
+    //   ХЕЛПЕРЫ (HideFromIl2Cpp)
     // =========================================================
 
     [HideFromIl2Cpp]
@@ -301,13 +301,47 @@ public class EspBehaviour : MonoBehaviour
         catch { return -1; }
     }
 
+    /// <summary>
+    /// Команда для ботов — как работало раньше: 0x24.
+    /// Для локального игрока (isBot=false) сюда НЕ ходим — используем ReadTeamViaCfmp.
+    /// </summary>
     [HideFromIl2Cpp]
     int ReadTeam(Component component, bool isBot)
     {
         if (component == null) return -1;
 
-        // PlayerController.<cfmp>k__BackingField @ 0x159 (byte Team)
-        // Наследуется и у BotPlayerController : PlayerController
+        if (isBot)
+        {
+            // Проверенный рабочий путь для ботов
+            int offTeam = ReadByteAtOffset(component, OFF_BOT_TEAM);
+            if (offTeam > 0 && offTeam <= 3) return offTeam;
+
+            // Fallback: property cfmp
+            int viaCfmp = ReadTeamViaCfmp(component);
+            if (viaCfmp >= 0) return viaCfmp;
+
+            return -1;
+        }
+
+        // Обычный PlayerController (не бот) — команда через cfmp
+        return ReadTeamViaCfmp(component);
+    }
+
+    /// <summary>
+    /// Чтение cfmp (команда) у PlayerController.
+    /// Сначала через managed-свойство (как вы уже находили get__cfmp_k__BackingField),
+    /// затем через прямой offset 0x159 как fallback.
+    /// </summary>
+    [HideFromIl2Cpp]
+    int ReadTeamViaCfmp(Component component)
+    {
+        if (component == null) return -1;
+
+        // 1. Через сохранённый MemberInfo (найден в ResolveTypes)
+        int viaMember = ReadTeamFromMember(_playerTeamMember, component);
+        if (viaMember > 0 && viaMember <= 3) return viaMember;
+
+        // 2. Прямой offset <cfmp>k__BackingField @ 0x159 (byte)
         try
         {
             int t = Marshal.ReadByte(component.Pointer, OFF_PC_CFMP);
@@ -315,8 +349,7 @@ public class EspBehaviour : MonoBehaviour
         }
         catch { }
 
-        // Fallback: property cfmp через managed-рефлексию (может не сработать)
-        return ReadTeamFromMember(_playerTeamMember, component);
+        return -1;
     }
 
     // =========================================================
@@ -328,19 +361,12 @@ public class EspBehaviour : MonoBehaviour
     {
         if (_playerManagerType == null) return null;
 
-        // 1. Кэш ещё жив?
         if (_cachedPm != null)
         {
-            try
-            {
-                var p = _cachedPm.Pointer;
-                if (p != IntPtr.Zero) return _cachedPm;
-            }
-            catch { }
+            try { if (_cachedPm.Pointer != IntPtr.Zero) return _cachedPm; } catch { }
             _cachedPm = null;
         }
 
-        // 2. FindObjectOfType по Il2Cpp-типу
         try
         {
             var obj = UnityEngine.Object.FindObjectOfType(_playerManagerType);
@@ -427,7 +453,6 @@ public class EspBehaviour : MonoBehaviour
         {
             if (_playerManagerType == null) return;
 
-            // Троттлинг попыток найти PM, если его нет
             if (_cachedPm == null)
             {
                 _pmRetryTimer += Time.deltaTime;
@@ -449,7 +474,8 @@ public class EspBehaviour : MonoBehaviour
                 return;
             }
 
-            int newTeam = ReadTeam(localPlayer, false);
+            // Локальный игрок — обычный PlayerController, команда через cfmp
+            int newTeam = ReadTeamViaCfmp(localPlayer);
             if (newTeam >= 0 && newTeam != _localTeam)
             {
                 Plugin.LogSource?.LogInfo($"[ESP] Local team: {_localTeam} -> {newTeam}");
@@ -525,7 +551,6 @@ public class EspBehaviour : MonoBehaviour
             var bt = FindTypeByName("BotPlayerController", out _);
             var pt = FindTypeByName("PlayerController", out _);
 
-            // PlayerManager: сначала пробуем полное имя из Chillow.StandChillow.Player
             var pmType = FindTypeByFullName("Chillow.StandChillow.Player.PlayerManager")
                          ?? FindTypeByName("PlayerManager", out _);
 
