@@ -2,7 +2,6 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Logging;
-using HarmonyLib;
 using UnityEngine;
 using System;
 using System.IO;
@@ -25,10 +24,8 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgShowCt;
     public static ConfigEntry<bool> CfgShowSpectator;
 
-    // AimLock configs
     public static ConfigEntry<bool> CfgAimbotEnabled;
     public static ConfigEntry<float> CfgAimbotFov;
-    public static ConfigEntry<float> CfgAimbotSmooth;
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
 
@@ -58,7 +55,6 @@ public class Plugin : BasePlugin
 
             CfgAimbotEnabled = ConfigFile.Bind("AimLock", "Enabled", false);
             CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 15f);
-            CfgAimbotSmooth = ConfigFile.Bind("AimLock", "Smooth", 15f);
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
 
@@ -81,15 +77,6 @@ public class Plugin : BasePlugin
 
             AddComponent<KeybindListener>();
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
-
-            // Harmony — патчим Controller.Tick / LateUpdate для AimController
-            try
-            {
-                var harmony = new Harmony("com.you.dynamicesp.harmony");
-                harmony.PatchAll(typeof(AimControllerPatches).Assembly);
-                Log.LogInfo("[ESP] Harmony patches applied");
-            }
-            catch (Exception he) { Log.LogError($"[ESP] Harmony patch EX: {he}"); }
 
             Log.LogInfo("[ESP] Components added");
         }
