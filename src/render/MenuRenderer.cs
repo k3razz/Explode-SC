@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace MyDynamicESP;
 
@@ -10,6 +11,7 @@ public static class MenuRenderer
 
     private static Texture2D _circleTex;
     private static Texture2D _ringTex;
+    private static readonly Dictionary<string, Vector2> _textCache = new();
 
     public static void EnsureTextures()
     {
@@ -48,19 +50,14 @@ public static class MenuRenderer
         return tex;
     }
 
-    // GPU-версия FOV-круга для OnPostRender
-    public static void DrawFovCircleGPU()
+    private static Vector2 GetTextSize(string text)
     {
-        MenuRenderer.EnsureTextures();
-        float fovScreen = AimbotModule.Fov * (Screen.height / 90f);
-        if (fovScreen <= 0) return;
-        float cx = Screen.width / 2f - fovScreen / 2f;
-        float cy = Screen.height / 2f - fovScreen / 2f;
-        Graphics.DrawTexture(new Rect(cx, cy, fovScreen, fovScreen), _circleTex, new Color(1f, 1f, 1f, 0.04f));
-        Graphics.DrawTexture(new Rect(cx, cy, fovScreen, fovScreen), _ringTex, new Color(1f, 1f, 1f, 0.7f));
+        if (_textCache.TryGetValue(text, out var size)) return size;
+        size = GUI.skin.label.CalcSize(new GUIContent(text));
+        _textCache[text] = size;
+        return size;
     }
 
-    // Старая версия для OnGUI (fallback)
     public static void DrawFovCircle()
     {
         MenuRenderer.EnsureTextures();
@@ -262,7 +259,7 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
+        Vector2 size = GetTextSize(label);
         float x = rect.x + (rect.width - size.x) / 2f;
         float y = rect.y + (rect.height - size.y) / 2f;
         GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
@@ -278,7 +275,7 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
+        Vector2 size = GetTextSize(label);
         float x = rect.x + (rect.width - size.x) / 2f;
         float y = rect.y + (rect.height - size.y) / 2f;
         GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);

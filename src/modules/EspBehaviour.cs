@@ -49,10 +49,6 @@ public class EspBehaviour : MonoBehaviour
             enabled = true;
             gameObject.SetActive(true);
 
-            // Добавляем OverlayRenderer на этот же GameObject
-            if (GetComponent<OverlayRenderer>() == null)
-                gameObject.AddComponent<OverlayRenderer>();
-
             EspModule.BoxesEnabled = Plugin.CfgEspBoxes.Value;
             EspModule.NamesEnabled = Plugin.CfgEspNames.Value;
             EspModule.DistanceEnabled = Plugin.CfgEspDistance.Value;
@@ -154,10 +150,50 @@ public class EspBehaviour : MonoBehaviour
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
             if (_cam == null) return;
 
-            // ESP-боксы и FOV-круг рисуются в OverlayRenderer.OnPostRender (GPU)
-            // Здесь только текст (ники) и меню
+            // 1. ESP-боксы
+            if (EspModule.BoxesEnabled)
+            {
+                foreach (var t in EspModule.ToDraw)
+                {
+                    try
+                    {
+                        if (t.Transform == null) continue;
+                        var go = t.Transform.gameObject;
+                        if (go == null || !go.activeInHierarchy) continue;
 
-            // Ники
+                        Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
+                        Vector3 fw = t.Transform.position - Vector3.up * EspModule.FootOffset;
+                        Vector3 sh = _cam.WorldToScreenPoint(hw);
+                        Vector3 sf = _cam.WorldToScreenPoint(fw);
+                        if (sh.z < 0 || sf.z < 0) continue;
+
+                        float x = sh.x;
+                        float top = Screen.height - sh.y;
+                        float bottom = Screen.height - sf.y;
+                        float height = Mathf.Abs(bottom - top);
+                        float width = height * EspModule.BoxWidthRatio;
+                        if (width < 4f) width = 4f;
+                        if (height < 8f) height = 8f;
+                        float left = x - width / 2f;
+
+                        Color fill = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
+                        Color outl = t.Team == 1 ? Color.red : Color.cyan;
+
+                        GUI.color = fill;
+                        GUI.DrawTexture(new Rect(left, top, width, height), _whiteTex);
+                        GUI.color = outl;
+                        float th = 2f;
+                        GUI.DrawTexture(new Rect(left, top, width, th), _whiteTex);
+                        GUI.DrawTexture(new Rect(left, top + height - th, width, th), _whiteTex);
+                        GUI.DrawTexture(new Rect(left, top, th, height), _whiteTex);
+                        GUI.DrawTexture(new Rect(left + width - th, top, th, height), _whiteTex);
+                        GUI.color = Color.white;
+                    }
+                    catch { }
+                }
+            }
+
+            // 2. Ники
             if (EspModule.NamesEnabled)
             {
                 foreach (var t in EspModule.ToDraw)
@@ -187,10 +223,16 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // Ватермарка: перетаскивание + текст
+            // 3. FOV-круг
+            if (AimbotModule.Enabled && AimbotModule.DrawFovCircle)
+                MenuRenderer.DrawFovCircle();
+
+            // 4. Ватермарка
             Watermark.HandleDrag();
+            Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
 
+            // 5. Интро / меню
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
                 MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
