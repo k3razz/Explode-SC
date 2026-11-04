@@ -176,7 +176,7 @@ public static class MenuRenderer
         }
         y += 46;
 
-        // Bind list переключатель — теперь в Render
+        // Bind list переключатель — в Render
         if (CustomButton(new Rect(bx, y, bw, bh), $"Show Bind List: {(BindListState.Enabled ? "ON" : "OFF")}", BindListState.Enabled, whiteTex))
         {
             BindListState.Enabled = !BindListState.Enabled;
@@ -231,12 +231,12 @@ public static class MenuRenderer
         { AimbotModule.Fov = Mathf.Min(90f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         y += 36;
 
-        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {AimbotModule.Smooth:F0}");
+        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {AimbotModule.Smooth:F0} (1 = LOCK)");
         y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
-        { AimbotModule.Smooth = Mathf.Max(1f, AimbotModule.Smooth - 5f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
+        { AimbotModule.Smooth = Mathf.Max(1f, AimbotModule.Smooth - 1f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Smooth = Mathf.Min(50f, AimbotModule.Smooth + 5f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
+        { AimbotModule.Smooth = Mathf.Min(50f, AimbotModule.Smooth + 1f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility: {(AimbotModule.VisibilityCheck ? "ON" : "OFF")}", AimbotModule.VisibilityCheck, whiteTex))
