@@ -74,7 +74,6 @@ public class EspBehaviour : MonoBehaviour
 
             AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
             AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
-            AimbotModule.Smooth = Plugin.CfgAimbotSmooth.Value;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
