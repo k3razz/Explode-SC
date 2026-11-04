@@ -26,15 +26,18 @@ public class EspBehaviour : MonoBehaviour
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
 
-    // Кэш локального PlayerManager
     private Component _cachedPm;
     private float _pmRetryTimer;
     private const float PmRetryInterval = 2.0f;
 
-    // Оффсеты из дампа v2_07
-    private const int OFF_PM_CFOG = 0x40;   // PlayerManager.<cfog>k__BackingField (PlayerController)
-    private const int OFF_BOT_TEAM = 0x24;  // BotPlayerController: рабочий оффсет команды
-    private const int OFF_PC_CFMP = 0x159;  // PlayerController.<cfmp>k__BackingField (byte Team)
+    // Камера-хук для аима
+    private AimCameraHook _aimHook;
+    private float _camCheckTimer;
+    private const float CamCheckInterval = 1.0f;
+
+    private const int OFF_PM_CFOG = 0x40;
+    private const int OFF_BOT_TEAM = 0x24;
+    private const int OFF_PC_CFMP = 0x159;
 
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 1.5f;
@@ -57,6 +60,7 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
             MenuRenderer.EnsureTextures();
+            BindListRenderer.EnsureTextures();
 
             enabled = true;
             gameObject.SetActive(true);
@@ -68,14 +72,17 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
             AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
             AimbotModule.Smooth = Plugin.CfgAimbotSmooth.Value;
-            AimbotModule.TargetTeammates = true; // аим всегда на всех
+            AimbotModule.TargetTeammates = true;
             AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
+            else KeybindState.AimbotKey = KeyCode.Mouse0;
 
             WatermarkModule.Enabled = Plugin.CfgWatermarkEnabled.Value;
             WatermarkModule.Position = new Vector2(Plugin.CfgWatermarkX.Value, Plugin.CfgWatermarkY.Value);
+
+            BindListState.Enabled = Plugin.CfgShowBindList.Value;
 
             if (!KeybindState.IntroPlayed)
             {
@@ -93,11 +100,56 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
     }
 
-    void Start() { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
+    void Start()
+    {
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+        AttachAimHook();
+    }
 
     void OnDestroy()
     {
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
+    }
+
+    /// <summary>
+    /// Навешивает AimCameraHook на Camera.main. Если камера сменилась — перевешивает.
+    /// </summary>
+    [HideFromIl2Cpp]
+    void AttachAimHook()
+    {
+        try
+        {
+            var mainCam = Camera.main;
+            if (mainCam == null) return;
+
+            // Если на текущей камере уже есть hook — ок
+            var existing = mainCam.GetComponent<AimCameraHook>();
+            if (existing != null)
+            {
+                _aimHook = existing;
+                _aimHook.Rebind(mainCam);
+                return;
+            }
+
+            // Убираем со старой камеры, если она сменилась
+            if (_aimHook != null)
+            {
+                try { Destroy(_aimHook); } catch { }
+                _aimHook = null;
+            }
+
+            _aimHook = mainCam.gameObject.AddComponent<AimCameraHook>();
+            if (_aimHook != null)
+            {
+                _aimHook.Rebind(mainCam);
+                Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to Main Camera");
+            }
+        }
+        catch (Exception e)
+        {
+            LogThrottled("aimhook_ex", $"[ESP] AttachAimHook EX: {e.Message}", true);
+        }
     }
 
     void Update()
@@ -105,6 +157,15 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_cam == null) _cam = Camera.main;
+
+            // Раз в секунду проверяем, что hook висит на актуальной камере
+            _camCheckTimer += Time.deltaTime;
+            if (_camCheckTimer >= CamCheckInterval)
+            {
+                _camCheckTimer = 0f;
+                if (_aimHook == null || Camera.main == null)
+                    AttachAimHook();
+            }
 
             WatermarkModule.Update();
 
@@ -152,7 +213,7 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (!AimbotModule.Enabled || !KeybindState.AimbotActive) return;
+            if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
@@ -235,12 +296,14 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // FOV-круг (прозрачная заливка + белая обводка)
             MenuRenderer.DrawFovCircle();
 
             Watermark.HandleDrag();
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
+
+            // Панель активных биндов
+            BindListRenderer.Draw();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -271,7 +334,7 @@ public class EspBehaviour : MonoBehaviour
     }
 
     // =========================================================
-    //   ХЕЛПЕРЫ (HideFromIl2Cpp)
+    //   ХЕЛПЕРЫ
     // =========================================================
 
     [HideFromIl2Cpp]
@@ -340,10 +403,6 @@ public class EspBehaviour : MonoBehaviour
 
         return -1;
     }
-
-    // =========================================================
-    //           ЛОКАЛЬНЫЙ ИГРОК (PlayerManager : LazySingleton)
-    // =========================================================
 
     [HideFromIl2Cpp]
     Component FindPlayerManager()
@@ -551,10 +610,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
-
-    // =========================================================
-    //                        СКАН
-    // =========================================================
 
     void DoScan()
     {
