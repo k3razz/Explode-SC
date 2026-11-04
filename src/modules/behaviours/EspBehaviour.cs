@@ -30,14 +30,15 @@ public class EspBehaviour : MonoBehaviour
     private float _pmRetryTimer;
     private const float PmRetryInterval = 2.0f;
 
-    // Pivot для лока
-    private Transform _aimPivot;
-    private float _pivotCheckTimer;
-    private const float PivotCheckInterval = 2.0f;
+    // Holder камеры (PlayerController._mainCameraHolder @ 0x20)
+    private Transform _mainCameraHolder;
+    private float _holderCheckTimer;
+    private const float HolderCheckInterval = 2.0f;
 
     private const int OFF_PM_CFOG = 0x40;
     private const int OFF_BOT_TEAM = 0x24;
     private const int OFF_PC_CFMP = 0x159;
+    private const int OFF_PC_MAINCAMHOLDER = 0x20; // PlayerController._mainCameraHolder
 
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 1.5f;
@@ -135,12 +136,11 @@ public class EspBehaviour : MonoBehaviour
                 Cursor.lockState = CursorLockMode.None;
             }
 
-            // Периодический поиск AimPivot (для лока без roll)
-            _pivotCheckTimer += Time.deltaTime;
-            if (_pivotCheckTimer >= PivotCheckInterval)
+            _holderCheckTimer += Time.deltaTime;
+            if (_holderCheckTimer >= HolderCheckInterval)
             {
-                _pivotCheckTimer = 0f;
-                if (_aimPivot == null) FindAimPivot();
+                _holderCheckTimer = 0f;
+                if (_mainCameraHolder == null) FindMainCameraHolder();
             }
 
             _watchdogTimer += Time.deltaTime;
@@ -168,7 +168,6 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Лок работает ТОЛЬКО при включённом тумблере И активном бинде
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
             if (_cam == null) _cam = Camera.main;
@@ -179,15 +178,15 @@ public class EspBehaviour : MonoBehaviour
             if (!AimbotModule.HasTarget) return;
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
-            // Целевой rotation БЕЗ ROLL: yaw+pitch, z=0
+            // Считаем target rotation без roll
             Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
             Vector3 e = look.eulerAngles;
             Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
 
-            // Если найден AimPivot — крутим его (пули пойдут по forward игрока), иначе камеру
-            if (_aimPivot != null)
+            // Крутим _mainCameraHolder (из PlayerController @ 0x20), иначе камеру
+            if (_mainCameraHolder != null)
             {
-                _aimPivot.rotation = targetRot;
+                _mainCameraHolder.rotation = targetRot;
                 return;
             }
 
@@ -197,61 +196,41 @@ public class EspBehaviour : MonoBehaviour
     }
 
     /// <summary>
-    /// Ищет AimPivot/CameraPivot/Head/Neck у камеры или локального игрока.
+    /// Читает PlayerController._mainCameraHolder @ 0x20 у локального игрока.
+    /// Это Transform, которым игра управляет камерой и направлением стрельбы.
     /// </summary>
     [HideFromIl2Cpp]
-    void FindAimPivot()
+    void FindMainCameraHolder()
     {
         try
         {
-            // 1. Дети камеры
-            if (_cam != null)
-            {
-                var found = FindPivotInHierarchy(_cam.transform);
-                if (found != null) { _aimPivot = found; Plugin.LogSource?.LogInfo($"[ESP] AimPivot (cam child): {found.name}"); return; }
-            }
+            _mainCameraHolder = null;
 
-            // 2. Локальный игрок → его AimPivot/камера
             var pm = FindPlayerManager();
-            if (pm != null)
+            if (pm == null) return;
+
+            var localPlayer = ReadLocalPlayerFromPm(pm);
+            if (localPlayer == null) return;
+
+            IntPtr ptr = Marshal.ReadIntPtr(localPlayer.Pointer, OFF_PC_MAINCAMHOLDER);
+            if (ptr == IntPtr.Zero)
             {
-                var localPlayer = ReadLocalPlayerFromPm(pm);
-                if (localPlayer != null)
-                {
-                    var localTr = localPlayer.transform;
-                    if (localTr != null)
-                    {
-                        var found = FindPivotInHierarchy(localTr);
-                        if (found != null) { _aimPivot = found; Plugin.LogSource?.LogInfo($"[ESP] AimPivot (local player child): {found.name}"); return; }
-                    }
-                }
+                Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null (offset 0x20 empty)");
+                return;
             }
 
-            _aimPivot = null;
+            var tr = new Transform(ptr);
+            if (tr != null && tr.Pointer != IntPtr.Zero)
+            {
+                _mainCameraHolder = tr;
+                Plugin.LogSource?.LogInfo($"[ESP] _mainCameraHolder found: {tr.name} (parent={tr.parent?.name})");
+            }
         }
-        catch { _aimPivot = null; }
-    }
-
-    [HideFromIl2Cpp]
-    Transform FindPivotInHierarchy(Transform root)
-    {
-        if (root == null) return null;
-        try
+        catch (Exception e)
         {
-            var all = root.GetComponentsInChildren<Transform>(true);
-            if (all == null) return null;
-            foreach (var t in all)
-            {
-                if (t == null || t == root) continue;
-                string n = t.name;
-                if (string.IsNullOrEmpty(n)) continue;
-                if (n == "AimPivot" || n == "CameraPivot" || n == "AimPivotTransform" ||
-                    n == "Head" || n == "Neck" || n == "CameraRoot" || n == "CamPivot")
-                    return t;
-            }
+            Plugin.LogSource?.LogError($"[ESP] FindMainCameraHolder EX: {e.Message}");
+            _mainCameraHolder = null;
         }
-        catch { }
-        return null;
     }
 
     void OnGUI()
@@ -359,7 +338,8 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimlock={AimbotModule.Enabled}, active={KeybindState.AimbotActive}, hasTarget={AimbotModule.HasTarget}, pivot={(_aimPivot != null ? _aimPivot.name : "null")}");
+                string holderInfo = _mainCameraHolder == null ? "null" : _mainCameraHolder.name;
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimlock={AimbotModule.Enabled}, active={KeybindState.AimbotActive}, hasTarget={AimbotModule.HasTarget}, holder={holderInfo}");
             }
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
