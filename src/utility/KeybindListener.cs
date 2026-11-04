@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace MyDynamicESP;
 
@@ -9,6 +10,10 @@ public class KeybindListener : MonoBehaviour
 {
     private float _lastLog;
     private bool _waitingForRelease = false;
+
+    // Кэш для HudManager, чтобы не перебирать все сборки каждый кадр
+    private static Type _hudType = null;
+    private static bool _hudTypeSearched = false;
 
     private static readonly Dictionary<KeyCode, Key> KeyMap = new Dictionary<KeyCode, Key>
     {
@@ -51,11 +56,13 @@ public class KeybindListener : MonoBehaviour
                 Plugin.LogSource?.LogInfo($"[KB] Tick key={KeybindState.AimbotKey} intro={KeybindState.IntroActive} menu={KeybindState.MenuOpen}");
             }
 
-            // Если идёт интро — любая клавиша/мышь (кроме Insert) отменяет его
+            var kb = Keyboard.current;
+            if (kb == null) return;
+
+            // Если идёт интро — проверяем только мышь и Insert (без перебора всех клавиш)
             if (KeybindState.IntroActive)
             {
-                bool anyPressed = AnyKeyOrMousePressed();
-                if (anyPressed)
+                if (AnyKeyOrMousePressed())
                 {
                     KeybindState.IntroActive = false;
                     KeybindState.IntroDone = true;
@@ -67,9 +74,8 @@ public class KeybindListener : MonoBehaviour
                 return;
             }
 
-            // Insert — открыть/закрыть меню (только после интро)
-            var kb = Keyboard.current;
-            if (kb != null && kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing && KeybindState.IntroDone)
+            // Insert — открыть/закрыть меню
+            if (kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing && KeybindState.IntroDone)
             {
                 KeybindState.MenuOpen = !KeybindState.MenuOpen;
                 UiState.MenuVisible = KeybindState.MenuOpen;
@@ -116,13 +122,9 @@ public class KeybindListener : MonoBehaviour
 
         if (kb != null)
         {
-            // Insert не считается «отменой» — он открывает меню после интро
-            foreach (var ctrl in kb.allKeys)
-            {
-                if (ctrl == null) continue;
-                if (ctrl.keyCode == Key.Insert) continue;
-                if (ctrl.wasPressedThisFrame) return true;
-            }
+            // Проверяем только Insert и Escape, не перебираем ВСЕ клавиши
+            if (kb.insertKey.wasPressedThisFrame) return true;
+            if (kb.escapeKey.wasPressedThisFrame) return true;
         }
         return false;
     }
@@ -187,17 +189,14 @@ public class KeybindListener : MonoBehaviour
 
         if (kb != null)
         {
-            foreach (var ctrl in kb.allKeys)
+            // Вместо перебора allKeys — проверяем только те, что в KeyMap
+            foreach (var kvp in KeyMap)
             {
+                var ctrl = kb[kvp.Value];
                 if (ctrl != null && ctrl.wasPressedThisFrame)
                 {
-                    var k = ctrl.keyCode;
-                    if (k == Key.Escape) continue;
-                    if (Enum.TryParse<KeyCode>(k.ToString(), out KeyCode kc))
-                    {
-                        SetBind(kc);
-                        return;
-                    }
+                    SetBind(kvp.Key);
+                    return;
                 }
             }
         }
@@ -216,22 +215,31 @@ public class KeybindListener : MonoBehaviour
     {
         try
         {
-            Type hudType = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            // Ищем HudManager ОДИН раз, а не каждый кадр
+            if (!_hudTypeSearched)
             {
-                try { foreach (var t in asm.GetTypes()) if (t.Name == "HudManager") { hudType = t; break; } } catch { }
-                if (hudType != null) break;
+                _hudTypeSearched = true;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try { foreach (var t in asm.GetTypes()) if (t.Name == "HudManager") { _hudType = t; break; } } catch { }
+                    if (_hudType != null) break;
+                }
+                Plugin.LogSource?.LogInfo($"[KB] HudManager search: {(_hudType != null ? "found" : "null")}");
             }
-            if (hudType == null) return false;
-            var instProp = hudType.GetProperty("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+            if (_hudType == null) return false;
+
+            var instProp = _hudType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
             if (instProp == null) return false;
             var hud = instProp.GetValue(null);
             if (hud == null) return false;
-            var chatProp = hudType.GetProperty("Chat", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            var chatProp = _hudType.GetProperty("Chat", BindingFlags.Public | BindingFlags.Instance);
             if (chatProp == null) return false;
             var chat = chatProp.GetValue(hud);
             if (chat == null) return false;
-            var openProp = chat.GetType().GetProperty("IsOpenOrOpening", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            var openProp = chat.GetType().GetProperty("IsOpenOrOpening", BindingFlags.Public | BindingFlags.Instance);
             if (openProp == null) return false;
             var open = openProp.GetValue(chat);
             return open is bool o && o;
