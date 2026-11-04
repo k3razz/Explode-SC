@@ -2,15 +2,29 @@ using UnityEngine;
 
 namespace MyDynamicESP;
 
-/// <summary>
-/// Не используется в текущей архитектуре (лок делается в EspBehaviour.LateUpdate).
-/// Оставлен на случай, если понадобится хук через OnPreCull (например, не-URP сборка).
-/// </summary>
 public class AimCameraHook : MonoBehaviour
 {
     private Camera _cam;
+    private Transform _holder;
+    private float _checkTimer;
+    private const float CheckInterval = 1.0f;
 
-    void Awake() { _cam = GetComponent<Camera>(); }
+    void Awake()
+    {
+        _cam = GetComponent<Camera>();
+    }
+
+    void Update()
+    {
+        // Периодически обновляем ссылку на holder (мог появиться позже)
+        _checkTimer += Time.deltaTime;
+        if (_checkTimer >= CheckInterval)
+        {
+            _checkTimer = 0f;
+            if (_holder == null && EspBehaviour.Instance != null)
+                _holder = EspBehaviour.Instance.MainCameraHolder;
+        }
+    }
 
     void OnPreCull()
     {
@@ -22,10 +36,18 @@ public class AimCameraHook : MonoBehaviour
             if (!AimbotModule.HasTarget) return;
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
-            // Мгновенный лок без roll (Smooth больше нет — лок всегда мгновенный)
+            // Обновляем holder, если ещё не нашли
+            if (_holder == null && EspBehaviour.Instance != null)
+                _holder = EspBehaviour.Instance.MainCameraHolder;
+
             Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
             Vector3 e = look.eulerAngles;
-            _cam.transform.rotation = Quaternion.Euler(e.x, e.y, 0f);
+            Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
+
+            if (_holder != null)
+                _holder.rotation = targetRot;
+            else
+                _cam.transform.rotation = targetRot;
         }
         catch { }
     }
