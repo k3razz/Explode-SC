@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.Attributes;
+using Il2CppInterop.Runtime.InteropTypes;
 
 namespace MyDynamicESP;
 
@@ -23,6 +25,16 @@ public class EspBehaviour : MonoBehaviour
     private static MemberInfo _playerTeamMember;
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
+
+    // Кэш локального PlayerManager (MonoBehaviour, ищем FindObjectOfType)
+    private Component _cachedPm;
+    private float _pmRetryTimer;
+    private const float PmRetryInterval = 2.0f;
+
+    // Оффсеты из дампа v2_07
+    private const int OFF_PM_CFOG        = 0x40;  // PlayerManager.<cfog>k__BackingField (PlayerController)
+    private const int OFF_PC_CFMP        = 0x159; // PlayerController.<cfmp>k__BackingField (byte Team)
+    private const int OFF_PC_CFLV        = 0xC8;  // PlayerController.<cflv>k__BackingField (BotPlayerController)
 
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 1.5f;
@@ -255,6 +267,11 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
     }
 
+    // =========================================================
+    //   ХЕЛПЕРЫ (HideFromIl2Cpp, чтобы Il2CppInterop их не маршалил)
+    // =========================================================
+
+    [HideFromIl2Cpp]
     int ReadTeamFromMember(MemberInfo member, object target)
     {
         if (member == null || target == null) return -1;
@@ -270,12 +287,13 @@ public class EspBehaviour : MonoBehaviour
         return -1;
     }
 
+    [HideFromIl2Cpp]
     int ReadByteAtOffset(object obj, int offset)
     {
         try
         {
             IntPtr ptr = IntPtr.Zero;
-            if (obj is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cppObj) ptr = il2cppObj.Pointer;
+            if (obj is Il2CppObjectBase il2cppObj) ptr = il2cppObj.Pointer;
             else if (obj is Component comp) ptr = comp.Pointer;
             if (ptr == IntPtr.Zero) return -1;
             return Marshal.ReadByte(ptr, offset);
@@ -283,123 +301,156 @@ public class EspBehaviour : MonoBehaviour
         catch { return -1; }
     }
 
+    [HideFromIl2Cpp]
     int ReadTeam(Component component, bool isBot)
     {
         if (component == null) return -1;
-        if (isBot)
+
+        // PlayerController.<cfmp>k__BackingField @ 0x159 (byte Team)
+        // Наследуется и у BotPlayerController : PlayerController
+        try
         {
-            int team = ReadTeamFromMember(_playerTeamMember, component);
-            if (team >= 0) return team;
-            try
-            {
-                var t = component.GetType();
-                object playerCtrl = null;
-                var p = t.GetProperty("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (p != null) playerCtrl = p.GetValue(component);
-                if (playerCtrl == null)
-                {
-                    var f = t.GetField("crvs", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (f != null) playerCtrl = f.GetValue(component);
-                }
-                if (playerCtrl != null)
-                {
-                    team = ReadTeamFromMember(_playerTeamMember, playerCtrl);
-                    if (team >= 0) return team;
-                }
-            }
-            catch { }
-            int offTeam = ReadByteAtOffset(component, 0x24);
-            if (offTeam > 0 && offTeam <= 3) return offTeam;
-            return -1;
+            int t = Marshal.ReadByte(component.Pointer, OFF_PC_CFMP);
+            if (t > 0 && t <= 3) return t;
         }
+        catch { }
+
+        // Fallback: property cfmp через managed-рефлексию (может не сработать)
         return ReadTeamFromMember(_playerTeamMember, component);
     }
 
     // =========================================================
     //           ЛОКАЛЬНЫЙ ИГРОК (PlayerManager : LazySingleton)
     // =========================================================
+
+    [HideFromIl2Cpp]
+    Component FindPlayerManager()
+    {
+        if (_playerManagerType == null) return null;
+
+        // 1. Кэш ещё жив?
+        if (_cachedPm != null)
+        {
+            try
+            {
+                var p = _cachedPm.Pointer;
+                if (p != IntPtr.Zero) return _cachedPm;
+            }
+            catch { }
+            _cachedPm = null;
+        }
+
+        // 2. FindObjectOfType по Il2Cpp-типу
+        try
+        {
+            var obj = UnityEngine.Object.FindObjectOfType(_playerManagerType);
+            if (obj != null)
+            {
+                _cachedPm = obj.TryCast<Component>();
+                if (_cachedPm != null)
+                {
+                    Plugin.LogSource?.LogInfo("[ESP] PlayerManager found via FindObjectOfType");
+                    return _cachedPm;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            LogThrottled("pm_foft_ex", $"[ESP] FindObjectOfType(PM) EX: {e.Message}", true);
+        }
+
+        return null;
+    }
+
+    [HideFromIl2Cpp]
+    Component ReadLocalPlayerFromPm(Component pm)
+    {
+        if (pm == null) return null;
+
+        // 1. Прямое чтение <cfog>k__BackingField @ 0x40 (PlayerController)
+        try
+        {
+            IntPtr lpPtr = Marshal.ReadIntPtr(pm.Pointer, OFF_PM_CFOG);
+            if (lpPtr != IntPtr.Zero)
+            {
+                var lp = new Component(lpPtr);
+                if (lp != null && lp.Pointer != IntPtr.Zero) return lp;
+            }
+        }
+        catch { }
+
+        // 2. Fallback: Il2Cpp-рефлексия property dpky (getter ofc())
+        try
+        {
+            var dpkyProp = _playerManagerType.GetProperty("dpky",
+                (Il2CppSystem.Reflection.BindingFlags)(int)(
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.Instance));
+            if (dpkyProp != null)
+            {
+                var val = dpkyProp.GetValue(pm.Cast<Il2CppSystem.Object>());
+                if (val != null)
+                {
+                    var comp = val.TryCast<Component>();
+                    if (comp != null) return comp;
+                }
+            }
+        }
+        catch { }
+
+        // 3. Fallback: Il2Cpp-рефлексия <cfog>k__BackingField
+        try
+        {
+            var cfogField = _playerManagerType.GetField("<cfog>k__BackingField",
+                (Il2CppSystem.Reflection.BindingFlags)(int)(
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Instance));
+            if (cfogField != null)
+            {
+                var val = cfogField.GetValue(pm.Cast<Il2CppSystem.Object>());
+                if (val != null)
+                {
+                    var comp = val.TryCast<Component>();
+                    if (comp != null) return comp;
+                }
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
+    [HideFromIl2Cpp]
     void UpdateLocalTeam()
     {
         try
         {
             if (_playerManagerType == null) return;
 
-            // 1. Ищем Instance через LazySingleton<PlayerManager>
-            object pmInstance = null;
-
-            var instProp = _playerManagerType.GetProperty("Instance",
-                (Il2CppSystem.Reflection.BindingFlags)(int)(
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy));
-            if (instProp != null) pmInstance = instProp.GetValue(null);
-
-            if (pmInstance == null)
+            // Троттлинг попыток найти PM, если его нет
+            if (_cachedPm == null)
             {
-                foreach (var n in new[] { "_instance", "s_Instance", "m_Instance" })
-                {
-                    var f = _playerManagerType.GetField(n,
-                        (Il2CppSystem.Reflection.BindingFlags)(int)(
-                            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
-                    if (f != null) { pmInstance = f.GetValue(null); break; }
-                }
+                _pmRetryTimer += Time.deltaTime;
+                if (_pmRetryTimer < PmRetryInterval) return;
+                _pmRetryTimer = 0f;
             }
 
-            if (pmInstance == null)
+            var pm = FindPlayerManager();
+            if (pm == null)
             {
-                var baseType = _playerManagerType.BaseType;
-                if (baseType != null)
-                {
-                    var baseInst = baseType.GetProperty("Instance",
-                        (Il2CppSystem.Reflection.BindingFlags)(int)(
-                            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy));
-                    if (baseInst != null) pmInstance = baseInst.GetValue(null);
-
-                    if (pmInstance == null)
-                    {
-                        var baseField = baseType.GetField("_instance",
-                            (Il2CppSystem.Reflection.BindingFlags)(int)(
-                                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
-                        if (baseField != null) pmInstance = baseField.GetValue(null);
-                    }
-                }
-            }
-
-            if (pmInstance == null)
-            {
-                LogThrottled("pm_null", "[ESP] PlayerManager.Instance not found", true);
+                LogThrottled("pm_null", "[ESP] PlayerManager not found", true);
                 return;
             }
 
-            // 2. Читаем локального игрока
-            object localPlayer = null;
-            var pmManagedType = pmInstance.GetType();
-
-            var cfogProp = pmManagedType.GetProperty("cfog",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (cfogProp != null) localPlayer = cfogProp.GetValue(pmInstance);
-
-            if (localPlayer == null)
-            {
-                var cfogField = pmManagedType.GetField("<cfog>k__BackingField",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (cfogField != null) localPlayer = cfogField.GetValue(pmInstance);
-            }
-
-            if (localPlayer == null)
-            {
-                var ofc = pmManagedType.GetMethod("ofc",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (ofc != null) localPlayer = ofc.Invoke(pmInstance, null);
-            }
-
+            var localPlayer = ReadLocalPlayerFromPm(pm);
             if (localPlayer == null)
             {
                 LogThrottled("cfog_null", "[ESP] localPlayer is null", true);
                 return;
             }
 
-            // 3. Читаем команду
-            int newTeam = ReadTeamFromMember(_playerTeamMember, localPlayer);
-            if (newTeam != _localTeam && newTeam >= 0)
+            int newTeam = ReadTeam(localPlayer, false);
+            if (newTeam >= 0 && newTeam != _localTeam)
             {
                 Plugin.LogSource?.LogInfo($"[ESP] Local team: {_localTeam} -> {newTeam}");
                 _localTeam = newTeam;
@@ -408,19 +459,44 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { LogThrottled("localt_ex", $"[ESP] LocalTeam EX: {e.Message}", true); }
     }
 
-    private static bool IsTeamEnum(Type t) => t != null && t.IsEnum && (t.Name == "Team" || t.FullName.EndsWith(".Team"));
+    // =========================================================
+    //                    РЕЗОЛВ ТИПОВ
+    // =========================================================
 
+    [HideFromIl2Cpp]
+    private static bool IsTeamEnum(Type t) =>
+        t != null && t.IsEnum && (t.Name == "Team" || (t.FullName != null && t.FullName.EndsWith(".Team")));
+
+    [HideFromIl2Cpp]
     private static Type FindTypeByName(string shortName, out string full)
     {
         full = null;
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
             try { var d = asm.GetType(shortName); if (d != null) { full = d.FullName; return d; } } catch { }
-            try { foreach (var t in asm.GetTypes()) if (t.Name == shortName) { full = t.FullName; return t; } } catch { }
+            try
+            {
+                foreach (var t in asm.GetTypes())
+                {
+                    if (t.Name == shortName) { full = t.FullName; return t; }
+                }
+            }
+            catch { }
         }
         return null;
     }
 
+    [HideFromIl2Cpp]
+    private static Type FindTypeByFullName(string fullName)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try { var t = asm.GetType(fullName); if (t != null) return t; } catch { }
+        }
+        return null;
+    }
+
+    [HideFromIl2Cpp]
     private static MemberInfo FindTeamMember(Type start, out string owner)
     {
         owner = null;
@@ -439,6 +515,7 @@ public class EspBehaviour : MonoBehaviour
         return null;
     }
 
+    [HideFromIl2Cpp]
     private static void ResolveTypes()
     {
         if (_resolved) return;
@@ -447,7 +524,11 @@ public class EspBehaviour : MonoBehaviour
         {
             var bt = FindTypeByName("BotPlayerController", out _);
             var pt = FindTypeByName("PlayerController", out _);
-            var pmType = FindTypeByName("PlayerManager", out _);
+
+            // PlayerManager: сначала пробуем полное имя из Chillow.StandChillow.Player
+            var pmType = FindTypeByFullName("Chillow.StandChillow.Player.PlayerManager")
+                         ?? FindTypeByName("PlayerManager", out _);
+
             if (bt != null) _botType = Il2CppType.From(bt);
             if (pt != null) _playerType = Il2CppType.From(pt);
             if (pmType != null) _playerManagerType = Il2CppType.From(pmType);
@@ -456,10 +537,14 @@ public class EspBehaviour : MonoBehaviour
             string owner = null;
             _playerTeamMember = FindTeamMember(pt, out owner);
             Plugin.LogSource?.LogInfo($"[ESP] Team member: {owner ?? "null"}");
-            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, Team={_playerTeamMember != null}");
+            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, PMType={(pmType?.FullName ?? "null")}, Team={_playerTeamMember != null}");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] ResolveTypes EX: {e}"); }
     }
+
+    // =========================================================
+    //                        СКАН
+    // =========================================================
 
     void DoScan()
     {
@@ -516,6 +601,7 @@ public class EspBehaviour : MonoBehaviour
         catch { }
     }
 
+    [HideFromIl2Cpp]
     string TryGetName(Component c, bool isBot)
     {
         try
