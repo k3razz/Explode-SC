@@ -4,52 +4,63 @@ namespace MyDynamicESP;
 
 public static class Watermark
 {
-    public static void Draw(Texture2D whiteTex)
+    public static Rect GetRect()
     {
-        if (!WatermarkModule.Enabled) return;
-
         string text = WatermarkModule.GetText();
         Vector2 size = GUI.skin.label.CalcSize(new GUIContent(text));
-
         float padX = 12f;
         float padY = 6f;
         float w = size.x + padX * 2f;
         float h = size.y + padY * 2f;
+        return new Rect(WatermarkModule.Position.x - w / 2f, WatermarkModule.Position.y - h / 2f, w, h);
+    }
 
-        Rect rect = new Rect(WatermarkModule.Position.x - w / 2f, WatermarkModule.Position.y - h / 2f, w, h);
+    // GPU-фон для OnPostRender
+    public static void DrawBackgroundGPU(Texture2D whiteTex)
+    {
+        Rect rect = GetRect();
+        Graphics.DrawTexture(rect, whiteTex, new Color(0f, 0f, 0f, 0.8f));
+    }
 
+    // OnGUI-текст (только когда нужно)
+    public static void DrawText()
+    {
+        if (!WatermarkModule.Enabled) return;
+
+        Rect rect = GetRect();
+        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(WatermarkModule.GetText()));
+
+        GUI.color = Color.white;
+        GUI.Label(new Rect(rect.x + 12f, rect.y + 6f, size.x + 2f, size.y + 2f), WatermarkModule.GetText());
+        GUI.color = Color.white;
+    }
+
+    // Обработка перетаскивания (в OnGUI, потому что Event.current)
+    public static void HandleDrag()
+    {
+        if (!WatermarkModule.Enabled) return;
+        Rect rect = GetRect();
         Event e = Event.current;
-        if (e != null)
+        if (e == null) return;
+        Vector2 mouse = e.mousePosition;
+        if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
         {
-            Vector2 mouse = e.mousePosition;
-            if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
-            {
-                WatermarkModule.IsDragging = true;
-                WatermarkModule.DragOffset = mouse - new Vector2(rect.x, rect.y);
-                e.Use();
-            }
-            else if (e.type == EventType.MouseDrag && WatermarkModule.IsDragging)
-            {
-                Vector2 newPos = mouse - WatermarkModule.DragOffset;
-                WatermarkModule.Position = new Vector2(newPos.x + w / 2f, newPos.y + h / 2f);
-                e.Use();
-                if (Plugin.CfgWatermarkX != null) Plugin.CfgWatermarkX.Value = WatermarkModule.Position.x;
-                if (Plugin.CfgWatermarkY != null) Plugin.CfgWatermarkY.Value = WatermarkModule.Position.y;
-            }
-            else if (e.type == EventType.MouseUp && e.button == 0)
-            {
-                WatermarkModule.IsDragging = false;
-                e.Use();
-            }
+            WatermarkModule.IsDragging = true;
+            WatermarkModule.DragOffset = mouse - new Vector2(rect.x, rect.y);
+            e.Use();
         }
-
-        // Фон (черный полупрозрачный)
-        GUI.color = new Color(0f, 0f, 0f, 0.8f);
-        GUI.DrawTexture(rect, whiteTex);
-
-        // Текст по центру
-        GUI.color = Color.white;
-        GUI.Label(new Rect(rect.x + padX, rect.y + padY, size.x + 2f, size.y + 2f), text);
-        GUI.color = Color.white;
+        else if (e.type == EventType.MouseDrag && WatermarkModule.IsDragging)
+        {
+            Vector2 newPos = mouse - WatermarkModule.DragOffset;
+            WatermarkModule.Position = new Vector2(newPos.x + rect.width / 2f, newPos.y + rect.height / 2f);
+            e.Use();
+            if (Plugin.CfgWatermarkX != null) Plugin.CfgWatermarkX.Value = WatermarkModule.Position.x;
+            if (Plugin.CfgWatermarkY != null) Plugin.CfgWatermarkY.Value = WatermarkModule.Position.y;
+        }
+        else if (e.type == EventType.MouseUp && e.button == 0)
+        {
+            WatermarkModule.IsDragging = false;
+            e.Use();
+        }
     }
 }

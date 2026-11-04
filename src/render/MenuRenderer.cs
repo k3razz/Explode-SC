@@ -48,6 +48,19 @@ public static class MenuRenderer
         return tex;
     }
 
+    // GPU-версия FOV-круга для OnPostRender
+    public static void DrawFovCircleGPU()
+    {
+        MenuRenderer.EnsureTextures();
+        float fovScreen = AimbotModule.Fov * (Screen.height / 90f);
+        if (fovScreen <= 0) return;
+        float cx = Screen.width / 2f - fovScreen / 2f;
+        float cy = Screen.height / 2f - fovScreen / 2f;
+        Graphics.DrawTexture(new Rect(cx, cy, fovScreen, fovScreen), _circleTex, new Color(1f, 1f, 1f, 0.04f));
+        Graphics.DrawTexture(new Rect(cx, cy, fovScreen, fovScreen), _ringTex, new Color(1f, 1f, 1f, 0.7f));
+    }
+
+    // Старая версия для OnGUI (fallback)
     public static void DrawFovCircle()
     {
         MenuRenderer.EnsureTextures();
@@ -249,7 +262,6 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        // ТОЧНАЯ ЦЕНТРОВКА ЧЕРЕЗ CalcSize
         Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
         float x = rect.x + (rect.width - size.x) / 2f;
         float y = rect.y + (rect.height - size.y) / 2f;
@@ -266,7 +278,6 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        // ТОЧНАЯ ЦЕНТРОВКА ЧЕРЕЗ CalcSize
         Vector2 size = GUI.skin.label.CalcSize(new GUIContent(label));
         float x = rect.x + (rect.width - size.x) / 2f;
         float y = rect.y + (rect.height - size.y) / 2f;

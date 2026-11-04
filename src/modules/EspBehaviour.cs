@@ -49,6 +49,10 @@ public class EspBehaviour : MonoBehaviour
             enabled = true;
             gameObject.SetActive(true);
 
+            // Добавляем OverlayRenderer на этот же GameObject
+            if (GetComponent<OverlayRenderer>() == null)
+                gameObject.AddComponent<OverlayRenderer>();
+
             EspModule.BoxesEnabled = Plugin.CfgEspBoxes.Value;
             EspModule.NamesEnabled = Plugin.CfgEspNames.Value;
             EspModule.DistanceEnabled = Plugin.CfgEspDistance.Value;
@@ -150,9 +154,42 @@ public class EspBehaviour : MonoBehaviour
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
             if (_cam == null) return;
 
-            EspModule.Draw(_whiteTex);
-            if (AimbotModule.Enabled && AimbotModule.DrawFovCircle) MenuRenderer.DrawFovCircle();
-            Watermark.Draw(_whiteTex);
+            // ESP-боксы и FOV-круг рисуются в OverlayRenderer.OnPostRender (GPU)
+            // Здесь только текст (ники) и меню
+
+            // Ники
+            if (EspModule.NamesEnabled)
+            {
+                foreach (var t in EspModule.ToDraw)
+                {
+                    try
+                    {
+                        if (t.Transform == null) continue;
+                        Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
+                        Vector3 sh = _cam.WorldToScreenPoint(hw);
+                        if (sh.z < 0) continue;
+                        float x = sh.x;
+                        float top = Screen.height - sh.y;
+                        float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
+                        if (dist > EspModule.NameMaxDist) continue;
+
+                        string lbl = t.Name + (EspModule.DistanceEnabled ? $" [{dist:F0}m]" : "");
+                        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(lbl));
+                        float lw = size.x + 10f;
+                        float ll = x - lw / 2f;
+
+                        GUI.color = new Color(0f, 0f, 0f, 0.65f);
+                        GUI.DrawTexture(new Rect(ll - 2f, top - 22f, lw + 4f, 20f), _whiteTex);
+                        GUI.color = Color.white;
+                        GUI.Label(new Rect(ll, top - 21f, lw, 18f), lbl);
+                    }
+                    catch { }
+                }
+            }
+
+            // Ватермарка: перетаскивание + текст
+            Watermark.HandleDrag();
+            Watermark.DrawText();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -183,7 +220,6 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
     }
 
-    // --- Рефлексия ---
     int ReadTeamFromMember(MemberInfo member, object target)
     {
         if (member == null || target == null) return -1;
