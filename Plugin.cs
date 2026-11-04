@@ -37,6 +37,9 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgWatermarkX;
     public static ConfigEntry<float> CfgWatermarkY;
 
+    // --- BINDLIST (MISC) ---
+    public static ConfigEntry<bool> CfgShowBindList;
+
     public override void Load()
     {
         Instance = this;
@@ -58,22 +61,27 @@ public class Plugin : BasePlugin
             CfgAimbotEnabled = ConfigFile.Bind("Aimbot", "Enabled", false);
             CfgAimbotFov = ConfigFile.Bind("Aimbot", "Fov", 15f);
             CfgAimbotSmooth = ConfigFile.Bind("Aimbot", "Smooth", 15f);
-            CfgAimbotTargetTeammates = ConfigFile.Bind("Aimbot", "TargetTeammates", false);
+            CfgAimbotTargetTeammates = ConfigFile.Bind("Aimbot", "TargetTeammates", true);
             CfgAimbotVisibilityCheck = ConfigFile.Bind("Aimbot", "VisibilityCheck", false);
             CfgAimbotToggleMode = ConfigFile.Bind("Aimbot", "ToggleMode", false);
-            CfgAimbotKey = ConfigFile.Bind("Aimbot", "Key", "Mouse1");
+            CfgAimbotKey = ConfigFile.Bind("Aimbot", "Key", "Mouse0");
 
             CfgWatermarkEnabled = ConfigFile.Bind("Render", "WatermarkEnabled", true);
             CfgWatermarkX = ConfigFile.Bind("Render", "WatermarkX", -1f);
             CfgWatermarkY = ConfigFile.Bind("Render", "WatermarkY", -1f);
+
+            CfgShowBindList = ConfigFile.Bind("Misc", "ShowBindList", true);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
             TeamFilter.ShowSpectator = CfgShowSpectator.Value;
             TeamFilter.OnlyEnemies = CfgOnlyEnemies.Value;
 
+            BindListState.Enabled = CfgShowBindList.Value;
+
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
+            ClassInjector.RegisterTypeInIl2Cpp<AimCameraHook>();
 
             AddComponent<KeybindListener>();
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
