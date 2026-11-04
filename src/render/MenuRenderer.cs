@@ -11,7 +11,6 @@ public static class MenuRenderer
 
     private static Texture2D _circleTex;
     private static Texture2D _ringTex;
-    private static readonly Dictionary<string, Vector2> _textCache = new();
 
     public static void EnsureTextures()
     {
@@ -48,14 +47,6 @@ public static class MenuRenderer
         tex.SetPixels32(pixels);
         tex.Apply();
         return tex;
-    }
-
-    private static Vector2 GetTextSize(string text)
-    {
-        if (_textCache.TryGetValue(text, out var size)) return size;
-        size = GUI.skin.label.CalcSize(new GUIContent(text));
-        _textCache[text] = size;
-        return size;
     }
 
     public static void DrawFovCircle()
@@ -259,10 +250,8 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        Vector2 size = GetTextSize(label);
-        float x = rect.x + (rect.width - size.x) / 2f;
-        float y = rect.y + (rect.height - size.y) / 2f;
-        GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
+        float lw = Mathf.Min(label.Length * 7f + 4f, rect.width - 6f);
+        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
 
         return clicked;
     }
@@ -275,10 +264,8 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        Vector2 size = GetTextSize(label);
-        float x = rect.x + (rect.width - size.x) / 2f;
-        float y = rect.y + (rect.height - size.y) / 2f;
-        GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
+        float lw = Mathf.Min(label.Length * 7f + 4f, rect.width - 6f);
+        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
 
         return clicked;
     }

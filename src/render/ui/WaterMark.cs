@@ -4,35 +4,20 @@ namespace MyDynamicESP;
 
 public static class Watermark
 {
-    private static Vector2 _lastSize;
-    private static string _lastText = "";
-    private static float _lastUpdate = 0f;
-
     public static Rect GetRect()
     {
         string text = WatermarkModule.GetText();
-        if (text != _lastText || Time.time - _lastUpdate > 1f)
-        {
-            _lastSize = GUI.skin.label.CalcSize(new GUIContent(text));
-            _lastText = text;
-            _lastUpdate = Time.time;
-        }
-        float padX = 12f;
-        float padY = 6f;
-        float w = _lastSize.x + padX * 2f;
-        float h = _lastSize.y + padY * 2f;
+        float w = text.Length * 7f + 24f;
+        float h = 24f;
         return new Rect(WatermarkModule.Position.x - w / 2f, WatermarkModule.Position.y - h / 2f, w, h);
     }
 
     public static void DrawText()
     {
         if (!WatermarkModule.Enabled) return;
-
         Rect rect = GetRect();
-        Vector2 size = _lastSize;
-
         GUI.color = Color.white;
-        GUI.Label(new Rect(rect.x + 12f, rect.y + 6f, size.x + 2f, size.y + 2f), _lastText);
+        GUI.Label(new Rect(rect.x + 12f, rect.y + 6f, rect.width - 24f, rect.height - 12f), WatermarkModule.GetText());
         GUI.color = Color.white;
     }
 

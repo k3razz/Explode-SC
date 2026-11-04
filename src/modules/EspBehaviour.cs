@@ -12,7 +12,7 @@ public class EspBehaviour : MonoBehaviour
     private Camera _cam;
     private Texture2D _whiteTex;
     private float _scanTimer;
-    private const float ScanInterval = 1.0f;
+    private const float ScanInterval = 30.0f; // было 1.0f
     private float _watchdogTimer;
     private const float WatchdogInterval = 3.0f;
     private int _watchdogTicks;
@@ -26,6 +26,15 @@ public class EspBehaviour : MonoBehaviour
 
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 1.5f;
+
+    public static void OnPlayerDestroyed(int id)
+    {
+        if (EspModule.TrackedDict.ContainsKey(id))
+        {
+            EspModule.TrackedDict.Remove(id);
+            Plugin.LogSource?.LogInfo($"[ESP] Player destroyed, removed: {id}");
+        }
+    }
 
     private void LogThrottled(string key, string message, bool isError = false)
     {
@@ -121,8 +130,6 @@ public class EspBehaviour : MonoBehaviour
             foreach (var t in EspModule.TrackedDict.Values)
             {
                 if (t.Transform == null) continue;
-                var go = t.Transform.gameObject;
-                if (go == null || !go.activeInHierarchy) continue;
 
                 if (TeamFilter.OnlyEnemies && _localTeam > 0 && t.Team == _localTeam) continue;
                 if (!EspModule.IsTeamVisible(t.Team)) continue;
@@ -158,8 +165,6 @@ public class EspBehaviour : MonoBehaviour
                     try
                     {
                         if (t.Transform == null) continue;
-                        var go = t.Transform.gameObject;
-                        if (go == null || !go.activeInHierarchy) continue;
 
                         Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
                         Vector3 fw = t.Transform.position - Vector3.up * EspModule.FootOffset;
@@ -193,7 +198,7 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // 2. Ники
+            // 2. Ники (без CalcSize, чтобы не нагружать IL2CPP)
             if (EspModule.NamesEnabled)
             {
                 foreach (var t in EspModule.ToDraw)
@@ -210,8 +215,8 @@ public class EspBehaviour : MonoBehaviour
                         if (dist > EspModule.NameMaxDist) continue;
 
                         string lbl = t.Name + (EspModule.DistanceEnabled ? $" [{dist:F0}m]" : "");
-                        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(lbl));
-                        float lw = size.x + 10f;
+                        
+                        float lw = lbl.Length * 7f + 10f;
                         float ll = x - lw / 2f;
 
                         GUI.color = new Color(0f, 0f, 0f, 0.65f);
@@ -252,7 +257,6 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_botType == null && _playerType == null) { _resolved = false; ResolveTypes(); }
-            if (_cam == null) _cam = Camera.main;
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
