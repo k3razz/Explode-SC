@@ -5,8 +5,6 @@ using BepInEx.Logging;
 using UnityEngine;
 using System;
 using System.IO;
-using System.Reflection;
-using HarmonyLib;
 using Il2CppInterop.Runtime.Injection;
 
 namespace MyDynamicESP;
@@ -80,61 +78,8 @@ public class Plugin : BasePlugin
             AddComponent<KeybindListener>();
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
 
-            try
-            {
-                var harmony = new Harmony("com.you.dynamicesp");
-                harmony.PatchAll();
-                Log.LogInfo("[ESP] Harmony patched");
-            }
-            catch (Exception e)
-            {
-                Log.LogError($"[ESP] Harmony patch EX: {e}");
-            }
-
             Log.LogInfo("[ESP] Components added");
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
-    }
-}
-
-// =========================================================
-//                    HARMONY PATCH
-// =========================================================
-[HarmonyPatch]
-public static class PlayerDestroyPatch
-{
-    static MethodBase TargetMethod()
-    {
-        Type pcType = null;
-        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            try { pcType = asm.GetType("PlayerController"); if (pcType != null) break; } catch { }
-        }
-        if (pcType == null) return null;
-
-        var method = pcType.GetMethod("OnDestroy", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        if (method == null)
-        {
-            var baseType = pcType.BaseType;
-            while (baseType != null && method == null)
-            {
-                method = baseType.GetMethod("OnDestroy", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                baseType = baseType.BaseType;
-            }
-        }
-        return method;
-    }
-
-    static void Prefix(object __instance)
-    {
-        if (__instance == null) return;
-        try
-        {
-            var comp = __instance as Component;
-            if (comp == null) return;
-            int id = comp.gameObject.GetInstanceID();
-            EspBehaviour.OnPlayerDestroyed(id);
-        }
-        catch { }
     }
 }
