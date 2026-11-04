@@ -76,6 +76,13 @@ public class EspBehaviour : MonoBehaviour
                 Plugin.LogSource?.LogInfo("[ESP] Intro animation started");
             }
 
+            var camObj = Camera.main;
+            if (camObj != null && camObj.GetComponent<AimCameraHook>() == null)
+            {
+                camObj.gameObject.AddComponent<AimCameraHook>();
+                Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to camera");
+            }
+
             Debug.Log("[ESP] ===== Awake() done =====");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
