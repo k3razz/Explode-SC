@@ -12,58 +12,81 @@ public static class AimbotModule
     public static bool VisibilityCheck = false;
     public static bool DrawFovCircle = false;
 
+    public static bool HasTarget = false;
+    public static Vector3 TargetDirection = Vector3.zero;
+
+    private static Tracked _currentTarget;
+    private static float _targetTimer = 0f;
+
     public static void Update(Camera cam, int localTeam, Dictionary<int, Tracked> tracked)
     {
-        // Если выключен или не зажат бинд — выходим сразу
+        HasTarget = false;
+
         if (!Enabled || !KeybindState.AimbotActive) return;
         if (cam == null) return;
 
         Vector3 camPos, camForward;
         try { camPos = cam.transform.position; camForward = cam.transform.forward; } catch { return; }
 
+        // Ищем цель раз в 0.25 сек
+        _targetTimer -= Time.deltaTime;
+        if (_currentTarget == null || _currentTarget.Transform == null || _targetTimer <= 0f)
+        {
+            _targetTimer = 0.25f;
+            _currentTarget = FindBestTarget(camPos, camForward, localTeam, tracked);
+        }
+
+        if (_currentTarget == null || _currentTarget.Transform == null) return;
+
+        // Центр ESP-бокса: (голова + ноги) / 2
+        Vector3 head = _currentTarget.Transform.position + Vector3.up * 1.8f;
+        Vector3 foot = _currentTarget.Transform.position;
+        Vector3 center = (head + foot) * 0.5f + Vector3.up * 0.1f;
+
+        Vector3 dir = center - camPos;
+        if (dir.sqrMagnitude < 0.01f) return;
+
+        TargetDirection = dir.normalized;
+        HasTarget = true;
+    }
+
+    private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, int localTeam, Dictionary<int, Tracked> tracked)
+    {
         Tracked best = null;
         float bestAngle = Fov;
 
-        // Единственный цикл по целям — без лишних вызовов
         foreach (var t in tracked.Values)
         {
             if (t.Transform == null) continue;
             if (!TargetTeammates && localTeam > 0 && t.Team == localTeam) continue;
 
-            Vector3 hp = t.Transform.position + Vector3.up * 1.3f; // центр тела
-            Vector3 dir = hp - camPos;
+            Vector3 head = t.Transform.position + Vector3.up * 1.8f;
+            Vector3 foot = t.Transform.position;
+            Vector3 center = (head + foot) * 0.5f + Vector3.up * 0.1f;
+
+            Vector3 dir = center - camPos;
             float distSqr = dir.sqrMagnitude;
             if (distSqr < 0.01f) continue;
 
-            // Угол без sqrt (через dot), это быстрее Vector3.Angle
             float dot = Vector3.Dot(camForward, dir) / Mathf.Sqrt(distSqr);
-            if (dot < 0.9f) continue; // отсекаем всё, что >25° (быстрый пре-фильтр)
+            if (dot < 0.85f) continue; // ~32° пре-фильтр
 
             float angle = Mathf.Acos(Mathf.Clamp(dot, -1f, 1f)) * Mathf.Rad2Deg;
             if (angle < bestAngle)
             {
+                if (VisibilityCheck)
+                {
+                    float dlen = dir.magnitude;
+                    if (Physics.Raycast(camPos, dir / dlen, out var hit, dlen))
+                    {
+                        if (hit.transform != t.Transform && !hit.transform.IsChildOf(t.Transform))
+                            continue;
+                    }
+                }
                 bestAngle = angle;
                 best = t;
             }
         }
-
-        if (best == null) return;
-
-        // Проверка видимости — ТОЛЬКО для выбранной цели, один Raycast
-        if (VisibilityCheck)
-        {
-            Vector3 hp = best.Transform.position + Vector3.up * 1.3f;
-            Vector3 d = hp - camPos;
-            float dlen = d.magnitude;
-            if (Physics.Raycast(camPos, d / dlen, out var hit, dlen))
-            {
-                if (hit.transform != best.Transform && !hit.transform.IsChildOf(best.Transform))
-                    return; // стена — не наводимся
-            }
-        }
-
-        Vector3 target = best.Transform.position + Vector3.up * 1.3f;
-        Quaternion targetRot = Quaternion.LookRotation((target - camPos).normalized);
-        cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRot, Smooth * Time.deltaTime);
+        return best;
     }
 }
