@@ -108,7 +108,6 @@ public class EspBehaviour : MonoBehaviour
 
     void OnDestroy()
     {
-        AimRenderHook.Unsubscribe();
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
         if (Instance == this) Instance = null;
     }
@@ -175,7 +174,25 @@ public class EspBehaviour : MonoBehaviour
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
+
+            // 1. Обновляем цель/направление (каждый кадр)
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
+
+            // 2. Лок работает только при активном бинде и наличии цели
+            if (!KeybindState.AimbotActive) return;
+            if (!AimbotModule.HasTarget) return;
+            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
+
+            // 3. Поворот без roll (yaw+pitch, z=0)
+            Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
+            Vector3 e = look.eulerAngles;
+            Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
+
+            // 4. Крутим _mainCameraHolder (AimController.Tick уже отработал в Update)
+            if (_mainCameraHolder != null)
+                _mainCameraHolder.rotation = targetRot;
+            else if (_cam != null)
+                _cam.transform.rotation = targetRot;
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
     }
