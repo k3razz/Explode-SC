@@ -11,6 +11,7 @@ public static class MenuRenderer
 
     private static Texture2D _circleTex;
     private static Texture2D _ringTex;
+    private static readonly Dictionary<string, Vector2> _textCache = new();
 
     public static void EnsureTextures()
     {
@@ -49,16 +50,12 @@ public static class MenuRenderer
         return tex;
     }
 
-    public static void DrawFovCircle()
+    private static Vector2 GetTextSize(string text)
     {
-        MenuRenderer.EnsureTextures();
-        float fovScreen = AimbotModule.Fov * (Screen.height / 90f);
-        if (fovScreen <= 0) return;
-        GUI.color = new Color(1f, 1f, 1f, 0.04f);
-        GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _circleTex);
-        GUI.color = new Color(1f, 1f, 1f, 0.7f);
-        GUI.DrawTexture(new Rect(Screen.width / 2f - fovScreen / 2f, Screen.height / 2f - fovScreen / 2f, fovScreen, fovScreen), _ringTex);
-        GUI.color = Color.white;
+        if (_textCache.TryGetValue(text, out var size)) return size;
+        size = GUI.skin.label.CalcSize(new GUIContent(text));
+        _textCache[text] = size;
+        return size;
     }
 
     public static void DrawIntroAnimation(Texture2D whiteTex, float t)
@@ -122,8 +119,6 @@ public static class MenuRenderer
         by += 30;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", UiState.MenuTab == 0, whiteTex)) UiState.MenuTab = 0;
         by += 34;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimBot", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
-        by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Hide", false, whiteTex))
@@ -134,7 +129,6 @@ public static class MenuRenderer
 
         float cy = panelRect.y + 40;
         if (UiState.MenuTab == 0) DrawEspTab(contentX, cy, contentW, whiteTex);
-        else if (UiState.MenuTab == 1) DrawAimTab(contentX, cy, contentW, whiteTex);
         else if (UiState.MenuTab == 2) DrawRenderTab(contentX, cy, contentW, whiteTex);
     }
 
@@ -184,64 +178,6 @@ public static class MenuRenderer
         { TeamFilter.OnlyEnemies = !TeamFilter.OnlyEnemies; Plugin.CfgOnlyEnemies.Value = TeamFilter.OnlyEnemies; }
     }
 
-    private static void DrawAimTab(float bx, float y, float bw, Texture2D whiteTex)
-    {
-        float bh = 30;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Aimbot: {(AimbotModule.Enabled ? "ON" : "OFF")}", AimbotModule.Enabled, whiteTex))
-        { AimbotModule.Enabled = !AimbotModule.Enabled; Plugin.CfgAimbotEnabled.Value = AimbotModule.Enabled; }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"FOV Circle: {(AimbotModule.DrawFovCircle ? "ON" : "OFF")}", AimbotModule.DrawFovCircle, whiteTex))
-        { AimbotModule.DrawFovCircle = !AimbotModule.DrawFovCircle; }
-        y += 36;
-
-        GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {AimbotModule.Fov:F0}°");
-        y += 24;
-        if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
-        { AimbotModule.Fov = Mathf.Max(1f, AimbotModule.Fov - 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
-        if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Fov = Mathf.Min(90f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
-        y += 36;
-
-        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Smooth:</b> {AimbotModule.Smooth:F0}");
-        y += 24;
-        if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
-        { AimbotModule.Smooth = Mathf.Max(1f, AimbotModule.Smooth - 5f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
-        if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Smooth = Mathf.Min(50f, AimbotModule.Smooth + 5f); Plugin.CfgAimbotSmooth.Value = AimbotModule.Smooth; }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Aim Teammates: {(AimbotModule.TargetTeammates ? "ON" : "OFF")}", AimbotModule.TargetTeammates, whiteTex))
-        { AimbotModule.TargetTeammates = !AimbotModule.TargetTeammates; Plugin.CfgAimbotTargetTeammates.Value = AimbotModule.TargetTeammates; }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Visibility: {(AimbotModule.VisibilityCheck ? "ON" : "OFF")}", AimbotModule.VisibilityCheck, whiteTex))
-        { AimbotModule.VisibilityCheck = !AimbotModule.VisibilityCheck; Plugin.CfgAimbotVisibilityCheck.Value = AimbotModule.VisibilityCheck; }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}", KeybindState.ToggleMode, whiteTex))
-        {
-            KeybindState.ToggleMode = !KeybindState.ToggleMode;
-            Plugin.CfgAimbotToggleMode.Value = KeybindState.ToggleMode;
-        }
-        y += 36;
-
-        string keyName = KeybindState.Capturing ? "PRESS KEY... (Esc)" : KeybindState.AimbotKey.ToString();
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", KeybindState.Capturing, whiteTex))
-        {
-            if (!KeybindState.Capturing)
-            {
-                KeybindState.CapturingBackup = KeybindState.AimbotKey;
-                KeybindState.Capturing = true;
-            }
-            else
-            {
-                KeybindState.AimbotKey = KeybindState.CapturingBackup;
-                KeybindState.Capturing = false;
-            }
-        }
-    }
-
     private static bool CustomButton(Rect rect, string label, bool state, Texture2D whiteTex)
     {
         Event e = Event.current;
@@ -250,23 +186,14 @@ public static class MenuRenderer
         GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
 
-        float lw = Mathf.Min(label.Length * 7f + 4f, rect.width - 6f);
-        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
-
+        Vector2 size = GetTextSize(label);
+        float x = rect.x + (rect.width - size.x) / 2f;
+        float y = rect.y + (rect.height - size.y) / 2f;
+        GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
         return clicked;
     }
 
     private static bool TabButton(Rect rect, string label, bool active, Texture2D whiteTex)
     {
         Event e = Event.current;
-        bool clicked = e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition);
-        GUI.color = active ? new Color(0.2f, 0.4f, 0.7f, 0.95f) : new Color(0.15f, 0.15f, 0.2f, 0.95f);
-        GUI.DrawTexture(rect, whiteTex);
-        GUI.color = Color.white;
-
-        float lw = Mathf.Min(label.Length * 7f + 4f, rect.width - 6f);
-        GUI.Label(new Rect(rect.x + (rect.width - lw) / 2f, rect.y + (rect.height - 16f) / 2f, lw, 16f), label);
-
-        return clicked;
-    }
-}
+        bool clicked = e != null &&
