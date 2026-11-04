@@ -12,7 +12,7 @@ public class EspBehaviour : MonoBehaviour
     private Camera _cam;
     private Texture2D _whiteTex;
     private float _scanTimer;
-    private const float ScanInterval = 1.0f; // Оставил 1.0, но если лагает - ставь 2.0
+    private const float ScanInterval = 1.0f;
     private float _watchdogTimer;
     private const float WatchdogInterval = 3.0f;
     private int _watchdogTicks;
@@ -52,11 +52,6 @@ public class EspBehaviour : MonoBehaviour
             EspModule.BoxesEnabled = Plugin.CfgEspBoxes.Value;
             EspModule.NamesEnabled = Plugin.CfgEspNames.Value;
             EspModule.DistanceEnabled = Plugin.CfgEspDistance.Value;
-            AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
-            AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
-            AimbotModule.Smooth = Plugin.CfgAimbotSmooth.Value;
-            AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
-            AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
             WatermarkModule.Enabled = Plugin.CfgWatermarkEnabled.Value;
             WatermarkModule.Position = new Vector2(Plugin.CfgWatermarkX.Value, Plugin.CfgWatermarkY.Value);
@@ -122,7 +117,7 @@ public class EspBehaviour : MonoBehaviour
             {
                 if (t.Transform == null) continue;
                 var go = t.Transform.gameObject;
-                if (go == null || !go.activeInHierarchy) continue; // Вернули проверку на смерть
+                if (go == null || !go.activeInHierarchy) continue;
 
                 if (TeamFilter.OnlyEnemies && _localTeam > 0 && t.Team == _localTeam) continue;
                 if (!EspModule.IsTeamVisible(t.Team)) continue;
@@ -132,17 +127,6 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { LogThrottled("update_ex", $"[ESP] Update EX: {e}", true); _scanTimer = 0f; }
     }
 
-    void LateUpdate()
-    {
-        try
-        {
-            if (!AimbotModule.Enabled) return;
-            if (_cam == null) _cam = Camera.main;
-            AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
-        }
-        catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
-    }
-
     void OnGUI()
     {
         try
@@ -150,7 +134,6 @@ public class EspBehaviour : MonoBehaviour
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
             if (_cam == null) return;
 
-            // 1. ESP-боксы
             if (EspModule.BoxesEnabled)
             {
                 foreach (var t in EspModule.ToDraw)
@@ -190,7 +173,6 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // 2. Ники (исправлено, теперь с CalcSize, чтобы не было каши)
             if (EspModule.NamesEnabled)
             {
                 foreach (var t in EspModule.ToDraw)
@@ -207,7 +189,6 @@ public class EspBehaviour : MonoBehaviour
                         if (dist > EspModule.NameMaxDist) continue;
 
                         string lbl = t.Name + (EspModule.DistanceEnabled ? $" [{dist:F0}m]" : "");
-                        
                         Vector2 size = GUI.skin.label.CalcSize(new GUIContent(lbl));
                         float lw = size.x + 10f;
                         float ll = x - lw / 2f;
@@ -221,16 +202,10 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // 3. FOV-круг
-            if (AimbotModule.Enabled && AimbotModule.DrawFovCircle)
-                MenuRenderer.DrawFovCircle();
-
-            // 4. Ватермарка
             Watermark.HandleDrag();
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
 
-            // 5. Интро / меню
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
                 MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
@@ -253,7 +228,7 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimbot={AimbotModule.Enabled}, active={AimbotState.Active}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}");
             }
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
