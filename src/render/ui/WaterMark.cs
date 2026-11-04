@@ -5,38 +5,83 @@ namespace MyDynamicESP;
 public static class Watermark
 {
     private static Texture2D _roundedTex;
+    private static int _lastW = -1;
+    private static int _lastH = -1;
     private static Vector2 _lastSize;
     private static string _lastText = "";
     private static float _lastUpdate = 0f;
 
-    private static void EnsureRoundedTexture()
+    private const float PadX = 14f;
+    private const float PadY = 8f;
+    private const float CornerRadius = 8f; // радиус скругления углов
+    private const int AA = 2;              // сглаживание краёв (пикселей)
+
+    private static void EnsureRoundedTexture(int w, int h)
     {
-        if (_roundedTex != null) return;
-        int size = 64;
-        int radius = 16;
-        _roundedTex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        if (_roundedTex != null && _lastW == w && _lastH == h) return;
+
+        // Освобождаем старую текстуру
+        if (_roundedTex != null)
+        {
+            try { Object.Destroy(_roundedTex); } catch { }
+            _roundedTex = null;
+        }
+
+        _lastW = w;
+        _lastH = h;
+
+        _roundedTex = new Texture2D(w, h, TextureFormat.RGBA32, false);
         _roundedTex.filterMode = FilterMode.Bilinear;
         _roundedTex.wrapMode = TextureWrapMode.Clamp;
 
-        var pixels = new Color32[size * size];
-        for (int y = 0; y < size; y++)
+        var pixels = new Color32[w * h];
+        float r = Mathf.Min(CornerRadius, Mathf.Min(w, h) * 0.5f);
+
+        for (int y = 0; y < h; y++)
         {
-            for (int x = 0; x < size; x++)
+            for (int x = 0; x < w; x++)
             {
-                float dx = 0, dy = 0;
-                if (x < radius) dx = radius - x;
-                else if (x >= size - radius) dx = x - (size - radius - 1);
-                if (y < radius) dy = radius - y;
-                else if (y >= size - radius) dy = y - (size - radius - 1);
+                // Расстояние от угла (только в угловых зонах)
+                float a = 1f;
 
-                float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                byte a = 0;
-                if (dist <= radius - 1) a = 255;
-                else if (dist <= radius + 1) a = (byte)(Mathf.Clamp01(radius + 1 - dist) * 255);
+                // Левый верхний
+                if (x < r && y < r)
+                {
+                    float dx = r - (x + 0.5f);
+                    float dy = r - (y + 0.5f);
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    a = Mathf.Clamp01((r - d) / AA + 0.5f);
+                }
+                // Правый верхний
+                else if (x >= w - r && y < r)
+                {
+                    float dx = (x + 0.5f) - (w - r);
+                    float dy = r - (y + 0.5f);
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    a = Mathf.Clamp01((r - d) / AA + 0.5f);
+                }
+                // Левый нижний
+                else if (x < r && y >= h - r)
+                {
+                    float dx = r - (x + 0.5f);
+                    float dy = (y + 0.5f) - (h - r);
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    a = Mathf.Clamp01((r - d) / AA + 0.5f);
+                }
+                // Правый нижний
+                else if (x >= w - r && y >= h - r)
+                {
+                    float dx = (x + 0.5f) - (w - r);
+                    float dy = (y + 0.5f) - (h - r);
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    a = Mathf.Clamp01((r - d) / AA + 0.5f);
+                }
 
-                pixels[y * size + x] = new Color32(0, 0, 0, a);
+                byte alpha = (byte)(Mathf.Clamp01(a) * 255);
+                pixels[y * w + x] = new Color32(0, 0, 0, alpha);
             }
         }
+
         _roundedTex.SetPixels32(pixels);
         _roundedTex.Apply();
     }
@@ -50,10 +95,8 @@ public static class Watermark
             _lastText = text;
             _lastUpdate = Time.time;
         }
-        float padX = 14f;
-        float padY = 8f;
-        float w = _lastSize.x + padX * 2f;
-        float h = _lastSize.y + padY * 2f;
+        float w = _lastSize.x + PadX * 2f;
+        float h = _lastSize.y + PadY * 2f;
         return new Rect(WatermarkModule.Position.x - w / 2f, WatermarkModule.Position.y - h / 2f, w, h);
     }
 
@@ -62,7 +105,7 @@ public static class Watermark
         if (!WatermarkModule.Enabled) return;
         Rect rect = GetRect();
         GUI.color = Color.white;
-        GUI.Label(new Rect(rect.x + 14f, rect.y + 8f, rect.width - 28f, rect.height - 16f), _lastText);
+        GUI.Label(new Rect(rect.x + PadX, rect.y + PadY, rect.width - PadX * 2f, rect.height - PadY * 2f), _lastText);
         GUI.color = Color.white;
     }
 
@@ -97,10 +140,14 @@ public static class Watermark
     public static void DrawBackground(Texture2D whiteTex)
     {
         if (!WatermarkModule.Enabled) return;
-        EnsureRoundedTexture();
         Rect rect = GetRect();
+        int w = Mathf.Max(1, Mathf.RoundToInt(rect.width));
+        int h = Mathf.Max(1, Mathf.RoundToInt(rect.height));
+        EnsureRoundedTexture(w, h);
+        if (_roundedTex == null) return;
+
         GUI.color = new Color(1f, 1f, 1f, 0.85f);
-        GUI.DrawTexture(rect, _roundedTex);
+        GUI.DrawTexture(new Rect(rect.x, rect.y, w, h), _roundedTex);
         GUI.color = Color.white;
     }
 }
