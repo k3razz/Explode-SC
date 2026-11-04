@@ -10,13 +10,11 @@ public static class AimRenderHook
     private static float _diagTimer;
     private static int _calls;
     private static Il2CppSystem.Action<ScriptableRenderContext, Camera> _srpDelegate;
-    private static Camera.CameraCallback _camPreCullDelegate;
 
     public static void Subscribe()
     {
         if (_subscribed) return;
 
-        // URP/HDRP: beginCameraRendering через прямое присваивание (без Combine)
         try
         {
             if (_srpDelegate == null)
@@ -32,22 +30,6 @@ public static class AimRenderHook
             Plugin.LogSource?.LogError($"[AIM] beginCameraRendering subscribe EX: {e.Message}");
         }
 
-        // Built-in: Camera.onPreCull через прямое присваивание
-        try
-        {
-            if (_camPreCullDelegate == null)
-            {
-                _camPreCullDelegate = DelegateSupport.ConvertDelegate<Camera.CameraCallback>(
-                    new Camera.CameraCallback(OnCamPreCull));
-            }
-            Camera.onPreCull = _camPreCullDelegate;
-            Plugin.LogSource?.LogInfo("[AIM] Subscribed to Camera.onPreCull (direct assign)");
-        }
-        catch (System.Exception e)
-        {
-            Plugin.LogSource?.LogError($"[AIM] Camera.onPreCull subscribe EX: {e.Message}");
-        }
-
         _subscribed = true;
     }
 
@@ -61,21 +43,11 @@ public static class AimRenderHook
             if (_srpDelegate != null) RenderPipelineManager.beginCameraRendering = null;
         }
         catch { }
-        try
-        {
-            if (_camPreCullDelegate != null) Camera.onPreCull = null;
-        }
-        catch { }
     }
 
     private static void OnBeginCameraRendering(ScriptableRenderContext ctx, Camera cam)
     {
         Apply(cam, "beginCameraRendering");
-    }
-
-    private static void OnCamPreCull(Camera cam)
-    {
-        Apply(cam, "onPreCull");
     }
 
     private static void Apply(Camera cam, string source)
