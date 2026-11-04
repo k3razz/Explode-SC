@@ -215,17 +215,14 @@ public static class MenuRenderer
     {
         float bh = 30;
 
-        // Глобальное вкл/выкл
         if (CustomButton(new Rect(bx, y, bw, bh), $"AimLock: {(AimbotModule.Enabled ? "ON" : "OFF")}", AimbotModule.Enabled, whiteTex))
         { AimbotModule.Enabled = !AimbotModule.Enabled; Plugin.CfgAimbotEnabled.Value = AimbotModule.Enabled; }
         y += 36;
 
-        // FOV Circle (визуал)
         if (CustomButton(new Rect(bx, y, bw, bh), $"FOV Circle: {(AimbotModule.DrawFovCircle ? "ON" : "OFF")}", AimbotModule.DrawFovCircle, whiteTex))
         { AimbotModule.DrawFovCircle = !AimbotModule.DrawFovCircle; }
         y += 36;
 
-        // FOV (радиус, в котором ищется цель)
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {AimbotModule.Fov:F0}°");
         y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
@@ -234,7 +231,6 @@ public static class MenuRenderer
         { AimbotModule.Fov = Mathf.Min(180f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         y += 36;
 
-        // Mode
         if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}", KeybindState.ToggleMode, whiteTex))
         {
             KeybindState.ToggleMode = !KeybindState.ToggleMode;
@@ -242,7 +238,6 @@ public static class MenuRenderer
         }
         y += 36;
 
-        // Bind
         string keyName = KeybindState.Capturing ? "PRESS KEY... (Esc)" : KeybindState.AimbotKey.ToString();
         if (CustomButton(new Rect(bx, y, bw, bh), $"Bind: {keyName}", KeybindState.Capturing, whiteTex))
         {
