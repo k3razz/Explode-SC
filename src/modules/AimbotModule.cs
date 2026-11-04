@@ -16,7 +16,6 @@ public static class AimbotModule
     private static Tracked _currentTarget;
     private static float _targetTimer = 0f;
 
-    // Та же геометрия, что в EspModule — центр ESP-бокса
     private const float HeadOffset = 1.8f;
     private const float FootOffset = 0.1f;
 
@@ -32,7 +31,6 @@ public static class AimbotModule
         Vector3 camPos, camForward;
         try { camPos = cam.transform.position; camForward = cam.transform.forward; } catch { return; }
 
-        // Пересчёт выбора цели раз в 0.25с (или если цель пропала)
         _targetTimer -= Time.deltaTime;
         if (_currentTarget == null || _currentTarget.Transform == null || _targetTimer <= 0f)
         {
@@ -42,7 +40,6 @@ public static class AimbotModule
 
         if (_currentTarget == null || _currentTarget.Transform == null) return;
 
-        // Каждый кадр — направление на актуальный центр ESP-бокса цели
         Vector3 center = GetEspCenter(_currentTarget.Transform);
         Vector3 dir = center - camPos;
         if (dir.sqrMagnitude < 0.0001f) return;
@@ -60,9 +57,6 @@ public static class AimbotModule
         return (head + foot) * 0.5f;
     }
 
-    /// <summary>
-    /// Ближайшая по углу цель в пределах Fov. Без фильтра команд.
-    /// </summary>
     private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
     {
         Tracked best = null;
