@@ -30,15 +30,16 @@ public class EspBehaviour : MonoBehaviour
     private float _pmRetryTimer;
     private const float PmRetryInterval = 2.0f;
 
-    // Holder камеры (PlayerController._mainCameraHolder @ 0x20)
     private Transform _mainCameraHolder;
     private float _holderCheckTimer;
     private const float HolderCheckInterval = 2.0f;
 
+    private bool _preCullSubscribed;
+
     private const int OFF_PM_CFOG = 0x40;
     private const int OFF_BOT_TEAM = 0x24;
     private const int OFF_PC_CFMP = 0x159;
-    private const int OFF_PC_MAINCAMHOLDER = 0x20; // PlayerController._mainCameraHolder
+    private const int OFF_PC_MAINCAMHOLDER = 0x20;
 
     private readonly Dictionary<string, float> _lastLogTime = new();
     private const float LogCooldown = 1.5f;
@@ -82,6 +83,15 @@ public class EspBehaviour : MonoBehaviour
 
             BindListState.Enabled = Plugin.CfgShowBindList.Value;
 
+            // Подписка на Camera.onPreCull — выполняется ПОСЛЕ всех LateUpdate игры
+            try
+            {
+                Camera.onPreCull += OnCamPreCull;
+                _preCullSubscribed = true;
+                Plugin.LogSource?.LogInfo("[ESP] Subscribed to Camera.onPreCull");
+            }
+            catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] onPreCull subscribe EX: {e.Message}"); }
+
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
@@ -106,7 +116,50 @@ public class EspBehaviour : MonoBehaviour
 
     void OnDestroy()
     {
+        try
+        {
+            if (_preCullSubscribed)
+            {
+                Camera.onPreCull -= OnCamPreCull;
+                _preCullSubscribed = false;
+            }
+        }
+        catch { }
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
+    }
+
+    /// <summary>
+    /// Вызывается ПЕРЕД рендером камеры, ПОСЛЕ всех LateUpdate игры.
+    /// Здесь ставим rotation _mainCameraHolder — до рендера и до стрельбы следующего кадра.
+    /// </summary>
+    void OnCamPreCull(Camera cam)
+    {
+        try
+        {
+            if (!AimbotModule.Enabled) return;
+            if (!KeybindState.AimbotActive) return;
+            if (!AimbotModule.HasTarget) return;
+            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
+
+            // Только для активной камеры
+            if (_cam != null && cam != _cam) return;
+            if (cam == null) return;
+
+            // Поворот без roll: yaw+pitch, z=0
+            Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
+            Vector3 e = look.eulerAngles;
+            Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
+
+            if (_mainCameraHolder != null)
+            {
+                _mainCameraHolder.rotation = targetRot;
+            }
+            else
+            {
+                cam.transform.rotation = targetRot;
+            }
+        }
+        catch { }
     }
 
     void Update()
@@ -168,37 +221,15 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            // Только обновляем цель/направление каждый кадр. Поворот — в OnCamPreCull.
             if (!AimbotModule.Enabled) return;
-            if (!KeybindState.AimbotActive) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
-
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
-
-            if (!AimbotModule.HasTarget) return;
-            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
-
-            // Считаем target rotation без roll
-            Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
-            Vector3 e = look.eulerAngles;
-            Quaternion targetRot = Quaternion.Euler(e.x, e.y, 0f);
-
-            // Крутим _mainCameraHolder (из PlayerController @ 0x20), иначе камеру
-            if (_mainCameraHolder != null)
-            {
-                _mainCameraHolder.rotation = targetRot;
-                return;
-            }
-
-            _cam.transform.rotation = targetRot;
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
     }
 
-    /// <summary>
-    /// Читает PlayerController._mainCameraHolder @ 0x20 у локального игрока.
-    /// Это Transform, которым игра управляет камерой и направлением стрельбы.
-    /// </summary>
     [HideFromIl2Cpp]
     void FindMainCameraHolder()
     {
