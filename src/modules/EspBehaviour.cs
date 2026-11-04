@@ -33,7 +33,7 @@ public class EspBehaviour : MonoBehaviour
 
     // Оффсеты из дампа v2_07
     private const int OFF_PM_CFOG = 0x40;   // PlayerManager.<cfog>k__BackingField (PlayerController)
-    private const int OFF_BOT_TEAM = 0x24;  // BotPlayerController: рабочий оффсет команды (как было)
+    private const int OFF_BOT_TEAM = 0x24;  // BotPlayerController: рабочий оффсет команды
     private const int OFF_PC_CFMP = 0x159;  // PlayerController.<cfmp>k__BackingField (byte Team)
 
     private readonly Dictionary<string, float> _lastLogTime = new();
@@ -68,7 +68,7 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
             AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
             AimbotModule.Smooth = Plugin.CfgAimbotSmooth.Value;
-            AimbotModule.TargetTeammates = Plugin.CfgAimbotTargetTeammates.Value;
+            AimbotModule.TargetTeammates = true; // аим всегда на всех
             AimbotModule.VisibilityCheck = Plugin.CfgAimbotVisibilityCheck.Value;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
@@ -235,6 +235,9 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
+            // FOV-круг (прозрачная заливка + белая обводка)
+            MenuRenderer.DrawFovCircle();
+
             Watermark.HandleDrag();
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
@@ -301,10 +304,6 @@ public class EspBehaviour : MonoBehaviour
         catch { return -1; }
     }
 
-    /// <summary>
-    /// Команда для ботов — как работало раньше: 0x24.
-    /// Для локального игрока (isBot=false) сюда НЕ ходим — используем ReadTeamViaCfmp.
-    /// </summary>
     [HideFromIl2Cpp]
     int ReadTeam(Component component, bool isBot)
     {
@@ -312,36 +311,26 @@ public class EspBehaviour : MonoBehaviour
 
         if (isBot)
         {
-            // Проверенный рабочий путь для ботов
             int offTeam = ReadByteAtOffset(component, OFF_BOT_TEAM);
             if (offTeam > 0 && offTeam <= 3) return offTeam;
 
-            // Fallback: property cfmp
             int viaCfmp = ReadTeamViaCfmp(component);
             if (viaCfmp >= 0) return viaCfmp;
 
             return -1;
         }
 
-        // Обычный PlayerController (не бот) — команда через cfmp
         return ReadTeamViaCfmp(component);
     }
 
-    /// <summary>
-    /// Чтение cfmp (команда) у PlayerController.
-    /// Сначала через managed-свойство (как вы уже находили get__cfmp_k__BackingField),
-    /// затем через прямой offset 0x159 как fallback.
-    /// </summary>
     [HideFromIl2Cpp]
     int ReadTeamViaCfmp(Component component)
     {
         if (component == null) return -1;
 
-        // 1. Через сохранённый MemberInfo (найден в ResolveTypes)
         int viaMember = ReadTeamFromMember(_playerTeamMember, component);
         if (viaMember > 0 && viaMember <= 3) return viaMember;
 
-        // 2. Прямой offset <cfmp>k__BackingField @ 0x159 (byte)
         try
         {
             int t = Marshal.ReadByte(component.Pointer, OFF_PC_CFMP);
@@ -393,7 +382,6 @@ public class EspBehaviour : MonoBehaviour
     {
         if (pm == null) return null;
 
-        // 1. Прямое чтение <cfog>k__BackingField @ 0x40 (PlayerController)
         try
         {
             IntPtr lpPtr = Marshal.ReadIntPtr(pm.Pointer, OFF_PM_CFOG);
@@ -405,7 +393,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch { }
 
-        // 2. Fallback: Il2Cpp-рефлексия property dpky (getter ofc())
         try
         {
             var dpkyProp = _playerManagerType.GetProperty("dpky",
@@ -424,7 +411,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch { }
 
-        // 3. Fallback: Il2Cpp-рефлексия <cfog>k__BackingField
         try
         {
             var cfogField = _playerManagerType.GetField("<cfog>k__BackingField",
@@ -474,7 +460,6 @@ public class EspBehaviour : MonoBehaviour
                 return;
             }
 
-            // Локальный игрок — обычный PlayerController, команда через cfmp
             int newTeam = ReadTeamViaCfmp(localPlayer);
             if (newTeam >= 0 && newTeam != _localTeam)
             {
