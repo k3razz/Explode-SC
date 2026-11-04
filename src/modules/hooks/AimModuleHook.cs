@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using Il2CppInterop.Runtime;
+using System;
 
 namespace MyDynamicESP;
 
@@ -8,50 +10,47 @@ public static class AimRenderHook
     private static bool _subscribed;
     private static float _diagTimer;
     private static int _calls;
+    private static Il2CppSystem.Action<ScriptableRenderContext, Camera> _delegate;
 
     public static void Subscribe()
     {
         if (_subscribed) return;
-        _subscribed = true;
 
         try
         {
-            RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+            _delegate = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<ScriptableRenderContext, Camera>>(
+                new Action<ScriptableRenderContext, Camera>(OnBeginCameraRendering));
+
+            RenderPipelineManager.beginCameraRendering = 
+                (Il2CppSystem.Action<ScriptableRenderContext, Camera>)Il2CppSystem.Delegate.Combine(
+                    RenderPipelineManager.beginCameraRendering, _delegate);
+
+            _subscribed = true;
             Plugin.LogSource?.LogInfo("[AIM] Subscribed to beginCameraRendering");
         }
-        catch (System.Exception e)
+        catch (Exception e)
         {
             Plugin.LogSource?.LogError($"[AIM] beginCameraRendering subscribe EX: {e.Message}");
-        }
-
-        try
-        {
-            Application.onBeforeRender += OnBeforeRender;
-            Plugin.LogSource?.LogInfo("[AIM] Subscribed to onBeforeRender");
-        }
-        catch (System.Exception e)
-        {
-            Plugin.LogSource?.LogError($"[AIM] onBeforeRender subscribe EX: {e.Message}");
         }
     }
 
     public static void Unsubscribe()
     {
-        if (!_subscribed) return;
-        _subscribed = false;
+        if (!_subscribed || _delegate == null) return;
 
-        try { RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering; } catch { }
-        try { Application.onBeforeRender -= OnBeforeRender; } catch { }
+        try
+        {
+            RenderPipelineManager.beginCameraRendering = 
+                (Il2CppSystem.Action<ScriptableRenderContext, Camera>)Il2CppSystem.Delegate.Remove(
+                    RenderPipelineManager.beginCameraRendering, _delegate);
+            _subscribed = false;
+        }
+        catch { }
     }
 
     private static void OnBeginCameraRendering(ScriptableRenderContext ctx, Camera cam)
     {
         Apply(cam, "beginCameraRendering");
-    }
-
-    private static void OnBeforeRender()
-    {
-        Apply(Camera.main, "onBeforeRender");
     }
 
     private static void Apply(Camera cam, string source)
