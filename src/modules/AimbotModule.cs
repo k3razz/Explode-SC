@@ -7,9 +7,6 @@ public static class AimbotModule
 {
     public static bool Enabled = false;
     public static float Fov = 15f;
-    public static float Smooth = 15f;   // 1 = мгновенный лок, 50 = очень плавно
-    public static bool TargetTeammates = true;
-    public static bool VisibilityCheck = false;
     public static bool DrawFovCircle = false;
 
     public static bool HasTarget = false;
@@ -35,7 +32,7 @@ public static class AimbotModule
         Vector3 camPos, camForward;
         try { camPos = cam.transform.position; camForward = cam.transform.forward; } catch { return; }
 
-        // 1. Пересчёт выбора цели раз в 0.25с (или если цель пропала)
+        // Пересчёт выбора цели раз в 0.25с (или если цель пропала)
         _targetTimer -= Time.deltaTime;
         if (_currentTarget == null || _currentTarget.Transform == null || _targetTimer <= 0f)
         {
@@ -45,8 +42,7 @@ public static class AimbotModule
 
         if (_currentTarget == null || _currentTarget.Transform == null) return;
 
-        // 2. Каждый кадр пересчитываем направление на АКТУАЛЬНЫЙ центр бокса цели.
-        //    Это и есть "лок": камера следует за движущейся целью.
+        // Каждый кадр — направление на актуальный центр ESP-бокса цели
         Vector3 center = GetEspCenter(_currentTarget.Transform);
         Vector3 dir = center - camPos;
         if (dir.sqrMagnitude < 0.0001f) return;
@@ -56,9 +52,6 @@ public static class AimbotModule
         HasTarget = true;
     }
 
-    /// <summary>
-    /// Центр ESP-бокса: середина между головой и ногами, теми же оффсетами, что рисует ESP.
-    /// </summary>
     public static Vector3 GetEspCenter(Transform t)
     {
         if (t == null) return Vector3.zero;
@@ -67,6 +60,9 @@ public static class AimbotModule
         return (head + foot) * 0.5f;
     }
 
+    /// <summary>
+    /// Ближайшая по углу цель в пределах Fov. Без фильтра команд.
+    /// </summary>
     private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
     {
         Tracked best = null;
@@ -82,20 +78,9 @@ public static class AimbotModule
             if (distSqr < 0.01f) continue;
 
             float dot = Vector3.Dot(camForward, dir) / Mathf.Sqrt(distSqr);
-            if (dot < 0.85f) continue; // ~32° пре-фильтр
-
             float angle = Mathf.Acos(Mathf.Clamp(dot, -1f, 1f)) * Mathf.Rad2Deg;
             if (angle < bestAngle)
             {
-                if (VisibilityCheck)
-                {
-                    float dlen = dir.magnitude;
-                    if (Physics.Raycast(camPos, dir / dlen, out var hit, dlen))
-                    {
-                        if (hit.transform != t.Transform && !hit.transform.IsChildOf(t.Transform))
-                            continue;
-                    }
-                }
                 bestAngle = angle;
                 best = t;
             }
