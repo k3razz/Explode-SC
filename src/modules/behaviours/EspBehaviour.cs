@@ -12,7 +12,6 @@ namespace MyDynamicESP;
 public class EspBehaviour : MonoBehaviour
 {
     public static EspBehaviour Instance { get; private set; }
-    public Transform MainCameraHolder => _mainCameraHolder;
 
     private Camera _cam;
     private Texture2D _whiteTex;
@@ -75,6 +74,7 @@ public class EspBehaviour : MonoBehaviour
 
             AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
             AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
+            AimbotModule.Smooth = Plugin.CfgAimbotSmooth.Value;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
@@ -121,9 +121,20 @@ public class EspBehaviour : MonoBehaviour
         {
             var mainCam = Camera.main;
             if (mainCam == null) return;
-            if (mainCam.GetComponent<AimCameraHook>() != null) return;
+
+            // Проверка по имени типа через MonoBehaviours (GetComponent<T>() в Il2Cpp не всегда находит)
+            var behaviours = mainCam.GetComponents<MonoBehaviour>();
+            if (behaviours != null)
+            {
+                foreach (var b in behaviours)
+                {
+                    if (b == null) continue;
+                    if (b.GetType().Name == "AimCameraHook") return;
+                }
+            }
 
             mainCam.gameObject.AddComponent<AimCameraHook>();
+            AimShared.MainCamera = mainCam;
             Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to Main Camera");
         }
         catch (Exception e)
@@ -163,7 +174,7 @@ public class EspBehaviour : MonoBehaviour
             if (_holderCheckTimer >= HolderCheckInterval)
             {
                 _holderCheckTimer = 0f;
-                if (_mainCameraHolder == null) FindMainCameraHolder();
+                if (_mainCameraHolder == null || AimShared.MainCameraHolder == null) FindMainCameraHolder();
                 AttachAimHook();
             }
 
@@ -192,7 +203,9 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            // Обновляем цель/направление каждый кадр. Поворот камеры — в AimCameraHook.OnPreCull.
+            // Обновляем цель/направление каждый кадр.
+            // Поворот _mainCameraHolder делает AimControllerPatches (Harmony Postfix на Controller.Tick)
+            // или AimCameraHook.OnPreCull как fallback.
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
@@ -214,10 +227,13 @@ public class EspBehaviour : MonoBehaviour
             var localPlayer = ReadLocalPlayerFromPm(pm);
             if (localPlayer == null) return;
 
+            AimShared.LocalPlayer = localPlayer;
+
             IntPtr ptr = Marshal.ReadIntPtr(localPlayer.Pointer, OFF_PC_MAINCAMHOLDER);
             if (ptr == IntPtr.Zero)
             {
                 Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null (offset 0x20 empty)");
+                AimShared.MainCameraHolder = null;
                 return;
             }
 
@@ -225,6 +241,7 @@ public class EspBehaviour : MonoBehaviour
             if (tr != null && tr.Pointer != IntPtr.Zero)
             {
                 _mainCameraHolder = tr;
+                AimShared.MainCameraHolder = tr;
                 Plugin.LogSource?.LogInfo($"[ESP] _mainCameraHolder found: {tr.name} (parent={tr.parent?.name})");
             }
         }
@@ -232,6 +249,7 @@ public class EspBehaviour : MonoBehaviour
         {
             Plugin.LogSource?.LogError($"[ESP] FindMainCameraHolder EX: {e.Message}");
             _mainCameraHolder = null;
+            AimShared.MainCameraHolder = null;
         }
     }
 
