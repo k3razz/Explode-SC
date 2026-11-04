@@ -30,11 +30,6 @@ public class EspBehaviour : MonoBehaviour
     private float _pmRetryTimer;
     private const float PmRetryInterval = 2.0f;
 
-    // Камера-хук для аима
-    private AimCameraHook _aimHook;
-    private float _camCheckTimer;
-    private const float CamCheckInterval = 1.0f;
-
     private const int OFF_PM_CFOG = 0x40;
     private const int OFF_BOT_TEAM = 0x24;
     private const int OFF_PC_CFMP = 0x159;
@@ -104,7 +99,6 @@ public class EspBehaviour : MonoBehaviour
     {
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
-        AttachAimHook();
     }
 
     void OnDestroy()
@@ -112,60 +106,11 @@ public class EspBehaviour : MonoBehaviour
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
     }
 
-    /// <summary>
-    /// Навешивает AimCameraHook на Camera.main. Если камера сменилась — перевешивает.
-    /// </summary>
-    [HideFromIl2Cpp]
-    void AttachAimHook()
-    {
-        try
-        {
-            var mainCam = Camera.main;
-            if (mainCam == null) return;
-
-            // Если на текущей камере уже есть hook — ок
-            var existing = mainCam.GetComponent<AimCameraHook>();
-            if (existing != null)
-            {
-                _aimHook = existing;
-                _aimHook.Rebind(mainCam);
-                return;
-            }
-
-            // Убираем со старой камеры, если она сменилась
-            if (_aimHook != null)
-            {
-                try { Destroy(_aimHook); } catch { }
-                _aimHook = null;
-            }
-
-            _aimHook = mainCam.gameObject.AddComponent<AimCameraHook>();
-            if (_aimHook != null)
-            {
-                _aimHook.Rebind(mainCam);
-                Plugin.LogSource?.LogInfo("[ESP] AimCameraHook added to Main Camera");
-            }
-        }
-        catch (Exception e)
-        {
-            LogThrottled("aimhook_ex", $"[ESP] AttachAimHook EX: {e.Message}", true);
-        }
-    }
-
     void Update()
     {
         try
         {
             if (_cam == null) _cam = Camera.main;
-
-            // Раз в секунду проверяем, что hook висит на актуальной камере
-            _camCheckTimer += Time.deltaTime;
-            if (_camCheckTimer >= CamCheckInterval)
-            {
-                _camCheckTimer = 0f;
-                if (_aimHook == null || Camera.main == null)
-                    AttachAimHook();
-            }
 
             WatermarkModule.Update();
 
@@ -216,7 +161,21 @@ public class EspBehaviour : MonoBehaviour
             if (!AimbotModule.Enabled) return;
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
+
+            // 1. Обновляем цель
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
+
+            // 2. Применяем поворот камеры прямо здесь (работает в любом рендер-пайплайне)
+            if (!AimbotModule.HasTarget) return;
+            if (AimbotModule.TargetDirection.sqrMagnitude < 0.01f) return;
+
+            Vector3 camForward = _cam.transform.forward;
+            Quaternion delta = Quaternion.FromToRotation(camForward, AimbotModule.TargetDirection);
+
+            float t = Mathf.Clamp01(AimbotModule.Smooth * Time.deltaTime);
+            Quaternion smoothDelta = Quaternion.Slerp(Quaternion.identity, delta, t);
+
+            _cam.transform.rotation = smoothDelta * _cam.transform.rotation;
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
     }
@@ -302,7 +261,7 @@ public class EspBehaviour : MonoBehaviour
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
 
-            // Панель активных биндов
+            // Панель активных биндов — всегда, независимо от меню
             BindListRenderer.Draw();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
@@ -327,7 +286,7 @@ public class EspBehaviour : MonoBehaviour
             if (_watchdogTicks % 6 == 0)
             {
                 UpdateLocalTeam();
-                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimbot={AimbotModule.Enabled}, active={KeybindState.AimbotActive}");
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimbot={AimbotModule.Enabled}, active={KeybindState.AimbotActive}, hasTarget={AimbotModule.HasTarget}");
             }
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
