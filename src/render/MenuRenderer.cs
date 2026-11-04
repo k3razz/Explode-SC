@@ -1,199 +1,67 @@
+using BepInEx;
+using BepInEx.Configuration;
+using BepInEx.Unity.IL2CPP;
+using BepInEx.Logging;
 using UnityEngine;
-using System.Collections.Generic;
+using System;
+using System.IO;
+using Il2CppInterop.Runtime.Injection;
 
 namespace MyDynamicESP;
 
-public static class MenuRenderer
+[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
+public class Plugin : BasePlugin
 {
-    public const float MenuWidth = 500f;
-    public const float MenuHeight = 540f;
-    public const float TabWidth = 120f;
+    public static ManualLogSource LogSource;
+    public static ConfigFile ConfigFile;
+    public static Plugin Instance;
 
-    private static Texture2D _circleTex;
-    private static Texture2D _ringTex;
-    private static readonly Dictionary<string, Vector2> _textCache = new();
+    public static ConfigEntry<bool> CfgEspBoxes;
+    public static ConfigEntry<bool> CfgEspNames;
+    public static ConfigEntry<bool> CfgEspDistance;
+    public static ConfigEntry<bool> CfgOnlyEnemies;
+    public static ConfigEntry<bool> CfgShowTr;
+    public static ConfigEntry<bool> CfgShowCt;
+    public static ConfigEntry<bool> CfgShowSpectator;
+    public static ConfigEntry<bool> CfgWatermarkEnabled;
+    public static ConfigEntry<float> CfgWatermarkX;
+    public static ConfigEntry<float> CfgWatermarkY;
 
-    public static void EnsureTextures()
+    public override void Load()
     {
-        if (_circleTex == null) _circleTex = MakeCircle(128, false, 0f);
-        if (_ringTex == null) _ringTex = MakeCircle(128, true, 2f);
-    }
-
-    private static Texture2D MakeCircle(int size, bool ring, float thickness)
-    {
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        tex.filterMode = FilterMode.Bilinear;
-        tex.wrapMode = TextureWrapMode.Clamp;
-        var pixels = new Color32[size * size];
-        float center = size / 2f;
-        float outer = size / 2f - 1f;
-        float inner = outer - thickness;
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float dx = x - center + 0.5f, dy = y - center + 0.5f;
-                float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                float a = 0f;
-                if (ring)
-                {
-                    if (dist <= outer && dist >= inner)
-                        a = Mathf.Clamp01(Mathf.Min(outer - dist, dist - inner) / 1.5f);
-                }
-                else
-                {
-                    a = Mathf.Clamp01((outer - dist) / 1.5f);
-                }
-                pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255));
-            }
-        tex.SetPixels32(pixels);
-        tex.Apply();
-        return tex;
-    }
-
-    private static Vector2 GetTextSize(string text)
-    {
-        if (_textCache.TryGetValue(text, out var size)) return size;
-        size = GUI.skin.label.CalcSize(new GUIContent(text));
-        _textCache[text] = size;
-        return size;
-    }
-
-    public static void DrawIntroAnimation(Texture2D whiteTex, float t)
-    {
-        float sw = Screen.width, sh = Screen.height;
-
-        float bgAlpha = 0f;
-        if (t >= 0f && t < 0.3f) bgAlpha = Mathf.Lerp(0f, 0.65f, (t - 0f) / 0.3f);
-        else if (t >= 0.3f && t < 1.6f) bgAlpha = 0.65f;
-        else if (t >= 1.6f && t < 2.0f) bgAlpha = Mathf.Lerp(0.65f, 0f, (t - 1.6f) / 0.4f);
-        else bgAlpha = 0f;
-
-        if (bgAlpha > 0f)
+        Instance = this;
+        LogSource = Log;
+        Log.LogInfo("[ESP] ===== Plugin.Load() =====");
+        try
         {
-            GUI.color = new Color(0.1f, 0.1f, 0.1f, bgAlpha);
-            GUI.DrawTexture(new Rect(0, 0, sw, sh), whiteTex);
-            GUI.color = Color.white;
+            string cfgPath = Path.Combine(Paths.ConfigPath, "explode.cfg");
+            ConfigFile = new ConfigFile(cfgPath, true);
+
+            CfgEspBoxes = ConfigFile.Bind("ESP", "Boxes", true);
+            CfgEspNames = ConfigFile.Bind("ESP", "Names", true);
+            CfgEspDistance = ConfigFile.Bind("ESP", "Distance", true);
+            CfgOnlyEnemies = ConfigFile.Bind("ESP", "OnlyEnemies", false);
+            CfgShowTr = ConfigFile.Bind("ESP", "ShowTr", true);
+            CfgShowCt = ConfigFile.Bind("ESP", "ShowCt", true);
+            CfgShowSpectator = ConfigFile.Bind("ESP", "ShowSpectator", false);
+
+            CfgWatermarkEnabled = ConfigFile.Bind("Render", "WatermarkEnabled", true);
+            CfgWatermarkX = ConfigFile.Bind("Render", "WatermarkX", -1f);
+            CfgWatermarkY = ConfigFile.Bind("Render", "WatermarkY", -1f);
+
+            TeamFilter.ShowTr = CfgShowTr.Value;
+            TeamFilter.ShowCt = CfgShowCt.Value;
+            TeamFilter.ShowSpectator = CfgShowSpectator.Value;
+            TeamFilter.OnlyEnemies = CfgOnlyEnemies.Value;
+
+            ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
+            ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
+
+            AddComponent<KeybindListener>();
+            IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
+
+            Log.LogInfo("[ESP] Components added");
         }
-
-        float logoAlpha = 0f;
-        if (t >= 0.3f && t < 0.8f) logoAlpha = Mathf.Lerp(0f, 1f, (t - 0.3f) / 0.5f);
-        else if (t >= 0.8f && t < 1.2f) logoAlpha = 1f;
-        else if (t >= 1.2f && t < 1.6f) logoAlpha = Mathf.Lerp(1f, 0f, (t - 1.2f) / 0.4f);
-        else logoAlpha = 0f;
-
-        if (logoAlpha > 0f)
-        {
-            string eLetter = "E";
-            string rest = "xplode";
-            float logoY = sh * 0.35f;
-            float eWidth = 55f;
-            float restWidth = rest.Length * 55f;
-            float totalWidth = eWidth + restWidth;
-            float startX = sw / 2f - totalWidth / 2f;
-
-            GUI.color = new Color(0f, 0f, 0f, logoAlpha * 0.6f);
-            GUI.Label(new Rect(startX + 3f, logoY + 3f, totalWidth, 120f), eLetter + rest);
-            GUI.color = new Color(1f, 0.2f, 0.2f, logoAlpha);
-            GUI.Label(new Rect(startX, logoY, eWidth + 4f, 120f), eLetter);
-            GUI.color = new Color(1f, 1f, 1f, logoAlpha);
-            GUI.Label(new Rect(startX + eWidth, logoY, restWidth + 4f, 120f), rest);
-            GUI.color = Color.white;
-        }
+        catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
     }
-
-    public static void DrawMenu(Texture2D whiteTex)
-    {
-        float sw = Screen.width, sh = Screen.height;
-        float mw = MenuWidth, mh = MenuHeight;
-        Rect panelRect = new Rect((sw - mw) / 2f, (sh - mh) / 2f, mw, mh);
-
-        GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
-        GUI.DrawTexture(panelRect, whiteTex);
-        GUI.color = Color.white;
-
-        float bx = panelRect.x + 10, by = panelRect.y + 10;
-        float contentX = bx + TabWidth + 10f;
-        float contentW = panelRect.width - (TabWidth + 30f);
-
-        GUI.Label(new Rect(bx, by, panelRect.width - 20f, 24f), "<b>Explode</b>");
-        by += 30;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", UiState.MenuTab == 0, whiteTex)) UiState.MenuTab = 0;
-        by += 34;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
-        by += 34;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Hide", false, whiteTex))
-        {
-            KeybindState.MenuOpen = false;
-            UiState.MenuVisible = false;
-        }
-
-        float cy = panelRect.y + 40;
-        if (UiState.MenuTab == 0) DrawEspTab(contentX, cy, contentW, whiteTex);
-        else if (UiState.MenuTab == 2) DrawRenderTab(contentX, cy, contentW, whiteTex);
-    }
-
-    private static void DrawRenderTab(float bx, float y, float bw, Texture2D whiteTex)
-    {
-        float bh = 30;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Watermark: {(WatermarkModule.Enabled ? "ON" : "OFF")}", WatermarkModule.Enabled, whiteTex))
-        {
-            WatermarkModule.Enabled = !WatermarkModule.Enabled;
-            Plugin.CfgWatermarkEnabled.Value = WatermarkModule.Enabled;
-        }
-        y += 36;
-
-        if (CustomButton(new Rect(bx, y, bw, bh), "Reset Watermark Position", false, whiteTex))
-        {
-            WatermarkModule.Position = new Vector2(Screen.width / 2f, Screen.height - 40f);
-            Plugin.CfgWatermarkX.Value = WatermarkModule.Position.x;
-            Plugin.CfgWatermarkY.Value = WatermarkModule.Position.y;
-        }
-    }
-
-    private static void DrawEspTab(float bx, float y, float bw, Texture2D whiteTex)
-    {
-        float bh = 30;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"ESP Boxes: {(EspModule.BoxesEnabled ? "ON" : "OFF")}", EspModule.BoxesEnabled, whiteTex))
-        { EspModule.BoxesEnabled = !EspModule.BoxesEnabled; Plugin.CfgEspBoxes.Value = EspModule.BoxesEnabled; }
-        y += 36;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Names: {(EspModule.NamesEnabled ? "ON" : "OFF")}", EspModule.NamesEnabled, whiteTex))
-        { EspModule.NamesEnabled = !EspModule.NamesEnabled; Plugin.CfgEspNames.Value = EspModule.NamesEnabled; }
-        y += 36;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Distance: {(EspModule.DistanceEnabled ? "ON" : "OFF")}", EspModule.DistanceEnabled, whiteTex))
-        { EspModule.DistanceEnabled = !EspModule.DistanceEnabled; Plugin.CfgEspDistance.Value = EspModule.DistanceEnabled; }
-        y += 46;
-
-        GUI.Label(new Rect(bx, y, bw, 22), "<b>Team filter:</b>");
-        y += 26;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"TR: {(TeamFilter.ShowTr ? "ON" : "OFF")}", TeamFilter.ShowTr, whiteTex))
-        { TeamFilter.ShowTr = !TeamFilter.ShowTr; Plugin.CfgShowTr.Value = TeamFilter.ShowTr; }
-        y += 36;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"CT: {(TeamFilter.ShowCt ? "ON" : "OFF")}", TeamFilter.ShowCt, whiteTex))
-        { TeamFilter.ShowCt = !TeamFilter.ShowCt; Plugin.CfgShowCt.Value = TeamFilter.ShowCt; }
-        y += 36;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Spec: {(TeamFilter.ShowSpectator ? "ON" : "OFF")}", TeamFilter.ShowSpectator, whiteTex))
-        { TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator; Plugin.CfgShowSpectator.Value = TeamFilter.ShowSpectator; }
-        y += 46;
-        if (CustomButton(new Rect(bx, y, bw, bh), $"Only enemies: {(TeamFilter.OnlyEnemies ? "ON" : "OFF")}", TeamFilter.OnlyEnemies, whiteTex))
-        { TeamFilter.OnlyEnemies = !TeamFilter.OnlyEnemies; Plugin.CfgOnlyEnemies.Value = TeamFilter.OnlyEnemies; }
-    }
-
-    private static bool CustomButton(Rect rect, string label, bool state, Texture2D whiteTex)
-    {
-        Event e = Event.current;
-        bool clicked = e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition);
-        GUI.color = state ? new Color(0.2f, 0.55f, 0.3f, 0.95f) : new Color(0.55f, 0.2f, 0.2f, 0.95f);
-        GUI.DrawTexture(rect, whiteTex);
-        GUI.color = Color.white;
-
-        Vector2 size = GetTextSize(label);
-        float x = rect.x + (rect.width - size.x) / 2f;
-        float y = rect.y + (rect.height - size.y) / 2f;
-        GUI.Label(new Rect(x, y, size.x + 2f, size.y + 2f), label);
-        return clicked;
-    }
-
-    private static bool TabButton(Rect rect, string label, bool active, Texture2D whiteTex)
-    {
-        Event e = Event.current;
-        bool clicked = e != null &&
+}
