@@ -14,6 +14,15 @@ public static class KeybindState
 {
     public static KeyCode MenuKey = KeyCode.Insert;
 
+    // Аимбот
+    public static KeyCode AimbotKey = KeyCode.Mouse1;
+    public static bool ToggleMode = false;
+    public static bool Capturing = false;
+    public static KeyCode CapturingBackup = KeyCode.None;
+    public static bool AimbotActive = false; // зажат бинд или toggle on
+    public static bool LastKeyState = false;
+
+    // Интро
     public static bool IntroPlayed = false;
     public static bool IntroActive = false;
     public static float IntroAnimTime = 0f;
