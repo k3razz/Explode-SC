@@ -26,6 +26,7 @@ public class Plugin : BasePlugin
 
     public static ConfigEntry<bool> CfgAimbotEnabled;
     public static ConfigEntry<float> CfgAimbotFov;
+    public static ConfigEntry<float> CfgAimbotSensitivity;
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
 
@@ -61,6 +62,7 @@ public class Plugin : BasePlugin
 
             CfgAimbotEnabled = ConfigFile.Bind("AimLock", "Enabled", false);
             CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 90f);
+            CfgAimbotSensitivity = ConfigFile.Bind("AimLock", "Sensitivity", 0.15f);
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
 
@@ -92,7 +94,6 @@ public class Plugin : BasePlugin
             AddComponent<KeybindListener>();
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
 
-            AimControllerPatches.Apply();
             WeaponLog.Apply();
 
             Log.LogInfo("[ESP] Components added");
