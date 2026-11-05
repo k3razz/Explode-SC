@@ -2,7 +2,6 @@ using HarmonyLib;
 using UnityEngine;
 using System;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime.InteropTypes;
 
 namespace MyDynamicESP;
@@ -11,8 +10,6 @@ public static class AimControllerPatches
 {
     private static bool _applied;
     private static int _lastFrame = -1;
-
-    private const int OFF_CAM_TRANSFORM = 0x78;
 
     public static void Apply()
     {
@@ -26,11 +23,11 @@ public static class AimControllerPatches
             if (aimCtrlType == null) { Plugin.LogSource?.LogError("[AIM] AimController not found"); return; }
 
             var nxw = aimCtrlType.GetMethod("nxw", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-            if (nxw == null) { Plugin.LogSource?.LogError("[AIM] nxw (Update) not found"); return; }
+            if (nxw == null) { Plugin.LogSource?.LogError("[AIM] nxw not found"); return; }
 
             var harmony = new Harmony("com.you.dynamicesp.aimctrl");
             harmony.Patch(nxw, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(PostfixUpdate)));
-            Plugin.LogSource?.LogInfo($"[AIM] Patched {aimCtrlType.FullName}.nxw (Update postfix)");
+            Plugin.LogSource?.LogInfo($"[AIM] Patched {aimCtrlType.FullName}.nxw (postfix)");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] Apply EX: {e.Message}"); }
     }
@@ -64,6 +61,8 @@ public static class AimControllerPatches
     {
         try
         {
+            Plugin.LogSource?.LogInfo($"[AIM] PostfixUpdate called enabled={AimbotModule.Enabled} active={KeybindState.AimbotActive} hasTarget={AimbotModule.HasTarget}");
+
             if (__instance == null) return;
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
@@ -73,27 +72,16 @@ public static class AimControllerPatches
             int fc = Time.frameCount;
             if (fc == _lastFrame) return;
 
-            IntPtr instPtr = IntPtr.Zero;
-            if (__instance is Il2CppObjectBase il2cppObj) instPtr = il2cppObj.Pointer;
-            if (instPtr == IntPtr.Zero) return;
-
-            IntPtr camTrPtr = Marshal.ReadIntPtr(instPtr, OFF_CAM_TRANSFORM);
-            if (camTrPtr == IntPtr.Zero)
-            {
-                Plugin.LogSource?.LogInfo("[AIM] camTransform is null");
-                return;
-            }
-
-            var camTr = new Transform(camTrPtr);
-            if (camTr == null || camTr.Pointer == IntPtr.Zero) return;
+            var mainCam = Camera.main;
+            if (mainCam == null) return;
 
             Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
             Vector3 e = look.eulerAngles;
-            camTr.rotation = Quaternion.Euler(e.x, e.y, 0f);
+            mainCam.transform.rotation = Quaternion.Euler(e.x, e.y, 0f);
 
             _lastFrame = fc;
 
-            Plugin.LogSource?.LogInfo($"[AIM] WriteAim camTr={camTr.name} yaw={e.y:F1} pitch={e.x:F1} tgt={AimbotModule.TargetDirection}");
+            Plugin.LogSource?.LogInfo($"[AIM] WriteAim cam={mainCam.name} yaw={e.y:F1} pitch={e.x:F1} tgt={AimbotModule.TargetDirection}");
         }
         catch (Exception ex) { Plugin.LogSource?.LogError($"[AIM] PostfixUpdate EX: {ex.Message}"); }
     }
