@@ -11,7 +11,7 @@ public static class UiPanel
 
     public static void EnsureTexture(int w, int h)
     {
-        if (_tex != null && _lastW == w && _lastH == h) return;
+        if (_tex != null && Mathf.Abs(_lastW - w) <= 2 && Mathf.Abs(_lastH - h) <= 2) return;
         if (_tex != null) { try { Object.Destroy(_tex); } catch { } _tex = null; }
         _lastW = w; _lastH = h;
         _tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
