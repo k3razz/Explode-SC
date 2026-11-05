@@ -220,93 +220,106 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            var e = Event.current;
+            bool isRepaint = e == null || e.type == EventType.Repaint;
+            bool isMouse = e != null && (e.type == EventType.MouseDown || e.type == EventType.MouseDrag || e.type == EventType.MouseUp);
+
+            if (!isRepaint && !isMouse) return;
+
             if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
             if (_cam == null) return;
 
-            if (EspModule.BoxesEnabled)
+            if (isRepaint)
             {
-                foreach (var t in EspModule.ToDraw)
+                if (EspModule.BoxesEnabled && !UiState.MenuVisible)
                 {
-                    try
+                    foreach (var t in EspModule.ToDraw)
                     {
-                        if (t.Transform == null) continue;
-                        Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
-                        Vector3 fw = t.Transform.position - Vector3.up * EspModule.FootOffset;
-                        Vector3 sh = _cam.WorldToScreenPoint(hw);
-                        Vector3 sf = _cam.WorldToScreenPoint(fw);
-                        if (sh.z < 0 || sf.z < 0) continue;
+                        try
+                        {
+                            if (t.Transform == null) continue;
+                            Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
+                            Vector3 fw = t.Transform.position - Vector3.up * EspModule.FootOffset;
+                            Vector3 sh = _cam.WorldToScreenPoint(hw);
+                            Vector3 sf = _cam.WorldToScreenPoint(fw);
+                            if (sh.z < 0 || sf.z < 0) continue;
 
-                        float x = sh.x;
-                        float top = Screen.height - sh.y;
-                        float bottom = Screen.height - sf.y;
-                        float height = Mathf.Abs(bottom - top);
-                        float width = height * EspModule.BoxWidthRatio;
-                        if (width < 4f) width = 4f;
-                        if (height < 8f) height = 8f;
-                        float left = x - width / 2f;
+                            float x = sh.x;
+                            float top = Screen.height - sh.y;
+                            float bottom = Screen.height - sf.y;
+                            float height = Mathf.Abs(bottom - top);
+                            float width = height * EspModule.BoxWidthRatio;
+                            if (width < 4f) width = 4f;
+                            if (height < 8f) height = 8f;
+                            float left = x - width / 2f;
 
-                        Color fill = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
-                        Color outl = t.Team == 1 ? Color.red : Color.cyan;
+                            Color fill = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
+                            Color outl = t.Team == 1 ? Color.red : Color.cyan;
 
-                        GUI.color = fill;
-                        GUI.DrawTexture(new Rect(left, top, width, height), _whiteTex);
-                        GUI.color = outl;
-                        float th = 2f;
-                        GUI.DrawTexture(new Rect(left, top, width, th), _whiteTex);
-                        GUI.DrawTexture(new Rect(left, top + height - th, width, th), _whiteTex);
-                        GUI.DrawTexture(new Rect(left, top, th, height), _whiteTex);
-                        GUI.DrawTexture(new Rect(left + width - th, top, th, height), _whiteTex);
-                        GUI.color = Color.white;
+                            GUI.color = fill;
+                            GUI.DrawTexture(new Rect(left, top, width, height), _whiteTex);
+                            GUI.color = outl;
+                            float th = 2f;
+                            GUI.DrawTexture(new Rect(left, top, width, th), _whiteTex);
+                            GUI.DrawTexture(new Rect(left, top + height - th, width, th), _whiteTex);
+                            GUI.DrawTexture(new Rect(left, top, th, height), _whiteTex);
+                            GUI.DrawTexture(new Rect(left + width - th, top, th, height), _whiteTex);
+                            GUI.color = Color.white;
+                        }
+                        catch { }
                     }
-                    catch { }
                 }
+
+                if (EspModule.NamesEnabled && !UiState.MenuVisible)
+                {
+                    foreach (var t in EspModule.ToDraw)
+                    {
+                        try
+                        {
+                            if (t.Transform == null) continue;
+                            Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
+                            Vector3 sh = _cam.WorldToScreenPoint(hw);
+                            if (sh.z < 0) continue;
+                            float x = sh.x;
+                            float top = Screen.height - sh.y;
+                            float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
+                            if (dist > EspModule.NameMaxDist) continue;
+
+                            string lbl = t.Name + (EspModule.DistanceEnabled ? $" [{dist:F0}m]" : "");
+                            Vector2 size = GUI.skin.label.CalcSize(new GUIContent(lbl));
+                            float lw = size.x + 10f;
+                            float ll = x - lw / 2f;
+
+                            GUI.color = new Color(0f, 0f, 0f, 0.65f);
+                            GUI.DrawTexture(new Rect(ll - 2f, top - 22f, lw + 4f, 20f), _whiteTex);
+                            GUI.color = Color.white;
+                            GUI.Label(new Rect(ll, top - 21f, lw, 18f), lbl);
+                        }
+                        catch { }
+                    }
+                }
+
+                MenuRenderer.DrawFovCircle();
+                Watermark.DrawBackground(_whiteTex);
+                Watermark.DrawText();
+                BindListRenderer.Draw();
+                BombStatusRenderer.Draw();
             }
 
-            if (EspModule.NamesEnabled)
+            if (isMouse)
             {
-                foreach (var t in EspModule.ToDraw)
-                {
-                    try
-                    {
-                        if (t.Transform == null) continue;
-                        Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
-                        Vector3 sh = _cam.WorldToScreenPoint(hw);
-                        if (sh.z < 0) continue;
-                        float x = sh.x;
-                        float top = Screen.height - sh.y;
-                        float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
-                        if (dist > EspModule.NameMaxDist) continue;
-
-                        string lbl = t.Name + (EspModule.DistanceEnabled ? $" [{dist:F0}m]" : "");
-                        Vector2 size = GUI.skin.label.CalcSize(new GUIContent(lbl));
-                        float lw = size.x + 10f;
-                        float ll = x - lw / 2f;
-
-                        GUI.color = new Color(0f, 0f, 0f, 0.65f);
-                        GUI.DrawTexture(new Rect(ll - 2f, top - 22f, lw + 4f, 20f), _whiteTex);
-                        GUI.color = Color.white;
-                        GUI.Label(new Rect(ll, top - 21f, lw, 18f), lbl);
-                    }
-                    catch { }
-                }
+                Watermark.HandleDrag();
+                BindListRenderer.HandleDrag();
+                BombStatusRenderer.HandleDrag();
             }
-
-            MenuRenderer.DrawFovCircle();
-
-            Watermark.HandleDrag();
-            Watermark.DrawBackground(_whiteTex);
-            Watermark.DrawText();
-
-            BindListRenderer.Draw();
-            BombStatusRenderer.Draw();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
-                MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
+                if (isRepaint) MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
                 return;
             }
 
-            if (UiState.MenuVisible)
+            if (UiState.MenuVisible && isRepaint)
                 MenuRenderer.DrawMenu(_whiteTex);
         }
         catch { }
