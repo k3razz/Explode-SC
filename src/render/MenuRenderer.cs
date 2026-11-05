@@ -238,6 +238,14 @@ public static class MenuRenderer
         { AimbotModule.Fov = Mathf.Min(180f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         y += 36;
 
+        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Sensitivity:</b> {AimbotModule.Sensitivity:F3}");
+        y += 24;
+        if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
+        { AimbotModule.Sensitivity = Mathf.Max(0.01f, AimbotModule.Sensitivity - 0.01f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
+        if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
+        { AimbotModule.Sensitivity = Mathf.Min(1f, AimbotModule.Sensitivity + 0.01f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
+        y += 36;
+
         if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}", KeybindState.ToggleMode, whiteTex))
         {
             KeybindState.ToggleMode = !KeybindState.ToggleMode;
