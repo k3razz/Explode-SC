@@ -12,11 +12,7 @@ public static class AimControllerPatches
     private static bool _applied;
     private static int _lastFrame = -1;
 
-    private const int OFF_AIM_SNAPSHOT = 0x28;
-    private const int OFF_AIM_X = 0x54;
-    private const int OFF_AIM_Y = 0x58;
-    private const int OFF_MIN_X = 0x94;
-    private const int OFF_MAX_X = 0x98;
+    private const int OFF_CAM_TRANSFORM = 0x78;
 
     public static void Apply()
     {
@@ -30,11 +26,11 @@ public static class AimControllerPatches
             if (aimCtrlType == null) { Plugin.LogSource?.LogError("[AIM] AimController not found"); return; }
 
             var nxw = aimCtrlType.GetMethod("nxw", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-            if (nxw == null) { Plugin.LogSource?.LogError("[AIM] nxw not found"); return; }
+            if (nxw == null) { Plugin.LogSource?.LogError("[AIM] nxw (Update) not found"); return; }
 
             var harmony = new Harmony("com.you.dynamicesp.aimctrl");
-            harmony.Patch(nxw, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(PostfixNxw)));
-            Plugin.LogSource?.LogInfo($"[AIM] Patched {aimCtrlType.FullName}.nxw (postfix)");
+            harmony.Patch(nxw, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(PostfixUpdate)));
+            Plugin.LogSource?.LogInfo($"[AIM] Patched {aimCtrlType.FullName}.nxw (Update postfix)");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] Apply EX: {e.Message}"); }
     }
@@ -64,7 +60,7 @@ public static class AimControllerPatches
         return null;
     }
 
-    public static void PostfixNxw(object __instance)
+    public static void PostfixUpdate(object __instance)
     {
         try
         {
@@ -72,52 +68,33 @@ public static class AimControllerPatches
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
+            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
             int fc = Time.frameCount;
             if (fc == _lastFrame) return;
-
-            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
             IntPtr instPtr = IntPtr.Zero;
             if (__instance is Il2CppObjectBase il2cppObj) instPtr = il2cppObj.Pointer;
             if (instPtr == IntPtr.Zero) return;
 
-            IntPtr snapPtr = Marshal.ReadIntPtr(instPtr, OFF_AIM_SNAPSHOT);
-            if (snapPtr == IntPtr.Zero) return;
-
-            Vector3 dir = AimbotModule.TargetDirection;
-            float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
-            float pitch = -Mathf.Asin(dir.y) * Mathf.Rad2Deg;
-
-            float minX = -89f, maxX = 89f;
-            try
+            IntPtr camTrPtr = Marshal.ReadIntPtr(instPtr, OFF_CAM_TRANSFORM);
+            if (camTrPtr == IntPtr.Zero)
             {
-                float mn = ReadFloat(instPtr, OFF_MIN_X);
-                float mx = ReadFloat(instPtr, OFF_MAX_X);
-                if (mx > mn) { minX = mn; maxX = mx; }
+                Plugin.LogSource?.LogInfo("[AIM] camTransform is null");
+                return;
             }
-            catch { }
-            pitch = Mathf.Clamp(pitch, minX, maxX);
 
-            WriteFloat(snapPtr, OFF_AIM_X, yaw);
-            WriteFloat(snapPtr, OFF_AIM_Y, pitch);
+            var camTr = new Transform(camTrPtr);
+            if (camTr == null || camTr.Pointer == IntPtr.Zero) return;
+
+            Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
+            Vector3 e = look.eulerAngles;
+            camTr.rotation = Quaternion.Euler(e.x, e.y, 0f);
 
             _lastFrame = fc;
 
-            Plugin.LogSource?.LogInfo($"[AIM] WriteAim yaw={yaw:F1} pitch={pitch:F1} tgt={dir}");
+            Plugin.LogSource?.LogInfo($"[AIM] WriteAim camTr={camTr.name} yaw={e.y:F1} pitch={e.x:F1} tgt={AimbotModule.TargetDirection}");
         }
-        catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] PostfixNxw EX: {e.Message}"); }
-    }
-
-    private static float ReadFloat(IntPtr ptr, int offset)
-    {
-        int bits = Marshal.ReadInt32(ptr, offset);
-        return BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
-    }
-
-    private static void WriteFloat(IntPtr ptr, int offset, float value)
-    {
-        int bits = BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
-        Marshal.WriteInt32(ptr, offset, bits);
+        catch (Exception ex) { Plugin.LogSource?.LogError($"[AIM] PostfixUpdate EX: {ex.Message}"); }
     }
 }
