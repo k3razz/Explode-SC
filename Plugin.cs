@@ -93,10 +93,9 @@ public class Plugin : BasePlugin
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
 
             AimControllerPatches.Apply();
+            WeaponLog.Apply();
 
             Log.LogInfo("[ESP] Components added");
-            WeaponLog.Apply();
-            Log.LogInfo("[DEBUG] WeaponLog applied")
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
     }
