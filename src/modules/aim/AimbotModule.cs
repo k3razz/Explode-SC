@@ -8,35 +8,32 @@ public static class AimbotModule
     public static bool Enabled = false;
     public static float Fov = 90f;
     public static bool DrawFovCircle = false;
+    public static float Sensitivity = 0.15f;
 
     public static bool HasTarget = false;
     public static Vector3 TargetDirection = Vector3.zero;
     public static Vector3 TargetPoint = Vector3.zero;
+    public static float TargetAngleX = 0f;
+    public static float TargetAngleY = 0f;
 
     private static Tracked _currentTarget;
-    private static float _targetTimer = 0f;
-
-    private const float HeadOffset = 1.8f;
-    private const float FootOffset = 0.1f;
+    private const float HeadOffset = 1.5f;
 
     public static Tracked CurrentTarget => _currentTarget;
 
     public static void Update(Camera cam, int localTeam, Dictionary<int, Tracked> tracked)
     {
         HasTarget = false;
+        TargetAngleX = 0f;
+        TargetAngleY = 0f;
 
         if (!Enabled) return;
         if (cam == null) return;
 
-        Vector3 camPos, camForward;
-        try { camPos = cam.transform.position; camForward = cam.transform.forward; } catch { return; }
+        Vector3 camPos = cam.transform.position;
+        Vector3 camForward = cam.transform.forward;
 
-        _targetTimer -= Time.deltaTime;
-        if (_currentTarget == null || _currentTarget.Transform == null || _targetTimer <= 0f)
-        {
-            _targetTimer = 0.25f;
-            _currentTarget = FindBestTarget(camPos, camForward, tracked);
-        }
+        _currentTarget = FindBestTarget(camPos, camForward, tracked);
 
         if (_currentTarget == null || _currentTarget.Transform == null) return;
 
@@ -47,14 +44,18 @@ public static class AimbotModule
         TargetPoint = center;
         TargetDirection = dir.normalized;
         HasTarget = true;
+
+        Vector3 local = cam.transform.InverseTransformDirection(TargetDirection);
+        if (local.z <= 0.001f) { HasTarget = false; return; }
+
+        TargetAngleX = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+        TargetAngleY = -Mathf.Atan2(local.y, local.z) * Mathf.Rad2Deg;
     }
 
     public static Vector3 GetEspCenter(Transform t)
     {
         if (t == null) return Vector3.zero;
-        Vector3 head = t.position + Vector3.up * HeadOffset;
-        Vector3 foot = t.position - Vector3.up * FootOffset;
-        return (head + foot) * 0.5f;
+        return t.position + Vector3.up * HeadOffset;
     }
 
     private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
@@ -65,14 +66,13 @@ public static class AimbotModule
         foreach (var t in tracked.Values)
         {
             if (t.Transform == null) continue;
+            try { if (!t.Transform.gameObject.activeInHierarchy) continue; } catch { }
 
             Vector3 center = GetEspCenter(t.Transform);
             Vector3 dir = center - camPos;
-            float distSqr = dir.sqrMagnitude;
-            if (distSqr < 0.01f) continue;
+            if (dir.sqrMagnitude < 0.01f) continue;
 
-            float dot = Vector3.Dot(camForward, dir) / Mathf.Sqrt(distSqr);
-            float angle = Mathf.Acos(Mathf.Clamp(dot, -1f, 1f)) * Mathf.Rad2Deg;
+            float angle = Vector3.Angle(camForward, dir);
             if (angle < bestAngle)
             {
                 bestAngle = angle;
