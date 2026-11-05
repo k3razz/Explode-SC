@@ -25,61 +25,18 @@ public static class AimControllerPatches
 
         try
         {
-            MethodInfo targetMethod = null;
-            string targetName = null;
-
             var aimCtrlType = FindType("Chillow.StandChillow.Player.Aim.AimController");
             if (aimCtrlType == null) aimCtrlType = FindTypeByShortName("AimController");
+            if (aimCtrlType == null) { Plugin.LogSource?.LogError("[AIM] AimController not found"); return; }
 
-            if (aimCtrlType != null)
-            {
-                foreach (var name in new[] { "nxw", "Update", "nyv", "nxz" })
-                {
-                    try
-                    {
-                        var mi = aimCtrlType.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-                        if (mi != null)
-                        {
-                            if (name == "nyv")
-                            {
-                                if (mi.GetParameters().Length != 1) continue;
-                            }
-                            else
-                            {
-                                if (mi.GetParameters().Length != 0) continue;
-                            }
-                            targetMethod = mi;
-                            targetName = $"{aimCtrlType.FullName}.{name}";
-                            break;
-                        }
-                    }
-                    catch { }
-                }
-            }
-
-            if (targetMethod == null)
-            {
-                Plugin.LogSource?.LogError("[AIM] No patchable method found");
-                return;
-            }
+            var nxw = aimCtrlType.GetMethod("nxw", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+            if (nxw == null) { Plugin.LogSource?.LogError("[AIM] nxw not found"); return; }
 
             var harmony = new Harmony("com.you.dynamicesp.aimctrl");
-            if (targetMethod.Name == "nyv")
-            {
-                harmony.Patch(targetMethod,
-                    prefix: new HarmonyMethod(typeof(AimControllerPatches), nameof(PrefixNyv)));
-            }
-            else
-            {
-                harmony.Patch(targetMethod,
-                    prefix: new HarmonyMethod(typeof(AimControllerPatches), nameof(PrefixUpdate)));
-            }
-            Plugin.LogSource?.LogInfo($"[AIM] Patched {targetName} (prefix)");
+            harmony.Patch(nxw, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(PostfixNxw)));
+            Plugin.LogSource?.LogInfo($"[AIM] Patched {aimCtrlType.FullName}.nxw (postfix)");
         }
-        catch (Exception e)
-        {
-            Plugin.LogSource?.LogError($"[AIM] Apply EX: {e.Message}");
-        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] Apply EX: {e.Message}"); }
     }
 
     private static Type FindType(string fullName)
@@ -107,11 +64,10 @@ public static class AimControllerPatches
         return null;
     }
 
-    public static void PrefixUpdate(object __instance)
+    public static void PostfixNxw(object __instance)
     {
         try
         {
-            Plugin.LogSource?.LogInfo($"[AIM] PrefixUpdate called enabled={AimbotModule.Enabled} active={KeybindState.AimbotActive} hasTarget={AimbotModule.HasTarget}");
             if (__instance == null) return;
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
@@ -127,55 +83,13 @@ public static class AimControllerPatches
             if (instPtr == IntPtr.Zero) return;
 
             IntPtr snapPtr = Marshal.ReadIntPtr(instPtr, OFF_AIM_SNAPSHOT);
-            if (snapPtr == IntPtr.Zero)
-            {
-                Plugin.LogSource?.LogInfo("[AIM] PrefixUpdate: AimingSnapshot null");
-                return;
-            }
-
-            WriteAim(snapPtr, instPtr);
-
-            _lastFrame = fc;
-        }
-        catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] PrefixUpdate EX: {e.Message}"); }
-    }
-
-    public static void PrefixNyv(object __instance, object __0)
-    {
-        try
-        {
-            if (__0 == null) return;
-            if (!AimbotModule.Enabled) return;
-            if (!KeybindState.AimbotActive) return;
-            if (!AimbotModule.HasTarget) return;
-
-            int fc = Time.frameCount;
-            if (fc == _lastFrame) return;
-            if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
-
-            IntPtr snapPtr = IntPtr.Zero;
-            if (__0 is Il2CppObjectBase snapObj) snapPtr = snapObj.Pointer;
             if (snapPtr == IntPtr.Zero) return;
 
-            IntPtr instPtr = IntPtr.Zero;
-            if (__instance is Il2CppObjectBase instObj) instPtr = instObj.Pointer;
+            Vector3 dir = AimbotModule.TargetDirection;
+            float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            float pitch = -Mathf.Asin(dir.y) * Mathf.Rad2Deg;
 
-            WriteAim(snapPtr, instPtr);
-
-            _lastFrame = fc;
-        }
-        catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] PrefixNyv EX: {e.Message}"); }
-    }
-
-    private static void WriteAim(IntPtr snapPtr, IntPtr instPtr)
-    {
-        Vector3 dir = AimbotModule.TargetDirection;
-        float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
-        float pitch = -Mathf.Asin(dir.y) * Mathf.Rad2Deg;
-
-        float minX = -89f, maxX = 89f;
-        if (instPtr != IntPtr.Zero)
-        {
+            float minX = -89f, maxX = 89f;
             try
             {
                 float mn = ReadFloat(instPtr, OFF_MIN_X);
@@ -183,13 +97,16 @@ public static class AimControllerPatches
                 if (mx > mn) { minX = mn; maxX = mx; }
             }
             catch { }
+            pitch = Mathf.Clamp(pitch, minX, maxX);
+
+            WriteFloat(snapPtr, OFF_AIM_X, yaw);
+            WriteFloat(snapPtr, OFF_AIM_Y, pitch);
+
+            _lastFrame = fc;
+
+            Plugin.LogSource?.LogInfo($"[AIM] WriteAim yaw={yaw:F1} pitch={pitch:F1} tgt={dir}");
         }
-        pitch = Mathf.Clamp(pitch, minX, maxX);
-
-        WriteFloat(snapPtr, OFF_AIM_X, yaw);
-        WriteFloat(snapPtr, OFF_AIM_Y, pitch);
-
-        Plugin.LogSource?.LogInfo($"[AIM] WriteAim yaw={yaw:F1} pitch={pitch:F1}");
+        catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] PostfixNxw EX: {e.Message}"); }
     }
 
     private static float ReadFloat(IntPtr ptr, int offset)
