@@ -75,7 +75,11 @@ public class KeybindListener : MonoBehaviour
 
             if (KeybindState.Capturing) { HandleCapture(); return; }
 
-            if (KeybindState.AimbotKey == KeyCode.None) return;
+            if (KeybindState.AimbotKey == KeyCode.None)
+            {
+                KeybindState.AimbotActive = false;
+                return;
+            }
 
             bool kd, kdDown;
             GetKeyState(KeybindState.AimbotKey, out kd, out kdDown);
@@ -86,18 +90,14 @@ public class KeybindListener : MonoBehaviour
             }
             else
             {
-                if (kd != KeybindState.LastKeyState)
-                {
-                    KeybindState.LastKeyState = kd;
-                    KeybindState.AimbotActive = kd;
-                }
+                KeybindState.AimbotActive = kd;
             }
 
             _dbgTimer += Time.deltaTime;
             if (_dbgTimer >= 1f)
             {
                 _dbgTimer = 0f;
-                Plugin.LogSource?.LogInfo($"[KB] key={KeybindState.AimbotKey} active={KeybindState.AimbotActive} capturing={KeybindState.Capturing} toggle={KeybindState.ToggleMode} last={KeybindState.LastKeyState} kd={kd} kdDown={kdDown}");
+                Plugin.LogSource?.LogInfo($"[KB] key={KeybindState.AimbotKey} active={KeybindState.AimbotActive} capturing={KeybindState.Capturing} toggle={KeybindState.ToggleMode} kd={kd} kdDown={kdDown}");
             }
         }
         catch (Exception e) { Debug.LogError($"[KB] EX: {e.Message}"); }
@@ -108,32 +108,38 @@ public class KeybindListener : MonoBehaviour
         pressed = false;
         pressedThisFrame = false;
 
-        var kb = Keyboard.current;
         var mouse = Mouse.current;
+        var kb = Keyboard.current;
 
-        if (kc == KeyCode.Mouse0) { pressed = (mouse != null && mouse.leftButton.isPressed) || Input.GetMouseButton(0); pressedThisFrame = (mouse != null && mouse.leftButton.wasPressedThisFrame) || Input.GetMouseButtonDown(0); return; }
-        if (kc == KeyCode.Mouse1) { pressed = (mouse != null && mouse.rightButton.isPressed) || Input.GetMouseButton(1); pressedThisFrame = (mouse != null && mouse.rightButton.wasPressedThisFrame) || Input.GetMouseButtonDown(1); return; }
-        if (kc == KeyCode.Mouse2) { pressed = (mouse != null && mouse.middleButton.isPressed) || Input.GetMouseButton(2); pressedThisFrame = (mouse != null && mouse.middleButton.wasPressedThisFrame) || Input.GetMouseButtonDown(2); return; }
-
-        if (kb == null)
+        if (kc == KeyCode.Mouse0)
         {
-            try { pressed = Input.GetKey(kc); pressedThisFrame = Input.GetKeyDown(kc); } catch { }
+            if (mouse != null) { pressed = mouse.leftButton.isPressed; pressedThisFrame = mouse.leftButton.wasPressedThisFrame; }
             return;
         }
+        if (kc == KeyCode.Mouse1)
+        {
+            if (mouse != null) { pressed = mouse.rightButton.isPressed; pressedThisFrame = mouse.rightButton.wasPressedThisFrame; }
+            return;
+        }
+        if (kc == KeyCode.Mouse2)
+        {
+            if (mouse != null) { pressed = mouse.middleButton.isPressed; pressedThisFrame = mouse.middleButton.wasPressedThisFrame; }
+            return;
+        }
+
+        if (kb == null) return;
 
         if (KeyMap.TryGetValue(kc, out Key key))
         {
             var ctrl = kb[key];
-            pressed = ctrl.isPressed;
-            pressedThisFrame = ctrl.wasPressedThisFrame;
+            if (ctrl != null) { pressed = ctrl.isPressed; pressedThisFrame = ctrl.wasPressedThisFrame; }
             return;
         }
 
         if (Enum.TryParse<Key>(kc.ToString(), out Key parsed))
         {
             var ctrl = kb[parsed];
-            pressed = ctrl.isPressed;
-            pressedThisFrame = ctrl.wasPressedThisFrame;
+            if (ctrl != null) { pressed = ctrl.isPressed; pressedThisFrame = ctrl.wasPressedThisFrame; }
         }
     }
 
@@ -146,7 +152,6 @@ public class KeybindListener : MonoBehaviour
         {
             KeybindState.AimbotKey = KeybindState.CapturingBackup;
             KeybindState.Capturing = false;
-            KeybindState.LastKeyState = false;
             KeybindState.AimbotActive = false;
             return;
         }
@@ -184,7 +189,6 @@ public class KeybindListener : MonoBehaviour
     {
         KeybindState.AimbotKey = kc;
         KeybindState.Capturing = false;
-        KeybindState.LastKeyState = false;
         KeybindState.AimbotActive = false;
         _waitingForRelease = true;
         if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
