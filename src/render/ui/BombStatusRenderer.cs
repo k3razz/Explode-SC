@@ -62,7 +62,7 @@ public static class BombStatusRenderer
     {
         if (!Enabled) return;
         if (!KeybindState.IntroDone) return;
-        if (!KeybindState.MenuOpen && !BombModule.Planted) return;
+        if (!KeybindState.MenuOpen && !BombEspModule.Planted) return;
 
         if (KeybindState.MenuOpen) HandleDrag();
 
@@ -73,14 +73,14 @@ public static class BombStatusRenderer
         GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, rect.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        string site = BombModule.Planted ? BombModule.Site : "-";
-        int minutes = Mathf.FloorToInt(BombModule.TimeLeft / 60f);
-        int seconds = Mathf.FloorToInt(BombModule.TimeLeft % 60f);
+        string site = BombEspModule.Planted ? BombEspModule.Site : "-";
+        int minutes = Mathf.FloorToInt(BombEspModule.TimeLeft / 60f);
+        int seconds = Mathf.FloorToInt(BombEspModule.TimeLeft % 60f);
         string timer = $"{minutes:00}:{seconds:00}";
 
         GUI.Label(new Rect(rect.x + PadX, rect.y + PadY, PanelWidth - PadX * 2f, RowH), "Bomb");
         GUI.Label(new Rect(rect.x + PadX, rect.y + PadY + RowH, PanelWidth - PadX * 2f, RowH), $"Site: {site}");
-        GUI.color = BombModule.Planted && BombModule.TimeLeft <= 10f ? new Color(1f, 0.3f, 0.3f) : Color.white;
+        GUI.color = BombEspModule.Planted && BombEspModule.TimeLeft <= 10f ? new Color(1f, 0.3f, 0.3f) : Color.white;
         GUI.Label(new Rect(rect.x + PadX, rect.y + PadY + RowH * 2f, PanelWidth - PadX * 2f, RowH), $"Timer: {timer}");
         GUI.color = Color.white;
     }
