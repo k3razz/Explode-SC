@@ -183,7 +183,14 @@ public static class MenuRenderer
         }
         y += 36;
 
-        GUI.Label(new Rect(bx, y, bw, 22), "Active binds are shown in the top-right corner.");
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Show Bomb Status: {(BombStatusRenderer.Enabled ? "ON" : "OFF")}", BombStatusRenderer.Enabled, whiteTex))
+        {
+            BombStatusRenderer.Enabled = !BombStatusRenderer.Enabled;
+            Plugin.CfgShowBombStatus.Value = BombStatusRenderer.Enabled;
+        }
+        y += 36;
+
+        GUI.Label(new Rect(bx, y, bw, 22), "Panels shown in the top-right corner.");
     }
 
     private static void DrawEspTab(float bx, float y, float bw, Texture2D whiteTex)
