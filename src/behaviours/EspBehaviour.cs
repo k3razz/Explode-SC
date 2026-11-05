@@ -73,6 +73,10 @@ public class EspBehaviour : MonoBehaviour
 
             AimbotModule.Enabled = Plugin.CfgAimbotEnabled.Value;
             AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
+            AimbotModule.DrawFovCircle = Plugin.CfgAimbotDrawFov.Value;
+            AimbotModule.Sensitivity = Plugin.CfgAimbotSensitivity.Value;
+            if (Enum.TryParse(Plugin.CfgAimbotBone.Value, out AimBone bone)) AimbotModule.Bone = bone;
+            else AimbotModule.Bone = AimBone.Body;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
@@ -185,16 +189,26 @@ public class EspBehaviour : MonoBehaviour
 
             float angleX = AimbotModule.TargetAngleX;
             float angleY = AimbotModule.TargetAngleY;
-            if (Mathf.Abs(angleX) < 0.1f && Mathf.Abs(angleY) < 0.1f) return;
 
-            float sens = Mathf.Max(0.01f, AimbotModule.Sensitivity);
-            int dx = Mathf.RoundToInt(angleX * sens);
-            int dy = Mathf.RoundToInt(angleY * sens);
+            float sens = Mathf.Clamp(AimbotModule.Sensitivity, 0.01f, 1.5f);
+            float px = angleX * sens;
+            float py = angleY * sens;
+
+            const float MaxStep = 25f;
+            if (px > MaxStep) px = MaxStep;
+            if (px < -MaxStep) px = -MaxStep;
+            if (py > MaxStep) py = MaxStep;
+            if (py < -MaxStep) py = -MaxStep;
+
+            int dx = Mathf.RoundToInt(px);
+            int dy = Mathf.RoundToInt(py);
+
+            if (dx == 0 && Mathf.Abs(px) > 0.01f) dx = px > 0 ? 1 : -1;
+            if (dy == 0 && Mathf.Abs(py) > 0.01f) dy = py > 0 ? 1 : -1;
 
             if (dx != 0 || dy != 0)
             {
                 MouseEmulator.Move(dx, dy);
-                Plugin.LogSource?.LogInfo($"[AIM] Move dx={dx} dy={dy} ax={angleX:F2} ay={angleY:F2}");
             }
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
