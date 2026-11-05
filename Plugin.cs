@@ -95,6 +95,8 @@ public class Plugin : BasePlugin
             AimControllerPatches.Apply();
 
             Log.LogInfo("[ESP] Components added");
+            WeaponLog.Apply();
+            Log.LogInfo("[DEBUG] WeaponLog applied")
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
     }
