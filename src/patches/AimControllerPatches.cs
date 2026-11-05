@@ -2,6 +2,8 @@ using HarmonyLib;
 using UnityEngine;
 using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using Il2CppInterop.Runtime.InteropTypes;
 
 namespace MyDynamicESP;
 
@@ -10,6 +12,12 @@ public static class AimControllerPatches
     private static bool _applied;
     private static int _lastFrame = -1;
 
+    private const int OFF_AIM_SNAPSHOT = 0x28;
+    private const int OFF_AIM_X = 0x54;
+    private const int OFF_AIM_Y = 0x58;
+    private const int OFF_MIN_X = 0x94;
+    private const int OFF_MAX_X = 0x98;
+
     public static void Apply()
     {
         if (_applied) return;
@@ -17,78 +25,42 @@ public static class AimControllerPatches
 
         try
         {
-            Type aimType = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                if (asm.GetName().Name != "Assembly-CSharp") continue;
-                aimType = asm.GetType("Chillow.StandChillow.Player.Aim.AimController");
-                if (aimType != null) break;
-            }
-            if (aimType == null)
-            {
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    try
-                    {
-                        foreach (var t in asm.GetTypes())
-                        {
-                            if (t.Name == "AimController") { aimType = t; break; }
-                        }
-                    }
-                    catch { }
-                    if (aimType != null) break;
-                }
-            }
-
-            if (aimType != null)
-            {
-                Plugin.LogSource?.LogInfo($"[AIM] AimController methods:");
-                var all = aimType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var m in all)
-                {
-                    if (m.GetParameters().Length == 0 && m.ReturnType == typeof(void))
-                        Plugin.LogSource?.LogInfo($"[AIM]   {m.Name}");
-                }
-            }
-
-            var pcType = FindType("Chillow.StandChillow.Player.PlayerController");
-            if (pcType != null)
-            {
-                Plugin.LogSource?.LogInfo($"[AIM] PlayerController methods (void, 0 params):");
-                var all = pcType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var m in all)
-                {
-                    if (m.GetParameters().Length == 0 && m.ReturnType == typeof(void))
-                        Plugin.LogSource?.LogInfo($"[AIM]   {m.Name}");
-                }
-            }
-
-            var ctrlType = FindType("Chillow.StandChillow.Player.Controller");
-            if (ctrlType != null)
-            {
-                Plugin.LogSource?.LogInfo($"[AIM] Controller methods (void, 0 params):");
-                var all = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var m in all)
-                {
-                    if (m.GetParameters().Length == 0 && m.ReturnType == typeof(void))
-                        Plugin.LogSource?.LogInfo($"[AIM]   {m.Name}");
-                }
-            }
-
             MethodInfo targetMethod = null;
             string targetName = null;
 
-            foreach (var pair in new[] {
-                Tuple.Create("Chillow.StandChillow.Player.PlayerController", "LateUpdate"),
-                Tuple.Create("Chillow.StandChillow.Player.PlayerController", "Update"),
-                Tuple.Create("Chillow.StandChillow.Player.Controller", "LateUpdate"),
-                Tuple.Create("Chillow.StandChillow.Player.Controller", "Update")
-            })
+            var aimCtrlType = FindType("Chillow.StandChillow.Player.Aim.AimController");
+            if (aimCtrlType == null) aimCtrlType = FindTypeByShortName("AimController");
+
+            if (aimCtrlType != null)
             {
-                var t = FindType(pair.Item1);
-                if (t == null) continue;
-                var mi = FindMethodInHierarchy(t, pair.Item2);
-                if (mi != null) { targetMethod = mi; targetName = $"{t.FullName}.{pair.Item2}"; break; }
+                foreach (var name in new[] { "nwx", "Update", "nwy", "nwz" })
+                {
+                    try
+                    {
+                        var mi = aimCtrlType.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                        if (mi != null && mi.GetParameters().Length == 0)
+                        {
+                            targetMethod = mi;
+                            targetName = $"{aimCtrlType.FullName}.{name}";
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            if (targetMethod == null)
+            {
+                Plugin.LogSource?.LogError("[AIM] AimController Update not found, fallback PlayerController.LateUpdate");
+                var pcType = FindType("Chillow.StandChillow.Player.PlayerController");
+                if (pcType != null)
+                {
+                    foreach (var name in new[] { "LateUpdate", "Update" })
+                    {
+                        var mi = FindMethodInHierarchy(pcType, name);
+                        if (mi != null) { targetMethod = mi; targetName = $"{pcType.FullName}.{name}"; break; }
+                    }
+                }
             }
 
             if (targetMethod == null)
@@ -98,8 +70,9 @@ public static class AimControllerPatches
             }
 
             var harmony = new Harmony("com.you.dynamicesp.aimctrl");
-            harmony.Patch(targetMethod, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(Postfix)));
-            Plugin.LogSource?.LogInfo($"[AIM] Patched {targetName}");
+            harmony.Patch(targetMethod,
+                prefix: new HarmonyMethod(typeof(AimControllerPatches), nameof(Prefix)));
+            Plugin.LogSource?.LogInfo($"[AIM] Patched {targetName} (prefix)");
         }
         catch (Exception e)
         {
@@ -112,6 +85,22 @@ public static class AimControllerPatches
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
             try { var t = asm.GetType(fullName); if (t != null) return t; } catch { }
+        }
+        return null;
+    }
+
+    private static Type FindTypeByShortName(string shortName)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                foreach (var t in asm.GetTypes())
+                {
+                    if (t.Name == shortName) return t;
+                }
+            }
+            catch { }
         }
         return null;
     }
@@ -134,27 +123,61 @@ public static class AimControllerPatches
         return null;
     }
 
-    public static void Postfix()
+    public static void Prefix(object __instance)
     {
         try
         {
+            if (__instance == null) return;
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
 
             int fc = Time.frameCount;
             if (fc == _lastFrame) return;
-            _lastFrame = fc;
 
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
-            var holder = AimShared.MainCameraHolder;
-            if (holder == null) return;
+            IntPtr instPtr = IntPtr.Zero;
+            if (__instance is Il2CppObjectBase il2cppObj) instPtr = il2cppObj.Pointer;
+            if (instPtr == IntPtr.Zero) return;
 
-            Quaternion look = Quaternion.LookRotation(AimbotModule.TargetDirection, Vector3.up);
-            Vector3 e = look.eulerAngles;
-            holder.rotation = Quaternion.Euler(e.x, e.y, 0f);
+            IntPtr snapPtr = Marshal.ReadIntPtr(instPtr, OFF_AIM_SNAPSHOT);
+            if (snapPtr == IntPtr.Zero) return;
+
+            Vector3 dir = AimbotModule.TargetDirection;
+            float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            float pitch = -Mathf.Asin(dir.y) * Mathf.Rad2Deg;
+
+            float minX = -89f, maxX = 89f;
+            try
+            {
+                float mn = ReadFloat(instPtr, OFF_MIN_X);
+                float mx = ReadFloat(instPtr, OFF_MAX_X);
+                if (mx > mn) { minX = mn; maxX = mx; }
+            }
+            catch { }
+
+            pitch = Mathf.Clamp(pitch, minX, maxX);
+
+            WriteFloat(snapPtr, OFF_AIM_X, yaw);
+            WriteFloat(snapPtr, OFF_AIM_Y, pitch);
+
+            _lastFrame = fc;
+
+            Plugin.LogSource?.LogInfo($"[AIM] Prefix: yaw={yaw:F1} pitch={pitch:F1} tgt={dir}");
         }
-        catch { }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[AIM] Prefix EX: {e.Message}"); }
+    }
+
+    private static float ReadFloat(IntPtr ptr, int offset)
+    {
+        int bits = Marshal.ReadInt32(ptr, offset);
+        return BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
+    }
+
+    private static void WriteFloat(IntPtr ptr, int offset, float value)
+    {
+        int bits = BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
+        Marshal.WriteInt32(ptr, offset, bits);
     }
 }
