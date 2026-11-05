@@ -11,8 +11,8 @@ public static class BombModule
 {
     public static bool Planted = false;
     public static Vector3 Position = Vector3.zero;
-    public static string Site = "?";
-    public static float TimeLeft = 0f;
+    public static string Site = "-";
+    public static float TimeLeft = 40f;
     public static float FuseTime = 40f;
 
     private static Il2CppSystem.Type _bombManagerType;
@@ -20,6 +20,7 @@ public static class BombModule
     private static Il2CppSystem.Type _bombSiteType;
     private static bool _resolved;
     private static Component _cachedBombManager;
+    private static object _cachedInstance;
     private static float _plantedAt = -1f;
     private static float _lastCheck;
     private const float CheckInterval = 0.25f;
@@ -30,8 +31,8 @@ public static class BombModule
     {
         Planted = false;
         Position = Vector3.zero;
-        Site = "?";
-        TimeLeft = 0f;
+        Site = "-";
+        TimeLeft = FuseTime;
         _plantedAt = -1f;
     }
 
@@ -46,14 +47,14 @@ public static class BombModule
             ResolveTypes();
             if (_bombManagerType == null) return;
 
-            var bm = FindBombManager();
-            if (bm == null)
+            IntPtr bmPtr = FindBombManagerPtr();
+            if (bmPtr == IntPtr.Zero)
             {
                 if (Planted) Reset();
                 return;
             }
 
-            IntPtr plantedPtr = Marshal.ReadIntPtr(bm.Pointer, OFF_BM_CGQT);
+            IntPtr plantedPtr = Marshal.ReadIntPtr(bmPtr, OFF_BM_CGQT);
             if (plantedPtr == IntPtr.Zero)
             {
                 if (Planted) Reset();
@@ -75,7 +76,7 @@ public static class BombModule
             }
 
             Position = plantedTr.position;
-            Site = DetectSite(Position, bm);
+            Site = DetectSite(Position, bmPtr);
 
             float elapsed = now - _plantedAt;
             float remain = Mathf.Max(0f, FuseTime - elapsed);
@@ -88,6 +89,89 @@ public static class BombModule
             }
         }
         catch { }
+    }
+
+    [HideFromIl2Cpp]
+    static IntPtr FindBombManagerPtr()
+    {
+        try
+        {
+            if (_cachedBombManager != null && _cachedBombManager.Pointer != IntPtr.Zero)
+                return _cachedBombManager.Pointer;
+        }
+        catch { }
+
+        try
+        {
+            var obj = UnityEngine.Object.FindObjectOfType(_bombManagerType);
+            if (obj != null)
+            {
+                _cachedBombManager = obj.TryCast<Component>();
+                if (_cachedBombManager != null && _cachedBombManager.Pointer != IntPtr.Zero)
+                    return _cachedBombManager.Pointer;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var flags = (Il2CppSystem.Reflection.BindingFlags)(int)(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+
+            var instProp = _bombManagerType.GetProperty("Instance", flags);
+            if (instProp != null)
+            {
+                var v = instProp.GetValue(null);
+                if (v != null)
+                {
+                    var objBase = v.TryCast<Il2CppObjectBase>();
+                    if (objBase != null && objBase.Pointer != IntPtr.Zero)
+                    {
+                        var comp = v.TryCast<Component>();
+                        if (comp != null) _cachedBombManager = comp;
+                        return objBase.Pointer;
+                    }
+                }
+            }
+
+            foreach (var n in new[] { "_instance", "instance", "m_instance", "<Instance>k__BackingField" })
+            {
+                var f = _bombManagerType.GetField(n, flags);
+                if (f != null)
+                {
+                    var v = f.GetValue(null);
+                    if (v != null)
+                    {
+                        var objBase = v.TryCast<Il2CppObjectBase>();
+                        if (objBase != null && objBase.Pointer != IntPtr.Zero)
+                        {
+                            var comp = v.TryCast<Component>();
+                            if (comp != null) _cachedBombManager = comp;
+                            return objBase.Pointer;
+                        }
+                    }
+                }
+            }
+
+            var baseType = _bombManagerType.BaseType;
+            while (baseType != null && baseType != Il2CppSystem.Type.From(typeof(object)))
+            {
+                var instProp2 = baseType.GetProperty("Instance", flags);
+                if (instProp2 != null)
+                {
+                    var v = instProp2.GetValue(null);
+                    if (v != null)
+                    {
+                        var objBase = v.TryCast<Il2CppObjectBase>();
+                        if (objBase != null && objBase.Pointer != IntPtr.Zero) return objBase.Pointer;
+                    }
+                }
+                baseType = baseType.BaseType;
+            }
+        }
+        catch { }
+
+        return IntPtr.Zero;
     }
 
     [HideFromIl2Cpp]
@@ -109,37 +193,27 @@ public static class BombModule
     }
 
     [HideFromIl2Cpp]
-    static Component FindBombManager()
+    static string DetectSite(Vector3 bombPos, IntPtr bmPtr)
     {
-        if (_cachedBombManager != null)
-        {
-            try { if (_cachedBombManager.Pointer != IntPtr.Zero) return _cachedBombManager; } catch { }
-            _cachedBombManager = null;
-        }
         try
         {
-            var obj = UnityEngine.Object.FindObjectOfType(_bombManagerType);
-            if (obj != null) _cachedBombManager = obj.TryCast<Component>();
-        }
-        catch { }
-        return _cachedBombManager;
-    }
+            var flags = (Il2CppSystem.Reflection.BindingFlags)(int)(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
-    [HideFromIl2Cpp]
-    static string DetectSite(Vector3 bombPos, Component bm)
-    {
-        try
-        {
-            var sitesProp = _bombManagerType.GetProperty("cgqn",
-                (Il2CppSystem.Reflection.BindingFlags)(int)(
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance));
-            if (sitesProp == null) return "?";
-            var sitesArr = sitesProp.GetValue(bm.Cast<Il2CppSystem.Object>());
-            if (sitesArr == null) return "?";
+            var sitesProp = _bombManagerType.GetProperty("cgqn", flags);
+            if (sitesProp == null) return "-";
+
+            var bmObj = new Component(bmPtr);
+            if (bmObj == null) return "-";
+
+            var sitesArr = sitesProp.GetValue(bmObj.Cast<Il2CppSystem.Object>());
+            if (sitesArr == null) return "-";
+
             var arr = sitesArr.TryCast<Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<Component>>();
-            if (arr == null) return "?";
+            if (arr == null) return "-";
+
             float best = float.MaxValue;
-            string bestName = "?";
+            string bestName = "-";
             for (int i = 0; i < arr.Length; i++)
             {
                 try
@@ -155,7 +229,31 @@ public static class BombModule
             if (bestName.Contains("B") || bestName.Contains("1")) return "B";
             return bestName;
         }
-        catch { return "?"; }
+        catch { return "-"; }
+    }
+
+    [HideFromIl2Cpp]
+    static Type FindTypeInAllAssemblies(string shortName, string[] fullNames)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            foreach (var full in fullNames)
+            {
+                try { var t = asm.GetType(full); if (t != null) return t; } catch { }
+            }
+        }
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                foreach (var t in asm.GetTypes())
+                {
+                    if (t.Name == shortName) return t;
+                }
+            }
+            catch { }
+        }
+        return null;
     }
 
     [HideFromIl2Cpp]
@@ -165,34 +263,35 @@ public static class BombModule
         _resolved = true;
         try
         {
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            if (_bombManagerType == null)
             {
-                try
-                {
-                    if (_bombManagerType == null)
-                    {
-                        var t = asm.GetType("Il2CppChillow.StandChillow.Inventory.Bomb.BombManager")
-                             ?? asm.GetType("Chillow.StandChillow.Inventory.Bomb.BombManager")
-                             ?? asm.GetType("BombManager");
-                        if (t != null) _bombManagerType = Il2CppType.From(t);
-                    }
-                    if (_plantedBombType == null)
-                    {
-                        var t = asm.GetType("Il2CppChillow.StandChillow.Inventory.Bomb.PlantedBombController")
-                             ?? asm.GetType("Chillow.StandChillow.Inventory.Bomb.PlantedBombController")
-                             ?? asm.GetType("PlantedBombController");
-                        if (t != null) _plantedBombType = Il2CppType.From(t);
-                    }
-                    if (_bombSiteType == null)
-                    {
-                        var t = asm.GetType("Il2CppChillow.StandChillow.Inventory.Bomb.BombSite")
-                             ?? asm.GetType("Chillow.StandChillow.Inventory.Bomb.BombSite")
-                             ?? asm.GetType("BombSite");
-                        if (t != null) _bombSiteType = Il2CppType.From(t);
-                    }
-                }
-                catch { }
+                var t = FindTypeInAllAssemblies("BombManager", new[] {
+                    "Il2CppChillow.StandChillow.Inventory.Bomb.BombManager",
+                    "Chillow.StandChillow.Inventory.Bomb.BombManager",
+                    "Il2CppChillow.StandChillow.Bomb.BombManager",
+                    "BombManager"
+                });
+                if (t != null) _bombManagerType = Il2CppType.From(t);
             }
+            if (_plantedBombType == null)
+            {
+                var t = FindTypeInAllAssemblies("PlantedBombController", new[] {
+                    "Il2CppChillow.StandChillow.Inventory.Bomb.PlantedBombController",
+                    "Chillow.StandChillow.Inventory.Bomb.PlantedBombController",
+                    "PlantedBombController"
+                });
+                if (t != null) _plantedBombType = Il2CppType.From(t);
+            }
+            if (_bombSiteType == null)
+            {
+                var t = FindTypeInAllAssemblies("BombSite", new[] {
+                    "Il2CppChillow.StandChillow.Inventory.Bomb.BombSite",
+                    "Chillow.StandChillow.Inventory.Bomb.BombSite",
+                    "BombSite"
+                });
+                if (t != null) _bombSiteType = Il2CppType.From(t);
+            }
+
             Plugin.LogSource?.LogInfo($"[BOMB] Resolve: BombManager={_bombManagerType != null}, PlantedBomb={_plantedBombType != null}, BombSite={_bombSiteType != null}");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[BOMB] ResolveTypes EX: {e.Message}"); }
