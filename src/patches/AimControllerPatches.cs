@@ -17,67 +17,65 @@ public static class AimControllerPatches
 
         try
         {
-            Type aimCtrlType = null;
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            var candidates = new[]
             {
-                if (asm.GetName().Name != "Assembly-CSharp") continue;
-                aimCtrlType = asm.GetType("Chillow.StandChillow.Player.Aim.AimController");
-                if (aimCtrlType == null)
-                    aimCtrlType = asm.GetType("Il2CppChillow.StandChillow.Player.Aim.AimController");
-                if (aimCtrlType != null) break;
-            }
-
-            if (aimCtrlType == null)
-            {
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    try
-                    {
-                        foreach (var t in asm.GetTypes())
-                        {
-                            if (t.Name == "AimController") { aimCtrlType = t; break; }
-                        }
-                    }
-                    catch { }
-                    if (aimCtrlType != null) break;
-                }
-            }
-
-            if (aimCtrlType == null)
-            {
-                Plugin.LogSource?.LogError("[AIM] AimController type not found");
-                return;
-            }
-
-            Plugin.LogSource?.LogInfo($"[AIM] AimController found: {aimCtrlType.FullName}");
+                new[] { "Chillow.StandChillow.Player.PlayerController", "PlayerController" },
+                new[] { "Chillow.StandChillow.Player.Controller", "Controller" }
+            };
 
             MethodInfo targetMethod = null;
-            string methodName = null;
-            foreach (var name in new[] { "Tick", "LateUpdate", "Update" })
+            string targetName = null;
+
+            foreach (var group in candidates)
             {
-                var mi = FindMethodInHierarchy(aimCtrlType, name);
-                if (mi != null) { targetMethod = mi; methodName = name; break; }
+                Type t = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    foreach (var full in group)
+                    {
+                        try { t = asm.GetType(full); if (t != null) break; } catch { }
+                    }
+                    if (t != null) break;
+                }
+                if (t == null)
+                {
+                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        try
+                        {
+                            foreach (var x in asm.GetTypes())
+                            {
+                                if (x.Name == group[group.Length - 1]) { t = x; break; }
+                            }
+                        }
+                        catch { }
+                        if (t != null) break;
+                    }
+                }
+                if (t == null) continue;
+
+                foreach (var name in new[] { "LateUpdate", "Update", "Tick" })
+                {
+                    var mi = FindMethodInHierarchy(t, name);
+                    if (mi != null)
+                    {
+                        targetMethod = mi;
+                        targetName = $"{t.FullName}.{name}";
+                        break;
+                    }
+                }
+                if (targetMethod != null) break;
             }
 
             if (targetMethod == null)
             {
-                var allMethods = aimCtrlType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var m in allMethods)
-                {
-                    if (m.GetParameters().Length == 0 &&
-                        (m.Name.IndexOf("Tick", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0))
-                    {
-                        Plugin.LogSource?.LogInfo($"[AIM] candidate: {m.Name}");
-                    }
-                }
-                Plugin.LogSource?.LogError("[AIM] No Tick/LateUpdate/Update found");
+                Plugin.LogSource?.LogError("[AIM] No patchable method found in PlayerController/Controller");
                 return;
             }
 
             var harmony = new Harmony("com.you.dynamicesp.aimctrl");
             harmony.Patch(targetMethod, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(Postfix)));
-            Plugin.LogSource?.LogInfo($"[AIM] Patched {targetMethod.DeclaringType?.FullName}.{methodName}");
+            Plugin.LogSource?.LogInfo($"[AIM] Patched {targetName}");
         }
         catch (Exception e)
         {
@@ -89,11 +87,15 @@ public static class AimControllerPatches
     {
         var cur = t;
         int depth = 0;
-        while (cur != null && cur != typeof(object) && depth < 8)
+        while (cur != null && depth < 10)
         {
-            var mi = cur.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-            if (mi != null) return mi;
-            cur = cur.BaseType;
+            try
+            {
+                var mi = cur.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                if (mi != null) return mi;
+            }
+            catch { }
+            try { cur = cur.BaseType; } catch { cur = null; }
             depth++;
         }
         return null;
