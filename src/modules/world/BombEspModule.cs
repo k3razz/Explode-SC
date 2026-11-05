@@ -154,7 +154,8 @@ public static class BombEspModule
             }
 
             var baseType = _bombManagerType.BaseType;
-            while (baseType != null && baseType != typeof(object))
+            int depth = 0;
+            while (baseType != null && depth < 8)
             {
                 var instProp2 = baseType.GetProperty("Instance", flags);
                 if (instProp2 != null)
@@ -167,6 +168,7 @@ public static class BombEspModule
                     }
                 }
                 baseType = baseType.BaseType;
+                depth++;
             }
         }
         catch { }
