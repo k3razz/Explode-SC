@@ -26,6 +26,7 @@ public class Plugin : BasePlugin
 
     public static ConfigEntry<bool> CfgAimbotEnabled;
     public static ConfigEntry<float> CfgAimbotFov;
+    public static ConfigEntry<bool> CfgAimbotDrawFov;
     public static ConfigEntry<float> CfgAimbotSensitivity;
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
@@ -62,6 +63,7 @@ public class Plugin : BasePlugin
 
             CfgAimbotEnabled = ConfigFile.Bind("AimLock", "Enabled", false);
             CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 90f);
+            CfgAimbotDrawFov = ConfigFile.Bind("AimLock", "DrawFov", false);
             CfgAimbotSensitivity = ConfigFile.Bind("AimLock", "Sensitivity", 0.15f);
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
