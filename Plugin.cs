@@ -9,7 +9,7 @@ using Il2CppInterop.Runtime.Injection;
 
 namespace MyDynamicESP;
 
-[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
+[BepInPlugin("com.you.dynamicesp", "Explode", "3.0.0.01")]
 public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
@@ -28,6 +28,7 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgAimbotFov;
     public static ConfigEntry<bool> CfgAimbotDrawFov;
     public static ConfigEntry<float> CfgAimbotSensitivity;
+    public static ConfigEntry<string> CfgAimbotBone;
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
 
@@ -65,6 +66,7 @@ public class Plugin : BasePlugin
             CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 90f);
             CfgAimbotDrawFov = ConfigFile.Bind("AimLock", "DrawFov", false);
             CfgAimbotSensitivity = ConfigFile.Bind("AimLock", "Sensitivity", 0.15f);
+            CfgAimbotBone = ConfigFile.Bind("AimLock", "Bone", "Body");
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
 
