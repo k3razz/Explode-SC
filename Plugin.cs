@@ -34,7 +34,12 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgWatermarkY;
 
     public static ConfigEntry<bool> CfgShowBindList;
+    public static ConfigEntry<float> CfgBindListX;
+    public static ConfigEntry<float> CfgBindListY;
+
     public static ConfigEntry<bool> CfgShowBombStatus;
+    public static ConfigEntry<float> CfgBombStatusX;
+    public static ConfigEntry<float> CfgBombStatusY;
 
     public override void Load()
     {
@@ -64,7 +69,12 @@ public class Plugin : BasePlugin
             CfgWatermarkY = ConfigFile.Bind("Render", "WatermarkY", -1f);
 
             CfgShowBindList = ConfigFile.Bind("Misc", "ShowBindList", true);
+            CfgBindListX = ConfigFile.Bind("Misc", "BindListX", -1f);
+            CfgBindListY = ConfigFile.Bind("Misc", "BindListY", -1f);
+
             CfgShowBombStatus = ConfigFile.Bind("Misc", "ShowBombStatus", true);
+            CfgBombStatusX = ConfigFile.Bind("Misc", "BombStatusX", -1f);
+            CfgBombStatusY = ConfigFile.Bind("Misc", "BombStatusY", -1f);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
@@ -72,7 +82,9 @@ public class Plugin : BasePlugin
             TeamFilter.OnlyEnemies = CfgOnlyEnemies.Value;
 
             BindListState.Enabled = CfgShowBindList.Value;
+            BindListState.Position = new Vector2(CfgBindListX.Value, CfgBindListY.Value);
             BombStatusRenderer.Enabled = CfgShowBombStatus.Value;
+            BombStatusRenderer.Position = new Vector2(CfgBombStatusX.Value, CfgBombStatusY.Value);
 
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
