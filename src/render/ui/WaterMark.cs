@@ -41,11 +41,16 @@ public static class Watermark
         Event e = Event.current;
         if (e == null) return;
         Vector2 mouse = e.mousePosition;
-        if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
+
+        if (e.type == EventType.MouseDown && e.button == 0)
         {
-            WatermarkModule.IsDragging = true;
-            WatermarkModule.DragOffset = mouse - new Vector2(rect.x, rect.y);
-            e.Use();
+            if (rect.Contains(mouse) && !UiDragState.AnyDragging)
+            {
+                WatermarkModule.IsDragging = true;
+                UiDragState.AnyDragging = true;
+                WatermarkModule.DragOffset = mouse - new Vector2(rect.x, rect.y);
+                e.Use();
+            }
         }
         else if (e.type == EventType.MouseDrag && WatermarkModule.IsDragging)
         {
@@ -55,9 +60,10 @@ public static class Watermark
             if (Plugin.CfgWatermarkX != null) Plugin.CfgWatermarkX.Value = WatermarkModule.Position.x;
             if (Plugin.CfgWatermarkY != null) Plugin.CfgWatermarkY.Value = WatermarkModule.Position.y;
         }
-        else if (e.type == EventType.MouseUp && e.button == 0)
+        else if (e.type == EventType.MouseUp && e.button == 0 && WatermarkModule.IsDragging)
         {
             WatermarkModule.IsDragging = false;
+            UiDragState.AnyDragging = false;
             e.Use();
         }
     }
