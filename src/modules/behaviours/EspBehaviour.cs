@@ -108,7 +108,6 @@ public class EspBehaviour : MonoBehaviour
 
     void OnDestroy()
     {
-        AimRenderHook.Unsubscribe();
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
         if (Instance == this) Instance = null;
     }
@@ -326,10 +325,6 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
     }
 
-    // =========================================================
-    //   ХЕЛПЕРЫ
-    // =========================================================
-
     [HideFromIl2Cpp]
     int ReadTeamFromMember(MemberInfo member, object target)
     {
@@ -521,10 +516,6 @@ public class EspBehaviour : MonoBehaviour
         }
         catch (Exception e) { LogThrottled("localt_ex", $"[ESP] LocalTeam EX: {e.Message}", true); }
     }
-
-    // =========================================================
-    //                    РЕЗОЛВ ТИПОВ
-    // =========================================================
 
     [HideFromIl2Cpp]
     private static bool IsTeamEnum(Type t) =>
