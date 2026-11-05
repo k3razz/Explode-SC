@@ -12,6 +12,7 @@ public static class AimControllerPatches
     private static bool _applied;
     private static int _lastFrame = -1;
 
+    private const int OFF_AIM_CTRL = 0xD0;
     private const int OFF_AIM_SNAPSHOT = 0x28;
     private const int OFF_AIM_X = 0x54;
     private const int OFF_AIM_Y = 0x58;
@@ -64,11 +65,10 @@ public static class AimControllerPatches
         return null;
     }
 
-    public static void PrefixNxw(object __instance)
+    public static void PrefixNxw()
     {
         try
         {
-            if (__instance == null) return;
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
@@ -77,12 +77,17 @@ public static class AimControllerPatches
             int fc = Time.frameCount;
             if (fc == _lastFrame) return;
 
-            IntPtr instPtr = IntPtr.Zero;
-            if (__instance is Il2CppObjectBase il2cppObj) instPtr = il2cppObj.Pointer;
-            if (instPtr == IntPtr.Zero) return;
+            if (AimShared.LocalPlayer == null) return;
 
-            IntPtr snapPtr = Marshal.ReadIntPtr(instPtr, OFF_AIM_SNAPSHOT);
-            if (snapPtr == IntPtr.Zero) { Plugin.LogSource?.LogInfo("[AIM] PrefixNxw: AimingSnapshot null"); return; }
+            IntPtr pcPtr = IntPtr.Zero;
+            if (AimShared.LocalPlayer is Il2CppObjectBase pcObj) pcPtr = pcObj.Pointer;
+            if (pcPtr == IntPtr.Zero) return;
+
+            IntPtr aimCtrlPtr = Marshal.ReadIntPtr(pcPtr, OFF_AIM_CTRL);
+            if (aimCtrlPtr == IntPtr.Zero) { Plugin.LogSource?.LogInfo("[AIM] PrefixNxw: aimCtrlPtr null"); return; }
+
+            IntPtr snapPtr = Marshal.ReadIntPtr(aimCtrlPtr, OFF_AIM_SNAPSHOT);
+            if (snapPtr == IntPtr.Zero) { Plugin.LogSource?.LogInfo("[AIM] PrefixNxw: snapPtr null"); return; }
 
             Vector3 dir = AimbotModule.TargetDirection;
             float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
@@ -91,8 +96,8 @@ public static class AimControllerPatches
             float minX = -89f, maxX = 89f;
             try
             {
-                float mn = ReadFloat(instPtr, OFF_MIN_X);
-                float mx = ReadFloat(instPtr, OFF_MAX_X);
+                float mn = ReadFloat(aimCtrlPtr, OFF_MIN_X);
+                float mx = ReadFloat(aimCtrlPtr, OFF_MAX_X);
                 if (mx > mn) { minX = mn; maxX = mx; }
             }
             catch { }
