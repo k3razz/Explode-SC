@@ -1,6 +1,5 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Reflection;
 
 namespace MyDynamicESP;
 
@@ -29,10 +28,6 @@ public static class AimbotModule
     private const float HeadOffset = 1.5f;
     private const float BodyOffset = 0.9f;
     private const float NeckOffset = 1.35f;
-
-    private static bool _bipedResolved;
-    private static Il2CppSystem.Type _bipedMapType;
-    private static Il2CppSystem.Reflection.MethodInfo _nwhMethod;
 
     public static Tracked CurrentTarget => _currentTarget;
 
@@ -71,74 +66,11 @@ public static class AimbotModule
     {
         if (t == null || t.Transform == null) return Vector3.zero;
 
-        if (Bone == AimBone.Body)
-            return t.Transform.position + Vector3.up * BodyOffset;
+        float off = Bone == AimBone.Head ? HeadOffset
+                  : Bone == AimBone.Neck ? NeckOffset
+                  : BodyOffset;
 
-        if (t.BipedMap != null)
-        {
-            int boneIdx = Bone == AimBone.Head ? 0 : 1;
-            var pos = TryGetBonePosition(t.BipedMap, boneIdx);
-            if (pos.HasValue) return pos.Value;
-        }
-
-        float fallback = Bone == AimBone.Head ? HeadOffset : NeckOffset;
-        return t.Transform.position + Vector3.up * fallback;
-    }
-
-    private static Vector3? TryGetBonePosition(object bipedMap, int boneIndex)
-    {
-        ResolveBiped();
-        if (_nwhMethod == null) return null;
-
-        try
-        {
-            var bipedObj = bipedMap as Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase;
-            if (bipedObj == null) return null;
-
-            var paramType = _nwhMethod.GetParameters()[0].ParameterType;
-            object headVal;
-            try
-            {
-                headVal = Il2CppSystem.Enum.ToObject(paramType, boneIndex);
-            }
-            catch
-            {
-                headVal = Il2CppSystem.Convert.ChangeType(boneIndex, paramType);
-            }
-
-            var args = new Il2CppSystem.Object[1];
-            args[0] = (Il2CppSystem.Object)headVal;
-
-            var result = _nwhMethod.Invoke(bipedObj, args);
-            if (result == null) return null;
-
-            var tr = result.TryCast<Transform>();
-            if (tr == null) return null;
-            return tr.position;
-        }
-        catch { return null; }
-    }
-
-    private static void ResolveBiped()
-    {
-        if (_bipedResolved) return;
-        _bipedResolved = true;
-        foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
-        {
-            try
-            {
-                var t = asm.GetType("Il2CppChillow.StandChillow.Player.BipedMap")
-                     ?? asm.GetType("Chillow.StandChillow.Player.BipedMap");
-                if (t == null) continue;
-                _bipedMapType = Il2CppInterop.Runtime.Il2CppType.From(t);
-                _nwhMethod = _bipedMapType.GetMethod("nwh",
-                    (Il2CppSystem.Reflection.BindingFlags)(int)(
-                        System.Reflection.BindingFlags.Public |
-                        System.Reflection.BindingFlags.Instance));
-                if (_nwhMethod != null) return;
-            }
-            catch { }
-        }
+        return t.Transform.position + Vector3.up * off;
     }
 
     private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
