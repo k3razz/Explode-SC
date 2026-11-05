@@ -88,7 +88,7 @@ public static class BombEspModule
                 _plantedAt = -1f;
             }
         }
-        catch { }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[BOMB] Update EX: {e.Message}"); }
     }
 
     [HideFromIl2Cpp]
@@ -270,7 +270,6 @@ public static class BombEspModule
                 var t = FindTypeInAllAssemblies("BombManager", new[] {
                     "Il2CppChillow.StandChillow.Inventory.Bomb.BombManager",
                     "Chillow.StandChillow.Inventory.Bomb.BombManager",
-                    "Il2CppChillow.StandChillow.Bomb.BombManager",
                     "BombManager"
                 });
                 if (t != null) _bombManagerType = Il2CppType.From(t);
