@@ -37,12 +37,8 @@ public static class BindListRenderer
             string mode = KeybindState.ToggleMode ? "toggle" : "hold";
             rows.Add($"AimLock    [{mode}]    [{KeybindState.AimbotKey}]");
         }
-
         if (rows.Count == 0 && KeybindState.MenuOpen)
-        {
             rows.Add("Example    [hold]    [J]");
-        }
-
         return rows;
     }
 
@@ -56,6 +52,8 @@ public static class BindListRenderer
 
     public static void HandleDrag()
     {
+        if (UiDragState.AnyDragging && !BindListState.IsDragging) return;
+
         var rect = GetRect();
         Event e = Event.current;
         if (e == null) return;
@@ -64,6 +62,7 @@ public static class BindListRenderer
         if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
         {
             BindListState.IsDragging = true;
+            UiDragState.AnyDragging = true;
             BindListState.DragOffset = mouse - new Vector2(rect.x, rect.y);
             e.Use();
         }
@@ -78,6 +77,7 @@ public static class BindListRenderer
         else if (e.type == EventType.MouseUp && e.button == 0)
         {
             BindListState.IsDragging = false;
+            UiDragState.AnyDragging = false;
             e.Use();
         }
     }
