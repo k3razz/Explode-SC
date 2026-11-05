@@ -63,7 +63,6 @@ public class EspBehaviour : MonoBehaviour
             _whiteTex.SetPixel(0, 0, Color.white);
             _whiteTex.Apply();
             MenuRenderer.EnsureTextures();
-            BindListRenderer.EnsureTextures();
 
             enabled = true;
             gameObject.SetActive(true);
@@ -83,6 +82,7 @@ public class EspBehaviour : MonoBehaviour
             WatermarkModule.Position = new Vector2(Plugin.CfgWatermarkX.Value, Plugin.CfgWatermarkY.Value);
 
             BindListState.Enabled = Plugin.CfgShowBindList.Value;
+            BombStatusRenderer.Enabled = Plugin.CfgShowBombStatus.Value;
 
             if (!KeybindState.IntroPlayed)
             {
@@ -119,6 +119,7 @@ public class EspBehaviour : MonoBehaviour
             if (_cam == null) _cam = Camera.main;
 
             WatermarkModule.Update();
+            BombModule.Update();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -195,7 +196,7 @@ public class EspBehaviour : MonoBehaviour
             IntPtr ptr = Marshal.ReadIntPtr(localPlayer.Pointer, OFF_PC_MAINCAMHOLDER);
             if (ptr == IntPtr.Zero)
             {
-                Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null (offset 0x20 empty)");
+                Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null");
                 return;
             }
 
@@ -294,7 +295,12 @@ public class EspBehaviour : MonoBehaviour
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
 
-            BindListRenderer.Draw();
+            float y = 80f;
+            float bindH = BindListRenderer.GetHeight();
+            BindListRenderer.Draw(y);
+            y += bindH + 8f;
+
+            BombStatusRenderer.Draw(y);
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -359,18 +365,14 @@ public class EspBehaviour : MonoBehaviour
     int ReadTeam(Component component, bool isBot)
     {
         if (component == null) return -1;
-
         if (isBot)
         {
             int offTeam = ReadByteAtOffset(component, OFF_BOT_TEAM);
             if (offTeam > 0 && offTeam <= 3) return offTeam;
-
             int viaCfmp = ReadTeamViaCfmp(component);
             if (viaCfmp >= 0) return viaCfmp;
-
             return -1;
         }
-
         return ReadTeamViaCfmp(component);
     }
 
@@ -378,17 +380,14 @@ public class EspBehaviour : MonoBehaviour
     int ReadTeamViaCfmp(Component component)
     {
         if (component == null) return -1;
-
         int viaMember = ReadTeamFromMember(_playerTeamMember, component);
         if (viaMember > 0 && viaMember <= 3) return viaMember;
-
         try
         {
             int t = Marshal.ReadByte(component.Pointer, OFF_PC_CFMP);
             if (t > 0 && t <= 3) return t;
         }
         catch { }
-
         return -1;
     }
 
@@ -396,13 +395,11 @@ public class EspBehaviour : MonoBehaviour
     Component FindPlayerManager()
     {
         if (_playerManagerType == null) return null;
-
         if (_cachedPm != null)
         {
             try { if (_cachedPm.Pointer != IntPtr.Zero) return _cachedPm; } catch { }
             _cachedPm = null;
         }
-
         try
         {
             var obj = UnityEngine.Object.FindObjectOfType(_playerManagerType);
@@ -420,7 +417,6 @@ public class EspBehaviour : MonoBehaviour
         {
             LogThrottled("pm_foft_ex", $"[ESP] FindObjectOfType(PM) EX: {e.Message}", true);
         }
-
         return null;
     }
 
@@ -428,7 +424,6 @@ public class EspBehaviour : MonoBehaviour
     Component ReadLocalPlayerFromPm(Component pm)
     {
         if (pm == null) return null;
-
         try
         {
             IntPtr lpPtr = Marshal.ReadIntPtr(pm.Pointer, OFF_PM_CFOG);
@@ -439,7 +434,6 @@ public class EspBehaviour : MonoBehaviour
             }
         }
         catch { }
-
         try
         {
             var dpkyProp = _playerManagerType.GetProperty("dpky",
@@ -457,7 +451,6 @@ public class EspBehaviour : MonoBehaviour
             }
         }
         catch { }
-
         try
         {
             var cfogField = _playerManagerType.GetField("<cfog>k__BackingField",
@@ -475,7 +468,6 @@ public class EspBehaviour : MonoBehaviour
             }
         }
         catch { }
-
         return null;
     }
 
@@ -485,28 +477,24 @@ public class EspBehaviour : MonoBehaviour
         try
         {
             if (_playerManagerType == null) return;
-
             if (_cachedPm == null)
             {
                 _pmRetryTimer += Time.deltaTime;
                 if (_pmRetryTimer < PmRetryInterval) return;
                 _pmRetryTimer = 0f;
             }
-
             var pm = FindPlayerManager();
             if (pm == null)
             {
                 LogThrottled("pm_null", "[ESP] PlayerManager not found", true);
                 return;
             }
-
             var localPlayer = ReadLocalPlayerFromPm(pm);
             if (localPlayer == null)
             {
                 LogThrottled("cfog_null", "[ESP] localPlayer is null", true);
                 return;
             }
-
             int newTeam = ReadTeamViaCfmp(localPlayer);
             if (newTeam >= 0 && newTeam != _localTeam)
             {
