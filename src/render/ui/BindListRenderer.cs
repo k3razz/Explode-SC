@@ -52,19 +52,20 @@ public static class BindListRenderer
 
     public static void HandleDrag()
     {
-        if (UiDragState.AnyDragging && !BindListState.IsDragging) return;
-
         var rect = GetRect();
         Event e = Event.current;
         if (e == null) return;
         Vector2 mouse = e.mousePosition;
 
-        if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
+        if (e.type == EventType.MouseDown && e.button == 0)
         {
-            BindListState.IsDragging = true;
-            UiDragState.AnyDragging = true;
-            BindListState.DragOffset = mouse - new Vector2(rect.x, rect.y);
-            e.Use();
+            if (rect.Contains(mouse) && !UiDragState.AnyDragging)
+            {
+                BindListState.IsDragging = true;
+                UiDragState.AnyDragging = true;
+                BindListState.DragOffset = mouse - new Vector2(rect.x, rect.y);
+                e.Use();
+            }
         }
         else if (e.type == EventType.MouseDrag && BindListState.IsDragging)
         {
@@ -74,7 +75,7 @@ public static class BindListRenderer
             Plugin.CfgBindListY.Value = newPos.y;
             e.Use();
         }
-        else if (e.type == EventType.MouseUp && e.button == 0)
+        else if (e.type == EventType.MouseUp && e.button == 0 && BindListState.IsDragging)
         {
             BindListState.IsDragging = false;
             UiDragState.AnyDragging = false;
@@ -89,8 +90,6 @@ public static class BindListRenderer
 
         var rows = GetRows();
         if (rows.Count == 0) return;
-
-        if (KeybindState.MenuOpen) HandleDrag();
 
         var rect = GetRect();
         UiPanel.Draw(rect, 0.85f);
