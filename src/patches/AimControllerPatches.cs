@@ -17,59 +17,83 @@ public static class AimControllerPatches
 
         try
         {
-            var candidates = new[]
+            Type aimType = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
-                new[] { "Chillow.StandChillow.Player.PlayerController", "PlayerController" },
-                new[] { "Chillow.StandChillow.Player.Controller", "Controller" }
-            };
+                if (asm.GetName().Name != "Assembly-CSharp") continue;
+                aimType = asm.GetType("Chillow.StandChillow.Player.Aim.AimController");
+                if (aimType != null) break;
+            }
+            if (aimType == null)
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
+                    {
+                        foreach (var t in asm.GetTypes())
+                        {
+                            if (t.Name == "AimController") { aimType = t; break; }
+                        }
+                    }
+                    catch { }
+                    if (aimType != null) break;
+                }
+            }
+
+            if (aimType != null)
+            {
+                Plugin.LogSource?.LogInfo($"[AIM] AimController methods:");
+                var all = aimType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var m in all)
+                {
+                    if (m.GetParameters().Length == 0 && m.ReturnType == typeof(void))
+                        Plugin.LogSource?.LogInfo($"[AIM]   {m.Name}");
+                }
+            }
+
+            var pcType = FindType("Chillow.StandChillow.Player.PlayerController");
+            if (pcType != null)
+            {
+                Plugin.LogSource?.LogInfo($"[AIM] PlayerController methods (void, 0 params):");
+                var all = pcType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var m in all)
+                {
+                    if (m.GetParameters().Length == 0 && m.ReturnType == typeof(void))
+                        Plugin.LogSource?.LogInfo($"[AIM]   {m.Name}");
+                }
+            }
+
+            var ctrlType = FindType("Chillow.StandChillow.Player.Controller");
+            if (ctrlType != null)
+            {
+                Plugin.LogSource?.LogInfo($"[AIM] Controller methods (void, 0 params):");
+                var all = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var m in all)
+                {
+                    if (m.GetParameters().Length == 0 && m.ReturnType == typeof(void))
+                        Plugin.LogSource?.LogInfo($"[AIM]   {m.Name}");
+                }
+            }
 
             MethodInfo targetMethod = null;
             string targetName = null;
 
-            foreach (var group in candidates)
+            foreach (var pair in new[] {
+                Tuple.Create("Chillow.StandChillow.Player.PlayerController", "LateUpdate"),
+                Tuple.Create("Chillow.StandChillow.Player.PlayerController", "Update"),
+                Tuple.Create("Chillow.StandChillow.Player.Controller", "LateUpdate"),
+                Tuple.Create("Chillow.StandChillow.Player.Controller", "Update")
+            })
             {
-                Type t = null;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    foreach (var full in group)
-                    {
-                        try { t = asm.GetType(full); if (t != null) break; } catch { }
-                    }
-                    if (t != null) break;
-                }
-                if (t == null)
-                {
-                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                    {
-                        try
-                        {
-                            foreach (var x in asm.GetTypes())
-                            {
-                                if (x.Name == group[group.Length - 1]) { t = x; break; }
-                            }
-                        }
-                        catch { }
-                        if (t != null) break;
-                    }
-                }
+                var t = FindType(pair.Item1);
                 if (t == null) continue;
-
-                foreach (var name in new[] { "LateUpdate", "Update", "Tick" })
-                {
-                    var mi = FindMethodInHierarchy(t, name);
-                    if (mi != null)
-                    {
-                        targetMethod = mi;
-                        targetName = $"{t.FullName}.{name}";
-                        break;
-                    }
-                }
-                if (targetMethod != null) break;
+                var mi = FindMethodInHierarchy(t, pair.Item2);
+                if (mi != null) { targetMethod = mi; targetName = $"{t.FullName}.{pair.Item2}"; break; }
             }
 
             if (targetMethod == null)
             {
-                Plugin.LogSource?.LogError("[AIM] No patchable method found in PlayerController/Controller");
+                Plugin.LogSource?.LogError("[AIM] No patchable method found");
                 return;
             }
 
@@ -81,6 +105,15 @@ public static class AimControllerPatches
         {
             Plugin.LogSource?.LogError($"[AIM] Apply EX: {e.Message}");
         }
+    }
+
+    private static Type FindType(string fullName)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try { var t = asm.GetType(fullName); if (t != null) return t; } catch { }
+        }
+        return null;
     }
 
     private static MethodInfo FindMethodInHierarchy(Type t, string name)
