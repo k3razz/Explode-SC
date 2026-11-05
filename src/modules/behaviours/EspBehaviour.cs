@@ -82,7 +82,9 @@ public class EspBehaviour : MonoBehaviour
             WatermarkModule.Position = new Vector2(Plugin.CfgWatermarkX.Value, Plugin.CfgWatermarkY.Value);
 
             BindListState.Enabled = Plugin.CfgShowBindList.Value;
+            BindListState.Position = new Vector2(Plugin.CfgBindListX.Value, Plugin.CfgBindListY.Value);
             BombStatusRenderer.Enabled = Plugin.CfgShowBombStatus.Value;
+            BombStatusRenderer.Position = new Vector2(Plugin.CfgBombStatusX.Value, Plugin.CfgBombStatusY.Value);
 
             if (!KeybindState.IntroPlayed)
             {
@@ -295,12 +297,8 @@ public class EspBehaviour : MonoBehaviour
             Watermark.DrawBackground(_whiteTex);
             Watermark.DrawText();
 
-            float y = 80f;
-            float bindH = BindListRenderer.GetHeight();
-            BindListRenderer.Draw(y);
-            y += bindH + 8f;
-
-            BombStatusRenderer.Draw(y);
+            BindListRenderer.Draw();
+            BombStatusRenderer.Draw();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
