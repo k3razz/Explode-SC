@@ -220,14 +220,12 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
+            if (_cam == null) return;
+
             var e = Event.current;
             bool isRepaint = e == null || e.type == EventType.Repaint;
             bool isMouse = e != null && (e.type == EventType.MouseDown || e.type == EventType.MouseDrag || e.type == EventType.MouseUp);
-
-            if (!isRepaint && !isMouse) return;
-
-            if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
-            if (_cam == null) return;
 
             if (isRepaint)
             {
@@ -319,7 +317,7 @@ public class EspBehaviour : MonoBehaviour
                 return;
             }
 
-            if (UiState.MenuVisible && isRepaint)
+            if (UiState.MenuVisible)
                 MenuRenderer.DrawMenu(_whiteTex);
         }
         catch { }
