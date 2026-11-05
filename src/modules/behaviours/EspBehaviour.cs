@@ -121,7 +121,7 @@ public class EspBehaviour : MonoBehaviour
             if (_cam == null) _cam = Camera.main;
 
             WatermarkModule.Update();
-            BombModule.Update();
+            BombEspModule.Update();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
