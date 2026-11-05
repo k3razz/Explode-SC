@@ -142,7 +142,7 @@ public static class MenuRenderer
         by += 30;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "ESP", UiState.MenuTab == 0, whiteTex)) UiState.MenuTab = 0;
         by += 34;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimLock", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimAssist", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
         by += 34;
@@ -154,7 +154,7 @@ public static class MenuRenderer
 
         float cy = panelRect.y + 40;
         if (UiState.MenuTab == 0) DrawEspTab(contentX, cy, contentW, whiteTex);
-        else if (UiState.MenuTab == 1) DrawAimLockTab(contentX, cy, contentW, whiteTex);
+        else if (UiState.MenuTab == 1) DrawAimAssistTab(contentX, cy, contentW, whiteTex);
         else if (UiState.MenuTab == 2) DrawRenderTab(contentX, cy, contentW, whiteTex);
     }
 
@@ -218,16 +218,16 @@ public static class MenuRenderer
         { TeamFilter.ShowSpectator = !TeamFilter.ShowSpectator; Plugin.CfgShowSpectator.Value = TeamFilter.ShowSpectator; }
     }
 
-    private static void DrawAimLockTab(float bx, float y, float bw, Texture2D whiteTex)
+    private static void DrawAimAssistTab(float bx, float y, float bw, Texture2D whiteTex)
     {
         float bh = 30;
 
-        if (CustomButton(new Rect(bx, y, bw, bh), $"AimLock: {(AimbotModule.Enabled ? "ON" : "OFF")}", AimbotModule.Enabled, whiteTex))
+        if (CustomButton(new Rect(bx, y, bw, bh), $"AimAssist: {(AimbotModule.Enabled ? "ON" : "OFF")}", AimbotModule.Enabled, whiteTex))
         { AimbotModule.Enabled = !AimbotModule.Enabled; Plugin.CfgAimbotEnabled.Value = AimbotModule.Enabled; }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"FOV Circle: {(AimbotModule.DrawFovCircle ? "ON" : "OFF")}", AimbotModule.DrawFovCircle, whiteTex))
-        { AimbotModule.DrawFovCircle = !AimbotModule.DrawFovCircle; }
+        { AimbotModule.DrawFovCircle = !AimbotModule.DrawFovCircle; Plugin.CfgAimbotDrawFov.Value = AimbotModule.DrawFovCircle; }
         y += 36;
 
         GUI.Label(new Rect(bx, y, bw, 22), $"<b>FOV:</b> {AimbotModule.Fov:F0}°");
@@ -238,12 +238,22 @@ public static class MenuRenderer
         { AimbotModule.Fov = Mathf.Min(180f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         y += 36;
 
-        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Sensitivity:</b> {AimbotModule.Sensitivity:F3}");
+        GUI.Label(new Rect(bx, y, bw, 22), $"<b>Sensitivity:</b> {AimbotModule.Sensitivity:F2}");
         y += 24;
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
-        { AimbotModule.Sensitivity = Mathf.Max(0.01f, AimbotModule.Sensitivity - 0.01f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
+        { AimbotModule.Sensitivity = Mathf.Max(0.01f, AimbotModule.Sensitivity - 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Sensitivity = Mathf.Min(1f, AimbotModule.Sensitivity + 0.01f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
+        { AimbotModule.Sensitivity = Mathf.Min(1.5f, AimbotModule.Sensitivity + 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
+        y += 36;
+
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Bone: {AimbotModule.Bone}", true, whiteTex))
+        {
+            var next = AimbotModule.Bone == AimBone.Head ? AimBone.Neck
+                     : AimbotModule.Bone == AimBone.Neck ? AimBone.Body
+                     : AimBone.Head;
+            AimbotModule.Bone = next;
+            Plugin.CfgAimbotBone.Value = next.ToString();
+        }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}", KeybindState.ToggleMode, whiteTex))
