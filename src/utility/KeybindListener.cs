@@ -2,15 +2,13 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 
 namespace MyDynamicESP;
 
 public class KeybindListener : MonoBehaviour
 {
-    private static Type _hudType = null;
-    private static bool _hudTypeSearched = false;
     private bool _waitingForRelease = false;
+    private float _dbgTimer;
 
     private static readonly Dictionary<KeyCode, Key> KeyMap = new Dictionary<KeyCode, Key>
     {
@@ -50,7 +48,6 @@ public class KeybindListener : MonoBehaviour
             var kb = Keyboard.current;
             if (kb == null) return;
 
-            // Интро: отмена
             if (KeybindState.IntroActive)
             {
                 var mouse = Mouse.current;
@@ -69,7 +66,6 @@ public class KeybindListener : MonoBehaviour
                 return;
             }
 
-            // Меню
             if (kb.insertKey.wasPressedThisFrame && !KeybindState.Capturing)
             {
                 KeybindState.MenuOpen = !KeybindState.MenuOpen;
@@ -77,12 +73,9 @@ public class KeybindListener : MonoBehaviour
                 UiState.MenuTab = 0;
             }
 
-            // Захват бинда
             if (KeybindState.Capturing) { HandleCapture(); return; }
 
-            // Аимбот: toggle/hold
             if (KeybindState.AimbotKey == KeyCode.None) return;
-            if (IsTypingInChat()) { KeybindState.AimbotActive = false; return; }
 
             bool kd, kdDown;
             GetKeyState(KeybindState.AimbotKey, out kd, out kdDown);
@@ -93,12 +86,18 @@ public class KeybindListener : MonoBehaviour
             }
             else
             {
-                // Hold: меняем состояние только при изменении
                 if (kd != KeybindState.LastKeyState)
                 {
                     KeybindState.LastKeyState = kd;
                     KeybindState.AimbotActive = kd;
                 }
+            }
+
+            _dbgTimer += Time.deltaTime;
+            if (_dbgTimer >= 1f)
+            {
+                _dbgTimer = 0f;
+                Plugin.LogSource?.LogInfo($"[KB] key={KeybindState.AimbotKey} active={KeybindState.AimbotActive} capturing={KeybindState.Capturing} toggle={KeybindState.ToggleMode} last={KeybindState.LastKeyState} kd={kd} kdDown={kdDown}");
             }
         }
         catch (Exception e) { Debug.LogError($"[KB] EX: {e.Message}"); }
@@ -112,11 +111,15 @@ public class KeybindListener : MonoBehaviour
         var kb = Keyboard.current;
         var mouse = Mouse.current;
 
-        if (kc == KeyCode.Mouse0) { pressed = mouse != null && mouse.leftButton.isPressed; pressedThisFrame = mouse != null && mouse.leftButton.wasPressedThisFrame; return; }
-        if (kc == KeyCode.Mouse1) { pressed = mouse != null && mouse.rightButton.isPressed; pressedThisFrame = mouse != null && mouse.rightButton.wasPressedThisFrame; return; }
-        if (kc == KeyCode.Mouse2) { pressed = mouse != null && mouse.middleButton.isPressed; pressedThisFrame = mouse != null && mouse.middleButton.wasPressedThisFrame; return; }
+        if (kc == KeyCode.Mouse0) { pressed = (mouse != null && mouse.leftButton.isPressed) || Input.GetMouseButton(0); pressedThisFrame = (mouse != null && mouse.leftButton.wasPressedThisFrame) || Input.GetMouseButtonDown(0); return; }
+        if (kc == KeyCode.Mouse1) { pressed = (mouse != null && mouse.rightButton.isPressed) || Input.GetMouseButton(1); pressedThisFrame = (mouse != null && mouse.rightButton.wasPressedThisFrame) || Input.GetMouseButtonDown(1); return; }
+        if (kc == KeyCode.Mouse2) { pressed = (mouse != null && mouse.middleButton.isPressed) || Input.GetMouseButton(2); pressedThisFrame = (mouse != null && mouse.middleButton.wasPressedThisFrame) || Input.GetMouseButtonDown(2); return; }
 
-        if (kb == null) return;
+        if (kb == null)
+        {
+            try { pressed = Input.GetKey(kc); pressedThisFrame = Input.GetKeyDown(kc); } catch { }
+            return;
+        }
 
         if (KeyMap.TryGetValue(kc, out Key key))
         {
@@ -143,6 +146,8 @@ public class KeybindListener : MonoBehaviour
         {
             KeybindState.AimbotKey = KeybindState.CapturingBackup;
             KeybindState.Capturing = false;
+            KeybindState.LastKeyState = false;
+            KeybindState.AimbotActive = false;
             return;
         }
 
@@ -179,41 +184,9 @@ public class KeybindListener : MonoBehaviour
     {
         KeybindState.AimbotKey = kc;
         KeybindState.Capturing = false;
+        KeybindState.LastKeyState = false;
+        KeybindState.AimbotActive = false;
         _waitingForRelease = true;
         if (Plugin.CfgAimbotKey != null) Plugin.CfgAimbotKey.Value = kc.ToString();
-    }
-
-    private bool IsTypingInChat()
-    {
-        try
-        {
-            if (!_hudTypeSearched)
-            {
-                _hudTypeSearched = true;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    try { foreach (var t in asm.GetTypes()) if (t.Name == "HudManager") { _hudType = t; break; } } catch { }
-                    if (_hudType != null) break;
-                }
-            }
-
-            if (_hudType == null) return false;
-
-            var instProp = _hudType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
-            if (instProp == null) return false;
-            var hud = instProp.GetValue(null);
-            if (hud == null) return false;
-
-            var chatProp = _hudType.GetProperty("Chat", BindingFlags.Public | BindingFlags.Instance);
-            if (chatProp == null) return false;
-            var chat = chatProp.GetValue(hud);
-            if (chat == null) return false;
-
-            var openProp = chat.GetType().GetProperty("IsOpenOrOpening", BindingFlags.Public | BindingFlags.Instance);
-            if (openProp == null) return false;
-            var open = openProp.GetValue(chat);
-            return open is bool o && o;
-        }
-        catch { return false; }
     }
 }
