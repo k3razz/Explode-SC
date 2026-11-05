@@ -10,76 +10,55 @@ public static class BindListState
 
 public static class BindListRenderer
 {
-    private static Texture2D _bgTex;
-    private static readonly Dictionary<string, Vector2> _cache = new();
-
-    private const float PadX = 10f;
-    private const float PadY = 6f;
+    private const float PadX = 12f;
+    private const float PadY = 8f;
     private const float RowH = 18f;
-    private const float Gap = 6f;
+    private const float Gap = 4f;
+    private const float HeaderH = 22f;
     private const float BaseY = 80f;
     private const float RightOffset = 20f;
+    private const float PanelWidth = 260f;
 
-    public static void EnsureTextures()
+    public static float GetHeight()
     {
-        if (_bgTex == null)
-        {
-            _bgTex = new Texture2D(1, 1);
-            _bgTex.SetPixel(0, 0, Color.white);
-            _bgTex.Apply();
-        }
+        if (!BindListState.Enabled || !KeybindState.IntroDone) return 0f;
+        int count = 0;
+        if (AimbotModule.Enabled && KeybindState.AimbotActive) count++;
+        if (count == 0) return 0f;
+        return PadY * 2f + HeaderH + 4f + count * (RowH + Gap);
     }
 
-    private static Vector2 Size(string s)
-    {
-        if (_cache.TryGetValue(s, out var v)) return v;
-        v = GUI.skin.label.CalcSize(new GUIContent(s));
-        _cache[s] = v;
-        return v;
-    }
-
-    public static void Draw()
+    public static void Draw(float y)
     {
         if (!BindListState.Enabled) return;
         if (!KeybindState.IntroDone) return;
 
-        var active = new List<string>();
-
-        // AimLock — только когда активен по бинду
+        var rows = new List<string>();
         if (AimbotModule.Enabled && KeybindState.AimbotActive)
         {
             string mode = KeybindState.ToggleMode ? "TOGGLE" : "HOLD";
-            active.Add($"AimLock [{KeybindState.AimbotKey}] {mode}");
+            rows.Add($"AimLock    [{mode}]    [{KeybindState.AimbotKey}]");
         }
 
-        if (active.Count == 0) return;
+        if (rows.Count == 0) return;
 
-        EnsureTextures();
-        if (_bgTex == null) return;
+        float h = PadY * 2f + HeaderH + 4f + rows.Count * (RowH + Gap);
+        float x = Screen.width - RightOffset - PanelWidth;
+        var rect = new Rect(x, y, PanelWidth, h);
 
-        float maxW = 0f;
-        foreach (var s in active)
-        {
-            var sz = Size(s);
-            if (sz.x > maxW) maxW = sz.x;
-        }
-        float panelW = maxW + PadX * 2f;
-        float panelH = active.Count * RowH + PadY * 2f + (active.Count - 1) * Gap;
+        UiPanel.Draw(rect, 0.85f);
 
-        float px = Screen.width - panelW - RightOffset;
-        float py = BaseY;
-
-        GUI.color = new Color(0.05f, 0.05f, 0.08f, 0.85f);
-        GUI.DrawTexture(new Rect(px, py, panelW, panelH), _bgTex);
         GUI.color = new Color(1f, 0.2f, 0.2f, 1f);
-        GUI.DrawTexture(new Rect(px, py, 3f, panelH), _bgTex);
+        GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, h), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        float y = py + PadY;
-        foreach (var s in active)
+        GUI.Label(new Rect(rect.x + PadX, rect.y + PadY, PanelWidth - PadX * 2f, RowH), "Binds");
+
+        float ry = rect.y + PadY + HeaderH + 4f;
+        foreach (var r in rows)
         {
-            GUI.Label(new Rect(px + PadX, y, panelW - PadX, RowH), s);
-            y += RowH + Gap;
+            GUI.Label(new Rect(rect.x + PadX, ry, PanelWidth - PadX * 2f, RowH), r);
+            ry += RowH + Gap;
         }
 
         GUI.color = Color.white;
