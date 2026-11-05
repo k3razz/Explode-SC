@@ -60,7 +60,7 @@ public class Plugin : BasePlugin
             CfgShowSpectator = ConfigFile.Bind("ESP", "ShowSpectator", false);
 
             CfgAimbotEnabled = ConfigFile.Bind("AimLock", "Enabled", false);
-            CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 15f);
+            CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 90f);
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
 
