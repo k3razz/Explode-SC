@@ -122,6 +122,7 @@ public class EspBehaviour : MonoBehaviour
 
             WatermarkModule.Update();
             BombEspModule.Update();
+            WeaponLog.Flush();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -178,6 +179,23 @@ public class EspBehaviour : MonoBehaviour
             if (_cam == null) _cam = Camera.main;
             if (_cam == null) return;
             AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
+
+            if (!KeybindState.AimbotActive) return;
+            if (!AimbotModule.HasTarget) return;
+
+            float angleX = AimbotModule.TargetAngleX;
+            float angleY = AimbotModule.TargetAngleY;
+            if (Mathf.Abs(angleX) < 0.1f && Mathf.Abs(angleY) < 0.1f) return;
+
+            float sens = Mathf.Max(0.01f, AimbotModule.Sensitivity);
+            int dx = Mathf.RoundToInt(angleX * sens);
+            int dy = Mathf.RoundToInt(angleY * sens);
+
+            if (dx != 0 || dy != 0)
+            {
+                MouseEmulator.Move(dx, dy);
+                Plugin.LogSource?.LogInfo($"[AIM] Move dx={dx} dy={dy} ax={angleX:F2} ay={angleY:F2}");
+            }
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
         finally { WeaponLog.Active = false; }
