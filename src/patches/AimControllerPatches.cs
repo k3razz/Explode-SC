@@ -8,6 +8,7 @@ namespace MyDynamicESP;
 public static class AimControllerPatches
 {
     private static bool _applied;
+    private static int _lastFrame = -1;
 
     public static void Apply()
     {
@@ -20,7 +21,9 @@ public static class AimControllerPatches
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 if (asm.GetName().Name != "Assembly-CSharp") continue;
-                aimCtrlType = asm.GetType("Il2CppChillow.StandChillow.Player.AimController");
+                aimCtrlType = asm.GetType("Chillow.StandChillow.Player.Aim.AimController");
+                if (aimCtrlType == null)
+                    aimCtrlType = asm.GetType("Il2CppChillow.StandChillow.Player.Aim.AimController");
                 if (aimCtrlType != null) break;
             }
 
@@ -32,11 +35,7 @@ public static class AimControllerPatches
                     {
                         foreach (var t in asm.GetTypes())
                         {
-                            if (t.Name == "AimController" && t.Namespace != null && t.Namespace.Contains("Chillow"))
-                            {
-                                aimCtrlType = t;
-                                break;
-                            }
+                            if (t.Name == "AimController") { aimCtrlType = t; break; }
                         }
                     }
                     catch { }
@@ -52,36 +51,6 @@ public static class AimControllerPatches
 
             Plugin.LogSource?.LogInfo($"[AIM] AimController found: {aimCtrlType.FullName}");
 
-            var allMethods = aimCtrlType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-            foreach (var m in allMethods)
-            {
-                if (m.Name.IndexOf("Tick", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    m.Name.IndexOf("Late", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    Plugin.LogSource?.LogInfo($"[AIM] method: {m.Name} params={m.GetParameters().Length}");
-                }
-            }
-
-            var baseType = aimCtrlType.BaseType;
-            int depth = 0;
-            while (baseType != null && baseType != typeof(object) && depth < 8)
-            {
-                Plugin.LogSource?.LogInfo($"[AIM] base: {baseType.FullName}");
-                var baseMethods = baseType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-                foreach (var m in baseMethods)
-                {
-                    if (m.Name.IndexOf("Tick", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        m.Name.IndexOf("Late", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        Plugin.LogSource?.LogInfo($"[AIM] base method: {baseType.Name}.{m.Name} params={m.GetParameters().Length}");
-                    }
-                }
-                baseType = baseType.BaseType;
-                depth++;
-            }
-
             MethodInfo targetMethod = null;
             string methodName = null;
             foreach (var name in new[] { "Tick", "LateUpdate", "Update" })
@@ -92,6 +61,16 @@ public static class AimControllerPatches
 
             if (targetMethod == null)
             {
+                var allMethods = aimCtrlType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var m in allMethods)
+                {
+                    if (m.GetParameters().Length == 0 &&
+                        (m.Name.IndexOf("Tick", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        Plugin.LogSource?.LogInfo($"[AIM] candidate: {m.Name}");
+                    }
+                }
                 Plugin.LogSource?.LogError("[AIM] No Tick/LateUpdate/Update found");
                 return;
             }
@@ -127,6 +106,11 @@ public static class AimControllerPatches
             if (!AimbotModule.Enabled) return;
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
+
+            int fc = Time.frameCount;
+            if (fc == _lastFrame) return;
+            _lastFrame = fc;
+
             if (AimbotModule.TargetDirection.sqrMagnitude < 0.0001f) return;
 
             var holder = AimShared.MainCameraHolder;
