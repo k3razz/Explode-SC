@@ -34,6 +34,7 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgWatermarkY;
 
     public static ConfigEntry<bool> CfgShowBindList;
+    public static ConfigEntry<bool> CfgShowBombStatus;
 
     public override void Load()
     {
@@ -63,6 +64,7 @@ public class Plugin : BasePlugin
             CfgWatermarkY = ConfigFile.Bind("Render", "WatermarkY", -1f);
 
             CfgShowBindList = ConfigFile.Bind("Misc", "ShowBindList", true);
+            CfgShowBombStatus = ConfigFile.Bind("Misc", "ShowBombStatus", true);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
@@ -70,6 +72,7 @@ public class Plugin : BasePlugin
             TeamFilter.OnlyEnemies = CfgOnlyEnemies.Value;
 
             BindListState.Enabled = CfgShowBindList.Value;
+            BombStatusRenderer.Enabled = CfgShowBombStatus.Value;
 
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
