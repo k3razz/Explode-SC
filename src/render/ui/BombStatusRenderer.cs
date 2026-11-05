@@ -32,6 +32,8 @@ public static class BombStatusRenderer
 
     public static void HandleDrag()
     {
+        if (UiDragState.AnyDragging && !IsDragging) return;
+
         var rect = GetRect();
         Event e = Event.current;
         if (e == null) return;
@@ -40,6 +42,7 @@ public static class BombStatusRenderer
         if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
         {
             IsDragging = true;
+            UiDragState.AnyDragging = true;
             DragOffset = mouse - new Vector2(rect.x, rect.y);
             e.Use();
         }
@@ -54,6 +57,7 @@ public static class BombStatusRenderer
         else if (e.type == EventType.MouseUp && e.button == 0)
         {
             IsDragging = false;
+            UiDragState.AnyDragging = false;
             e.Use();
         }
     }
