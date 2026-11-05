@@ -50,16 +50,55 @@ public static class AimControllerPatches
                 return;
             }
 
-            var tickMethod = aimCtrlType.GetMethod("Tick", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (tickMethod == null)
+            Plugin.LogSource?.LogInfo($"[AIM] AimController found: {aimCtrlType.FullName}");
+
+            var allMethods = aimCtrlType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+            foreach (var m in allMethods)
             {
-                Plugin.LogSource?.LogError("[AIM] AimController.Tick not found");
+                if (m.Name.IndexOf("Tick", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    m.Name.IndexOf("Late", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Plugin.LogSource?.LogInfo($"[AIM] method: {m.Name} params={m.GetParameters().Length}");
+                }
+            }
+
+            var baseType = aimCtrlType.BaseType;
+            int depth = 0;
+            while (baseType != null && baseType != typeof(object) && depth < 8)
+            {
+                Plugin.LogSource?.LogInfo($"[AIM] base: {baseType.FullName}");
+                var baseMethods = baseType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                foreach (var m in baseMethods)
+                {
+                    if (m.Name.IndexOf("Tick", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        m.Name.IndexOf("Late", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        Plugin.LogSource?.LogInfo($"[AIM] base method: {baseType.Name}.{m.Name} params={m.GetParameters().Length}");
+                    }
+                }
+                baseType = baseType.BaseType;
+                depth++;
+            }
+
+            MethodInfo targetMethod = null;
+            string methodName = null;
+            foreach (var name in new[] { "Tick", "LateUpdate", "Update" })
+            {
+                var mi = FindMethodInHierarchy(aimCtrlType, name);
+                if (mi != null) { targetMethod = mi; methodName = name; break; }
+            }
+
+            if (targetMethod == null)
+            {
+                Plugin.LogSource?.LogError("[AIM] No Tick/LateUpdate/Update found");
                 return;
             }
 
             var harmony = new Harmony("com.you.dynamicesp.aimctrl");
-            harmony.Patch(tickMethod, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(Tick_Postfix)));
-            Plugin.LogSource?.LogInfo($"[AIM] Patched {aimCtrlType.FullName}.Tick");
+            harmony.Patch(targetMethod, postfix: new HarmonyMethod(typeof(AimControllerPatches), nameof(Postfix)));
+            Plugin.LogSource?.LogInfo($"[AIM] Patched {targetMethod.DeclaringType?.FullName}.{methodName}");
         }
         catch (Exception e)
         {
@@ -67,7 +106,21 @@ public static class AimControllerPatches
         }
     }
 
-    public static void Tick_Postfix()
+    private static MethodInfo FindMethodInHierarchy(Type t, string name)
+    {
+        var cur = t;
+        int depth = 0;
+        while (cur != null && cur != typeof(object) && depth < 8)
+        {
+            var mi = cur.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+            if (mi != null) return mi;
+            cur = cur.BaseType;
+            depth++;
+        }
+        return null;
+    }
+
+    public static void Postfix()
     {
         try
         {
