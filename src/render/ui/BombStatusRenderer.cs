@@ -32,19 +32,20 @@ public static class BombStatusRenderer
 
     public static void HandleDrag()
     {
-        if (UiDragState.AnyDragging && !IsDragging) return;
-
         var rect = GetRect();
         Event e = Event.current;
         if (e == null) return;
         Vector2 mouse = e.mousePosition;
 
-        if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(mouse))
+        if (e.type == EventType.MouseDown && e.button == 0)
         {
-            IsDragging = true;
-            UiDragState.AnyDragging = true;
-            DragOffset = mouse - new Vector2(rect.x, rect.y);
-            e.Use();
+            if (rect.Contains(mouse) && !UiDragState.AnyDragging)
+            {
+                IsDragging = true;
+                UiDragState.AnyDragging = true;
+                DragOffset = mouse - new Vector2(rect.x, rect.y);
+                e.Use();
+            }
         }
         else if (e.type == EventType.MouseDrag && IsDragging)
         {
@@ -54,7 +55,7 @@ public static class BombStatusRenderer
             Plugin.CfgBombStatusY.Value = newPos.y;
             e.Use();
         }
-        else if (e.type == EventType.MouseUp && e.button == 0)
+        else if (e.type == EventType.MouseUp && e.button == 0 && IsDragging)
         {
             IsDragging = false;
             UiDragState.AnyDragging = false;
@@ -67,8 +68,6 @@ public static class BombStatusRenderer
         if (!Enabled) return;
         if (!KeybindState.IntroDone) return;
         if (!KeybindState.MenuOpen && !BombEspModule.Planted) return;
-
-        if (KeybindState.MenuOpen) HandleDrag();
 
         var rect = GetRect();
         UiPanel.Draw(rect, 0.85f);
