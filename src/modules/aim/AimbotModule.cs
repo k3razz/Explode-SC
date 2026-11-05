@@ -6,7 +6,7 @@ namespace MyDynamicESP;
 public static class AimbotModule
 {
     public static bool Enabled = false;
-    public static float Fov = 15f;
+    public static float Fov = 90f;
     public static bool DrawFovCircle = false;
 
     public static bool HasTarget = false;
