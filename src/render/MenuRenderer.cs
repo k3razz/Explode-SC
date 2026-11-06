@@ -5,9 +5,8 @@ namespace MyDynamicESP;
 
 public static class MenuRenderer
 {
-    public const float MenuWidth = 608f;
-    public const float MenuHeight = 316f;
     public const float TabWidth = 94f;
+    public const float BorderRadius = 9f;
 
     private static Texture2D _whiteTex;
     private static Texture2D _circleTex;
@@ -24,6 +23,7 @@ public static class MenuRenderer
     public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
     public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
+    public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 255);
 
     public static void EnsureTextures()
     {
@@ -74,6 +74,18 @@ public static class MenuRenderer
         size = GUI.skin.label.CalcSize(new GUIContent(text));
         _textCache[text] = size;
         return size;
+    }
+
+    public static Rect GetPanelRect()
+    {
+        float w = Screen.width * UiState.MenuScale;
+        float h = Screen.height * UiState.MenuScale;
+        Vector2 pos = UiState.MenuPosition;
+        if (pos.x < 0 || pos.y < 0)
+        {
+            pos = new Vector2((Screen.width - w) / 2f, (Screen.height - h) / 2f);
+        }
+        return new Rect(pos.x, pos.y, w, h);
     }
 
     public static void DrawFovCircle()
@@ -143,43 +155,74 @@ public static class MenuRenderer
         EnsureTextures();
         _whiteTex = whiteTex;
 
-        float sw = Screen.width, sh = Screen.height;
-        float mw = MenuWidth, mh = MenuHeight;
-        Rect panelRect = new Rect((sw - mw) / 2f, (sh - mh) / 2f, mw, mh);
+        Rect panelRect = GetPanelRect();
+        HandleDrag(panelRect);
 
-        // Панель
         DrawRect(panelRect, ColPanelBg);
 
         // Левая колонка — разделы
         float tabX = panelRect.x + 5f;
         float tabY = panelRect.y + 10f;
+        float tabW = TabWidth;
 
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Main", UiState.MenuSection == 0))
+        if (DrawSectionButton(new Rect(tabX, tabY, tabW, 36f), "Main", UiState.MenuSection == 0))
             UiState.MenuSection = 0;
         tabY += 39f;
-
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Screen", UiState.MenuSection == 1))
+        if (DrawSectionButton(new Rect(tabX, tabY, tabW, 36f), "Screen", UiState.MenuSection == 1))
             UiState.MenuSection = 1;
 
-        // Разделитель
         DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 2f, panelRect.height), ColDivider);
 
-        // Правая часть — вкладки внутри раздела
+        // Правая часть
         float contentX = panelRect.x + 118f;
         float contentY = panelRect.y + 10f;
         float contentW = panelRect.width - 128f;
         float contentH = panelRect.height - 20f;
 
         if (UiState.MenuSection == 0) DrawMainSection(contentX, contentY, contentW, contentH);
-        else if (UiState.MenuSection == 1) DrawScreenSection(contentX, contentY, contentW, contentH);
+        else DrawScreenSection(contentX, contentY, contentW, contentH);
 
-        // Ватермарка снизу
-        DrawWatermark(sw, sh);
+        // Ватермарка внизу меню
+        DrawMenuWatermark(panelRect);
+    }
+
+    private static void HandleDrag(Rect panelRect)
+    {
+        Event e = Event.current;
+        if (e == null) return;
+
+        if (e.type == EventType.MouseDown && e.button == 0)
+        {
+            // Верхняя полоска панели (10px) — область драга
+            Rect handle = new Rect(panelRect.x, panelRect.y, panelRect.width, 26f);
+            if (handle.Contains(e.mousePosition) && !UiDragState.AnyDragging)
+            {
+                UiState.MenuDragging = true;
+                UiState.MenuDragOffset = e.mousePosition - new Vector2(panelRect.x, panelRect.y);
+                UiDragState.AnyDragging = true;
+                e.Use();
+            }
+        }
+        else if (e.type == EventType.MouseDrag && UiState.MenuDragging)
+        {
+            Vector2 newPos = e.mousePosition - UiState.MenuDragOffset;
+            // Не даём уехать за пределы экрана
+            newPos.x = Mathf.Clamp(newPos.x, -panelRect.width + 60f, Screen.width - 60f);
+            newPos.y = Mathf.Clamp(newPos.y, 0f, Screen.height - 30f);
+            UiState.MenuPosition = newPos;
+            e.Use();
+        }
+        else if (e.type == EventType.MouseUp && e.button == 0 && UiState.MenuDragging)
+        {
+            UiState.MenuDragging = false;
+            UiDragState.AnyDragging = false;
+            e.Use();
+        }
     }
 
     private static void DrawMainSection(float bx, float y, float bw, float bh)
     {
-        // Вкладки внутри раздела Main
+        // Одна вкладка: ESP и правее AIM
         float tabW = 110f;
         float tabH = 28f;
         float tabGap = 8f;
@@ -193,11 +236,12 @@ public static class MenuRenderer
         if (DrawSubTab(new Rect(tabsX, tabsY, tabW, tabH), "AIM", UiState.MenuTab == 1))
             UiState.MenuTab = 1;
 
-        // Контент вкладки
         float blockY = y + tabH + 10f;
         float blockH = bh - tabH - 10f;
-        if (UiState.MenuTab == 0) DrawEspBlock(bx, blockY, bw, blockH);
-        else if (UiState.MenuTab == 1) DrawAimBlock(bx, blockY, bw, blockH);
+
+        BeginScroll(new Rect(bx, blockY, bw, blockH));
+        float contentHeight = DrawTabContent(UiState.MenuTab == 0 ? 0 : 1, bx, blockY, bw, blockH);
+        EndScroll(new Rect(bx, blockY, bw, blockH), contentHeight);
     }
 
     private static void DrawScreenSection(float bx, float y, float bw, float bh)
@@ -212,26 +256,80 @@ public static class MenuRenderer
 
         float blockY = y + tabH + 10f;
         float blockH = bh - tabH - 10f;
-        if (UiState.MenuTabScreen == 0) DrawRenderBlock(bx, blockY, bw, blockH);
+
+        BeginScroll(new Rect(bx, blockY, bw, blockH));
+        float contentHeight = DrawTabContent(2, bx, blockY, bw, blockH);
+        EndScroll(new Rect(bx, blockY, bw, blockH), contentHeight);
     }
 
-    private static void DrawWatermark(float sw, float sh)
+    // 0 = ESP, 1 = AIM, 2 = Hud
+    private static float DrawTabContent(int tab, float bx, float y, float bw, float bh)
     {
-        float wmW = 235f;
-        float wmH = 29f;
-        float wmX = sw / 2f - wmW / 2f;
-        float wmY = sh - 40f;
-        DrawRect(new Rect(wmX, wmY, wmW, wmH), ColTabActive, 9f);
+        switch (tab)
+        {
+            case 0: return DrawEspBlock(bx, y, bw, bh);
+            case 1: return DrawAimBlock(bx, y, bw, bh);
+            default: return DrawRenderBlock(bx, y, bw, bh);
+        }
+    }
 
-        string label = "Explode • Beta • 13:01 06.11";
+    private static void BeginScroll(Rect rect)
+    {
+        // Пусто: IMGUI рисует всё вручную, скролл применяем смещением
+    }
+
+    private static void EndScroll(Rect rect, float contentHeight)
+    {
+        float viewH = rect.height;
+        float maxScroll = Mathf.Max(0f, contentHeight - viewH);
+        UiState.MenuScroll = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
+
+        // Скролл колесом
+        Event e = Event.current;
+        if (e != null && rect.Contains(e.mousePosition))
+        {
+            if (e.type == EventType.ScrollWheel)
+            {
+                UiState.MenuScroll += e.delta.y * 20f;
+                UiState.MenuScroll = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
+                e.Use();
+            }
+        }
+
+        if (maxScroll > 0f)
+        {
+            // Тонкий скроллбар справа
+            float sbW = 6f;
+            Rect track = new Rect(rect.xMax - sbW - 2f, rect.y, sbW, viewH);
+            DrawRect(track, new Color(1f, 1f, 1f, 0.08f), 3f);
+            float thumbH = Mathf.Max(24f, viewH * (viewH / contentHeight));
+            float thumbY = rect.y + (viewH - thumbH) * (UiState.MenuScroll / maxScroll);
+            DrawRect(new Rect(track.x, thumbY, sbW, thumbH), ColDivider, 3f);
+        }
+    }
+
+    private static void DrawMenuWatermark(Rect panelRect)
+    {
+        if (!UiState.HudWatermark) return;
+        string time = System.DateTime.Now.ToString("HH:mm");
+        string date = System.DateTime.Now.ToString("dd.MM");
+        string label = $"Explode • Beta • {time} {date}";
+
         Vector2 size = GetTextSize(label);
+        float wmW = size.x + 24f;
+        float wmH = size.y + 10f;
+        float wmX = panelRect.x + (panelRect.width - wmW) / 2f;
+        float wmY = panelRect.yMax - wmH - 8f;
+
+        DrawRect(new Rect(wmX, wmY, wmW, wmH), ColWatermarkBg, 8f);
         GUI.color = ColText;
-        GUI.Label(new Rect(wmX + (wmW - size.x) / 2f, wmY + (wmH - size.y) / 2f, size.x + 2f, size.y + 2f), label);
+        GUI.Label(new Rect(wmX + 12f, wmY + 5f, size.x + 2f, size.y + 2f), label);
         GUI.color = Color.white;
     }
 
-    private static void DrawEspBlock(float bx, float y, float bw, float bh)
+    private static float DrawEspBlock(float bx, float y, float bw, float bh)
     {
+        float startY = y;
         Rect block = new Rect(bx, y, bw, bh);
         DrawRect(block, ColBlockBg);
         DrawBorder(block, ColBlockBorder, 1f);
@@ -250,10 +348,14 @@ public static class MenuRenderer
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Show T", ref TeamFilter.ShowTr);
         y += rowH;
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Show CT", ref TeamFilter.ShowCt);
+        y += rowH;
+
+        return y - startY;
     }
 
-    private static void DrawAimBlock(float bx, float y, float bw, float bh)
+    private static float DrawAimBlock(float bx, float y, float bw, float bh)
     {
+        float startY = y;
         Rect block = new Rect(bx, y, bw, bh);
         DrawRect(block, ColBlockBg);
         DrawBorder(block, ColBlockBorder, 1f);
@@ -319,10 +421,14 @@ public static class MenuRenderer
                 KeybindState.Capturing = false;
             }
         }
+        y += 28f;
+
+        return y - startY;
     }
 
-    private static void DrawRenderBlock(float bx, float y, float bw, float bh)
+    private static float DrawRenderBlock(float bx, float y, float bw, float bh)
     {
+        float startY = y;
         Rect block = new Rect(bx, y, bw, bh);
         DrawRect(block, ColBlockBg);
         DrawBorder(block, ColBlockBorder, 1f);
@@ -334,11 +440,28 @@ public static class MenuRenderer
         float itemW = bw - 32f;
         float rowH = 30f;
 
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Watermark", ref WatermarkModule.Enabled);
+        ToggleRow(new Rect(itemX, y, itemW, rowH), "Watermark", ref UiState.HudWatermark);
         y += rowH;
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Bind List", ref BindListState.Enabled);
         y += rowH;
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Bomb Status", ref BombStatusRenderer.Enabled);
+        y += rowH;
+
+        LabelRow(new Rect(itemX, y, itemW, 20f), $"Menu size: {UiState.MenuScale * 100f:F0}%");
+        y += 22f;
+        if (SmallButton(new Rect(itemX, y, (itemW - 4f) / 2f, 24f), "-"))
+        {
+            UiState.MenuScale = Mathf.Clamp(UiState.MenuScale - 0.05f, 0.25f, 2f);
+            Plugin.CfgMenuScale.Value = UiState.MenuScale;
+        }
+        if (SmallButton(new Rect(itemX + (itemW + 4f) / 2f, y, (itemW - 4f) / 2f, 24f), "+"))
+        {
+            UiState.MenuScale = Mathf.Clamp(UiState.MenuScale + 0.05f, 0.25f, 2f);
+            Plugin.CfgMenuScale.Value = UiState.MenuScale;
+        }
+        y += 28f;
+
+        return y - startY;
     }
 
     // === Хелперы ===
