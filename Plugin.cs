@@ -9,7 +9,7 @@ using Il2CppInterop.Runtime.Injection;
 
 namespace MyDynamicESP;
 
-[BepInPlugin("com.you.dynamicesp", "Explode", "3.0.0.01")]
+[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
 public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
@@ -32,6 +32,12 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
 
+    public static ConfigEntry<bool> CfgWeaponNoSpread;
+    public static ConfigEntry<bool> CfgWeaponNoRecoil;
+    public static ConfigEntry<bool> CfgWeaponRapidFire;
+    public static ConfigEntry<bool> CfgWeaponMaxWallbang;
+    public static ConfigEntry<bool> CfgWeaponMaxArmorPent;
+
     public static ConfigEntry<bool> CfgWatermarkEnabled;
     public static ConfigEntry<float> CfgWatermarkX;
     public static ConfigEntry<float> CfgWatermarkY;
@@ -43,11 +49,6 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgShowBombStatus;
     public static ConfigEntry<float> CfgBombStatusX;
     public static ConfigEntry<float> CfgBombStatusY;
-    public static ConfigEntry<bool> CfgWeaponNoSpread;
-    public static ConfigEntry<bool> CfgWeaponNoRecoil;
-    public static ConfigEntry<bool> CfgWeaponRapidFire;
-    public static ConfigEntry<bool> CfgWeaponMaxWallbang;
-    public static ConfigEntry<bool> CfgWeaponMaxArmorPent;
 
     public override void Load()
     {
@@ -68,12 +69,18 @@ public class Plugin : BasePlugin
             CfgShowSpectator = ConfigFile.Bind("ESP", "ShowSpectator", false);
 
             CfgAimbotEnabled = ConfigFile.Bind("AimLock", "Enabled", false);
-            CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 90f);
+            CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 20f);
             CfgAimbotDrawFov = ConfigFile.Bind("AimLock", "DrawFov", false);
             CfgAimbotSensitivity = ConfigFile.Bind("AimLock", "Sensitivity", 0.15f);
-            CfgAimbotBone = ConfigFile.Bind("AimLock", "Bone", "Body");
+            CfgAimbotBone = ConfigFile.Bind("AimLock", "Bone", "Head");
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
+
+            CfgWeaponNoSpread = ConfigFile.Bind("Weapon", "NoSpread", false);
+            CfgWeaponNoRecoil = ConfigFile.Bind("Weapon", "NoRecoil", false);
+            CfgWeaponRapidFire = ConfigFile.Bind("Weapon", "RapidFire", false);
+            CfgWeaponMaxWallbang = ConfigFile.Bind("Weapon", "MaxWallbang", false);
+            CfgWeaponMaxArmorPent = ConfigFile.Bind("Weapon", "MaxArmorPent", false);
 
             CfgWatermarkEnabled = ConfigFile.Bind("Render", "WatermarkEnabled", true);
             CfgWatermarkX = ConfigFile.Bind("Render", "WatermarkX", -1f);
@@ -86,12 +93,6 @@ public class Plugin : BasePlugin
             CfgShowBombStatus = ConfigFile.Bind("Misc", "ShowBombStatus", true);
             CfgBombStatusX = ConfigFile.Bind("Misc", "BombStatusX", -1f);
             CfgBombStatusY = ConfigFile.Bind("Misc", "BombStatusY", -1f);
-
-            CfgWeaponNoSpread = ConfigFile.Bind("Weapon", "NoSpread", false);
-            CfgWeaponNoRecoil = ConfigFile.Bind("Weapon", "NoRecoil", false);
-            CfgWeaponRapidFire = ConfigFile.Bind("Weapon", "RapidFire", false);
-            CfgWeaponMaxWallbang = ConfigFile.Bind("Weapon", "MaxWallbang", false);
-            CfgWeaponMaxArmorPent = ConfigFile.Bind("Weapon", "MaxArmorPent", false);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
