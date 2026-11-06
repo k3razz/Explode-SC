@@ -243,13 +243,13 @@ public static class MenuRenderer
         if (CustomButton(new Rect(bx, y, bw / 2f - 2f, bh), "-", false, whiteTex))
         { AimbotModule.Sensitivity = Mathf.Max(0.01f, AimbotModule.Sensitivity - 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
         if (CustomButton(new Rect(bx + bw / 2f + 2f, y, bw / 2f - 2f, bh), "+", true, whiteTex))
-        { AimbotModule.Sensitivity = Mathf.Min(1.5f, AimbotModule.Sensitivity + 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
+        { AimbotModule.Sensitivity = Mathf.Min(3f, AimbotModule.Sensitivity + 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
         y += 36;
 
         if (CustomButton(new Rect(bx, y, bw, bh), $"Bone: {AimbotModule.Bone}", true, whiteTex))
         {
             var next = AimbotModule.Bone == AimBone.Head ? AimBone.Neck
-                     : AimbotModule.Bone == AimBone.Neck ? AimBone.Body
+                     : AimbotModule.Bone == AimBone.Neck ? AimBone.Chest
                      : AimBone.Head;
             AimbotModule.Bone = next;
             Plugin.CfgAimbotBone.Value = next.ToString();
