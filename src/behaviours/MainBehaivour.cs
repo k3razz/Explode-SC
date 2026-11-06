@@ -75,6 +75,7 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.Fov = Plugin.CfgAimbotFov.Value;
             AimbotModule.DrawFovCircle = Plugin.CfgAimbotDrawFov.Value;
             AimbotModule.Sensitivity = Plugin.CfgAimbotSensitivity.Value;
+            AimbotModule.AimOnTeammates = Plugin.CfgAimbotAimOnTeammates.Value;
             if (Enum.TryParse(Plugin.CfgAimbotBone.Value, out AimBone bone)) AimbotModule.Bone = bone;
             else AimbotModule.Bone = AimBone.Head;
 
@@ -193,6 +194,11 @@ public class EspBehaviour : MonoBehaviour
 
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
+
+            // страховка: не целимся в тиммейта (только если AimOnTeammates == false)
+            var cur = AimbotModule.CurrentTarget;
+            if (!AimbotModule.AimOnTeammates && cur != null && _localTeam > 0 && cur.Team > 0 && cur.Team == _localTeam)
+                return;
 
             float angleX = AimbotModule.TargetAngleX;
             float angleY = AimbotModule.TargetAngleY;
