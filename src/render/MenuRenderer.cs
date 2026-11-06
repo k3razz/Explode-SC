@@ -281,6 +281,13 @@ public static class MenuRenderer
         }
         y += 36;
 
+        if (CustomButton(new Rect(bx, y, bw, bh), $"Aim on Teammates: {(AimbotModule.AimOnTeammates ? "ON" : "OFF")}", AimbotModule.AimOnTeammates, whiteTex))
+        {
+            AimbotModule.AimOnTeammates = !AimbotModule.AimOnTeammates;
+            Plugin.CfgAimbotAimOnTeammates.Value = AimbotModule.AimOnTeammates;
+        }
+        y += 36;
+
         if (CustomButton(new Rect(bx, y, bw, bh), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}", KeybindState.ToggleMode, whiteTex))
         {
             KeybindState.ToggleMode = !KeybindState.ToggleMode;
