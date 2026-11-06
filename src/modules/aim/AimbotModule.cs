@@ -21,6 +21,9 @@ public static class AimbotModule
     public static float Sensitivity = 0.15f;
     public static AimBone Bone = AimBone.Head;
 
+    // Если true — аим цепляет и тиммейтов. По умолчанию false.
+    public static bool AimOnTeammates = false;
+
     public static bool HasTarget = false;
     public static Vector3 TargetDirection = Vector3.zero;
     public static Vector3 TargetPoint = Vector3.zero;
@@ -118,9 +121,9 @@ public static class AimbotModule
             if (t.Transform == null) continue;
             try { if (!t.Transform.gameObject.activeInHierarchy) continue; } catch { }
 
-            // === ПРОПУСКАЕМ ТИММЕЙТОВ ===
-            // Если команда определена у обоих и совпадает — не целимся
-            if (localTeam > 0 && t.Team > 0 && t.Team == localTeam) continue;
+            // === ФИЛЬТР ТИММЕЙТОВ ===
+            // Скипаем только если AimOnTeammates == false
+            if (!AimOnTeammates && localTeam > 0 && t.Team > 0 && t.Team == localTeam) continue;
 
             Vector3 center = GetAimPoint(t);
             Vector3 dir = center - camPos;
