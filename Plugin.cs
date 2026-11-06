@@ -43,6 +43,11 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgShowBombStatus;
     public static ConfigEntry<float> CfgBombStatusX;
     public static ConfigEntry<float> CfgBombStatusY;
+    public static ConfigEntry<bool> CfgWeaponNoSpread;
+    public static ConfigEntry<bool> CfgWeaponNoRecoil;
+    public static ConfigEntry<bool> CfgWeaponRapidFire;
+    public static ConfigEntry<bool> CfgWeaponMaxWallbang;
+    public static ConfigEntry<bool> CfgWeaponMaxArmorPent;
 
     public override void Load()
     {
@@ -81,6 +86,12 @@ public class Plugin : BasePlugin
             CfgShowBombStatus = ConfigFile.Bind("Misc", "ShowBombStatus", true);
             CfgBombStatusX = ConfigFile.Bind("Misc", "BombStatusX", -1f);
             CfgBombStatusY = ConfigFile.Bind("Misc", "BombStatusY", -1f);
+
+            CfgWeaponNoSpread = ConfigFile.Bind("Weapon", "NoSpread", false);
+            CfgWeaponNoRecoil = ConfigFile.Bind("Weapon", "NoRecoil", false);
+            CfgWeaponRapidFire = ConfigFile.Bind("Weapon", "RapidFire", false);
+            CfgWeaponMaxWallbang = ConfigFile.Bind("Weapon", "MaxWallbang", false);
+            CfgWeaponMaxArmorPent = ConfigFile.Bind("Weapon", "MaxArmorPent", false);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
