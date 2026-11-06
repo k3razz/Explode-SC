@@ -101,6 +101,12 @@ public class EspBehaviour : MonoBehaviour
                 Plugin.LogSource?.LogInfo("[ESP] Intro animation started");
             }
 
+            WeaponCheats.NoSpread = Plugin.CfgWeaponNoSpread.Value;
+            WeaponCheats.NoRecoil = Plugin.CfgWeaponNoRecoil.Value;
+            WeaponCheats.RapidFire = Plugin.CfgWeaponRapidFire.Value;
+            WeaponCheats.MaxWallbang = Plugin.CfgWeaponMaxWallbang.Value;
+            WeaponCheats.MaxArmorPent = Plugin.CfgWeaponMaxArmorPent.Value;
+
             Debug.Log("[ESP] ===== Awake() done =====");
         }
         catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Awake EX: {e}"); }
