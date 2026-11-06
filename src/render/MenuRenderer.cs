@@ -144,7 +144,9 @@ public static class MenuRenderer
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "AimAssist", UiState.MenuTab == 1, whiteTex)) UiState.MenuTab = 1;
         by += 34;
-        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Weapon", UiState.MenuTab == 2, whiteTex)) UiState.MenuTab = 2;
+        by += 34;
+        if (TabButton(new Rect(bx, by, TabWidth, 30f), "Render", UiState.MenuTab == 3, whiteTex)) UiState.MenuTab = 3;
         by += 34;
         if (TabButton(new Rect(bx, by, TabWidth, 30f), "Hide", false, whiteTex))
         {
@@ -155,7 +157,30 @@ public static class MenuRenderer
         float cy = panelRect.y + 40;
         if (UiState.MenuTab == 0) DrawEspTab(contentX, cy, contentW, whiteTex);
         else if (UiState.MenuTab == 1) DrawAimAssistTab(contentX, cy, contentW, whiteTex);
-        else if (UiState.MenuTab == 2) DrawRenderTab(contentX, cy, contentW, whiteTex);
+        else if (UiState.MenuTab == 2) DrawWeaponTab(contentX, cy, contentW, whiteTex);
+        else if (UiState.MenuTab == 3) DrawRenderTab(contentX, cy, contentW, whiteTex);
+    }
+
+    private static void DrawWeaponTab(float bx, float y, float bw, Texture2D whiteTex)
+    {
+        float bh = 30;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"NoSpread: {(WeaponCheats.NoSpread ? "ON" : "OFF")}", WeaponCheats.NoSpread, whiteTex))
+        { WeaponCheats.NoSpread = !WeaponCheats.NoSpread; Plugin.CfgWeaponNoSpread.Value = WeaponCheats.NoSpread; }
+        y += 36;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"NoRecoil: {(WeaponCheats.NoRecoil ? "ON" : "OFF")}", WeaponCheats.NoRecoil, whiteTex))
+        { WeaponCheats.NoRecoil = !WeaponCheats.NoRecoil; Plugin.CfgWeaponNoRecoil.Value = WeaponCheats.NoRecoil; }
+        y += 36;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"RapidFire: {(WeaponCheats.RapidFire ? "ON" : "OFF")}", WeaponCheats.RapidFire, whiteTex))
+        { WeaponCheats.RapidFire = !WeaponCheats.RapidFire; Plugin.CfgWeaponRapidFire.Value = WeaponCheats.RapidFire; }
+        y += 36;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"MaxWallbang: {(WeaponCheats.MaxWallbang ? "ON" : "OFF")}", WeaponCheats.MaxWallbang, whiteTex))
+        { WeaponCheats.MaxWallbang = !WeaponCheats.MaxWallbang; Plugin.CfgWeaponMaxWallbang.Value = WeaponCheats.MaxWallbang; }
+        y += 36;
+        if (CustomButton(new Rect(bx, y, bw, bh), $"MaxArmorPent: {(WeaponCheats.MaxArmorPent ? "ON" : "OFF")}", WeaponCheats.MaxArmorPent, whiteTex))
+        { WeaponCheats.MaxArmorPent = !WeaponCheats.MaxArmorPent; Plugin.CfgWeaponMaxArmorPent.Value = WeaponCheats.MaxArmorPent; }
+        y += 46;
+
+        GUI.Label(new Rect(bx, y, bw, 22), "Works only with GunController (rifles/pistols).");
     }
 
     private static void DrawRenderTab(float bx, float y, float bw, Texture2D whiteTex)
