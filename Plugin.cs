@@ -51,6 +51,9 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgBombStatusX;
     public static ConfigEntry<float> CfgBombStatusY;
 
+    public static ConfigEntry<float> CfgMenuScale;
+    public static ConfigEntry<bool> CfgHudWatermark;
+
     public override void Load()
     {
         Instance = this;
