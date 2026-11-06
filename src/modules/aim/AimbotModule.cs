@@ -1,5 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using Il2CppInterop.Runtime.InteropTypes;
 
 namespace MyDynamicESP;
 
@@ -7,7 +9,7 @@ public enum AimBone
 {
     Head = 0,
     Neck = 1,
-    Body = 2
+    Chest = 2
 }
 
 public static class AimbotModule
@@ -16,7 +18,7 @@ public static class AimbotModule
     public static float Fov = 90f;
     public static bool DrawFovCircle = false;
     public static float Sensitivity = 0.15f;
-    public static AimBone Bone = AimBone.Body;
+    public static AimBone Bone = AimBone.Head;
 
     public static bool HasTarget = false;
     public static Vector3 TargetDirection = Vector3.zero;
@@ -25,9 +27,13 @@ public static class AimbotModule
     public static float TargetAngleY = 0f;
 
     private static Tracked _currentTarget;
-    private const float HeadOffset = 1.5f;
-    private const float BodyOffset = 0.9f;
-    private const float NeckOffset = 1.35f;
+    private const float HeadOffset = 1.6f;
+    private const float ChestOffset = 1.1f;
+    private const float NeckOffset = 1.45f;
+
+    private const int OFF_BIPED_HEAD = 0x20;
+    private const int OFF_BIPED_NECK = 0x28;
+    private const int OFF_BIPED_SPINE = 0x30;
 
     public static Tracked CurrentTarget => _currentTarget;
 
@@ -66,11 +72,38 @@ public static class AimbotModule
     {
         if (t == null || t.Transform == null) return Vector3.zero;
 
-        float off = Bone == AimBone.Head ? HeadOffset
-                  : Bone == AimBone.Neck ? NeckOffset
-                  : BodyOffset;
+        if (t.BipedMap != null)
+        {
+            int offset = Bone == AimBone.Head ? OFF_BIPED_HEAD
+                       : Bone == AimBone.Neck ? OFF_BIPED_NECK
+                       : OFF_BIPED_SPINE;
 
-        return t.Transform.position + Vector3.up * off;
+            var tr = ReadTransform(t.BipedMap, offset);
+            if (tr != null) return tr.position;
+        }
+
+        float fallback = Bone == AimBone.Head ? HeadOffset
+                       : Bone == AimBone.Neck ? NeckOffset
+                       : ChestOffset;
+        return t.Transform.position + Vector3.up * fallback;
+    }
+
+    private static Transform ReadTransform(object obj, int offset)
+    {
+        try
+        {
+            if (!(obj is Il2CppObjectBase baseObj)) return null;
+            IntPtr ptr = baseObj.Pointer;
+            if (ptr == IntPtr.Zero) return null;
+
+            IntPtr bonePtr = Marshal.ReadIntPtr(ptr, offset);
+            if (bonePtr == IntPtr.Zero) return null;
+
+            var tr = new Transform(bonePtr);
+            if (tr == null || tr.Pointer == IntPtr.Zero) return null;
+            return tr;
+        }
+        catch { return null; }
     }
 
     private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
