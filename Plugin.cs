@@ -51,6 +51,7 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgBombStatusX;
     public static ConfigEntry<float> CfgBombStatusY;
 
+    // Hud / меню
     public static ConfigEntry<float> CfgMenuScale;
     public static ConfigEntry<bool> CfgHudWatermark;
 
@@ -99,6 +100,10 @@ public class Plugin : BasePlugin
             CfgShowBombStatus = ConfigFile.Bind("Misc", "ShowBombStatus", true);
             CfgBombStatusX = ConfigFile.Bind("Misc", "BombStatusX", -1f);
             CfgBombStatusY = ConfigFile.Bind("Misc", "BombStatusY", -1f);
+
+            CfgMenuScale = ConfigFile.Bind("Hud", "MenuScale", 0.25f,
+                "Menu size as fraction of screen (0.25 = 25%, 2.0 = 200%).");
+            CfgHudWatermark = ConfigFile.Bind("Hud", "Watermark", true);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
