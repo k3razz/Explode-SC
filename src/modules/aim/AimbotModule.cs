@@ -50,7 +50,7 @@ public static class AimbotModule
         Vector3 camPos = cam.transform.position;
         Vector3 camForward = cam.transform.forward;
 
-        _currentTarget = FindBestTarget(camPos, camForward, tracked);
+        _currentTarget = FindBestTarget(camPos, camForward, tracked, localTeam);
 
         if (_currentTarget == null || _currentTarget.Transform == null) return;
 
@@ -107,7 +107,8 @@ public static class AimbotModule
         catch { return null; }
     }
 
-    private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward, Dictionary<int, Tracked> tracked)
+    private static Tracked FindBestTarget(Vector3 camPos, Vector3 camForward,
+                                           Dictionary<int, Tracked> tracked, int localTeam)
     {
         Tracked best = null;
         float bestAngle = Fov;
@@ -116,6 +117,10 @@ public static class AimbotModule
         {
             if (t.Transform == null) continue;
             try { if (!t.Transform.gameObject.activeInHierarchy) continue; } catch { }
+
+            // === ПРОПУСКАЕМ ТИММЕЙТОВ ===
+            // Если команда определена у обоих и совпадает — не целимся
+            if (localTeam > 0 && t.Team > 0 && t.Team == localTeam) continue;
 
             Vector3 center = GetAimPoint(t);
             Vector3 dir = center - camPos;
