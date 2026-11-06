@@ -150,41 +150,69 @@ public static class MenuRenderer
         // Панель
         DrawRect(panelRect, ColPanelBg);
 
-        // Левая колонка вкладок
+        // Левая колонка — разделы
         float tabX = panelRect.x + 5f;
         float tabY = panelRect.y + 10f;
 
-        DrawTabText(new Rect(tabX, tabY, TabWidth, 22f), "Main", UiState.MenuTab == 0, ColTextDim);
-        if (ClickZone(new Rect(tabX, tabY, TabWidth, 30f))) UiState.MenuTab = 0;
-        tabY += 33f;
-
-        if (DrawTabButton(new Rect(tabX, tabY, TabWidth, 36f), "Visuals", UiState.MenuTab == 1)) UiState.MenuTab = 1;
+        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Main", UiState.MenuSection == 0))
+            UiState.MenuSection = 0;
         tabY += 39f;
 
-        if (DrawTabButton(new Rect(tabX, tabY, TabWidth, 36f), "Aim", UiState.MenuTab == 2)) UiState.MenuTab = 2;
-        tabY += 39f;
-
-        DrawTabText(new Rect(tabX, tabY, TabWidth, 22f), "Screen", UiState.MenuTab == 3, ColTextDim);
-        if (ClickZone(new Rect(tabX, tabY, TabWidth, 30f))) UiState.MenuTab = 3;
-        tabY += 33f;
-
-        if (DrawTabButton(new Rect(tabX, tabY, TabWidth, 36f), "Hud", UiState.MenuTab == 4)) UiState.MenuTab = 4;
+        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Screen", UiState.MenuSection == 1))
+            UiState.MenuSection = 1;
 
         // Разделитель
         DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 2f, panelRect.height), ColDivider);
 
-        // Контент
+        // Правая часть — вкладки внутри раздела
         float contentX = panelRect.x + 118f;
         float contentY = panelRect.y + 10f;
         float contentW = panelRect.width - 128f;
         float contentH = panelRect.height - 20f;
 
-        if (UiState.MenuTab == 1) DrawEspBlock(contentX, contentY, contentW, contentH);
-        else if (UiState.MenuTab == 2) DrawAimBlock(contentX, contentY, contentW, contentH);
-        else if (UiState.MenuTab == 4) DrawRenderBlock(contentX, contentY, contentW, contentH);
+        if (UiState.MenuSection == 0) DrawMainSection(contentX, contentY, contentW, contentH);
+        else if (UiState.MenuSection == 1) DrawScreenSection(contentX, contentY, contentW, contentH);
 
         // Ватермарка снизу
         DrawWatermark(sw, sh);
+    }
+
+    private static void DrawMainSection(float bx, float y, float bw, float bh)
+    {
+        // Вкладки внутри раздела Main
+        float tabW = 110f;
+        float tabH = 28f;
+        float tabGap = 8f;
+        float tabsX = bx;
+        float tabsY = y;
+
+        if (DrawSubTab(new Rect(tabsX, tabsY, tabW, tabH), "ESP", UiState.MenuTab == 0))
+            UiState.MenuTab = 0;
+        tabsX += tabW + tabGap;
+
+        if (DrawSubTab(new Rect(tabsX, tabsY, tabW, tabH), "AIM", UiState.MenuTab == 1))
+            UiState.MenuTab = 1;
+
+        // Контент вкладки
+        float blockY = y + tabH + 10f;
+        float blockH = bh - tabH - 10f;
+        if (UiState.MenuTab == 0) DrawEspBlock(bx, blockY, bw, blockH);
+        else if (UiState.MenuTab == 1) DrawAimBlock(bx, blockY, bw, blockH);
+    }
+
+    private static void DrawScreenSection(float bx, float y, float bw, float bh)
+    {
+        float tabW = 110f;
+        float tabH = 28f;
+        float tabsX = bx;
+        float tabsY = y;
+
+        if (DrawSubTab(new Rect(tabsX, tabsY, tabW, tabH), "Hud", UiState.MenuTabScreen == 0))
+            UiState.MenuTabScreen = 0;
+
+        float blockY = y + tabH + 10f;
+        float blockH = bh - tabH - 10f;
+        if (UiState.MenuTabScreen == 0) DrawRenderBlock(bx, blockY, bw, blockH);
     }
 
     private static void DrawWatermark(float sw, float sh)
@@ -230,7 +258,7 @@ public static class MenuRenderer
         DrawRect(block, ColBlockBg);
         DrawBorder(block, ColBlockBorder, 1f);
 
-        DrawCentered("AimAssist", new Rect(bx, y + 8f, bw, 20f), ColText, true);
+        DrawCentered("AIM", new Rect(bx, y + 8f, bw, 20f), ColText, true);
         y += 36f;
 
         float itemX = bx + 16f;
@@ -244,7 +272,6 @@ public static class MenuRenderer
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Aim on Teammates", ref AimbotModule.AimOnTeammates);
         y += rowH;
 
-        // FOV
         LabelRow(new Rect(itemX, y, itemW, 20f), $"FOV: {AimbotModule.Fov:F0}°");
         y += 22f;
         if (SmallButton(new Rect(itemX, y, (itemW - 4f) / 2f, 24f), "-"))
@@ -253,7 +280,6 @@ public static class MenuRenderer
         { AimbotModule.Fov = Mathf.Min(180f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
         y += 28f;
 
-        // Sensitivity
         LabelRow(new Rect(itemX, y, itemW, 20f), $"Sens: {AimbotModule.Sensitivity:F2}");
         y += 22f;
         if (SmallButton(new Rect(itemX, y, (itemW - 4f) / 2f, 24f), "-"))
@@ -262,7 +288,6 @@ public static class MenuRenderer
         { AimbotModule.Sensitivity = Mathf.Min(3f, AimbotModule.Sensitivity + 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
         y += 28f;
 
-        // Bone
         if (SmallButton(new Rect(itemX, y, itemW, 24f), $"Bone: {AimbotModule.Bone}"))
         {
             var next = AimbotModule.Bone == AimBone.Head ? AimBone.Neck
@@ -302,7 +327,7 @@ public static class MenuRenderer
         DrawRect(block, ColBlockBg);
         DrawBorder(block, ColBlockBorder, 1f);
 
-        DrawCentered("Render", new Rect(bx, y + 8f, bw, 20f), ColText, true);
+        DrawCentered("Hud", new Rect(bx, y + 8f, bw, 20f), ColText, true);
         y += 36f;
 
         float itemX = bx + 16f;
@@ -318,7 +343,7 @@ public static class MenuRenderer
 
     // === Хелперы ===
 
-    private static bool DrawTabButton(Rect rect, string label, bool active)
+    private static bool DrawSectionButton(Rect rect, string label, bool active)
     {
         if (active) DrawRect(rect, ColTabActive, 9f);
         bool clicked = ClickZone(rect);
@@ -326,9 +351,12 @@ public static class MenuRenderer
         return clicked;
     }
 
-    private static void DrawTabText(Rect rect, string label, bool active, Color col)
+    private static bool DrawSubTab(Rect rect, string label, bool active)
     {
-        DrawCentered(label, rect, active ? Color.white : col, false);
+        DrawRect(rect, active ? ColTabActive : ColBlockBorder, 6f);
+        bool clicked = ClickZone(rect);
+        DrawCentered(label, rect, active ? Color.white : ColText, false);
+        return clicked;
     }
 
     private static bool ClickZone(Rect rect)
@@ -389,19 +417,15 @@ public static class MenuRenderer
             GUI.color = Color.white;
             return;
         }
-        // Простое скругление: 3 прямоугольника (центр + 2 полосы) + 4 угла текстурами не рисуем,
-        // для IMGUI ограничимся прямоугольником + скруглённым верхом/низом через круги.
         DrawRoundedRect(rect, col, radius);
     }
 
     private static void DrawRoundedRect(Rect rect, Color col, float radius)
     {
-        // Центр
         GUI.color = col;
         GUI.DrawTexture(new Rect(rect.x + radius, rect.y, rect.width - radius * 2f, rect.height), _whiteTex);
         GUI.DrawTexture(new Rect(rect.x, rect.y + radius, rect.width, rect.height - radius * 2f), _whiteTex);
 
-        // Углы через круги
         float d = radius * 2f;
         GUI.DrawTexture(new Rect(rect.x, rect.y, d, d), _circleTex);
         GUI.DrawTexture(new Rect(rect.xMax - d, rect.y, d, d), _circleTex);
