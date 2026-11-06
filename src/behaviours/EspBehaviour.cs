@@ -190,6 +190,9 @@ public class EspBehaviour : MonoBehaviour
             float angleX = AimbotModule.TargetAngleX;
             float angleY = AimbotModule.TargetAngleY;
 
+            float angleMag = Mathf.Sqrt(angleX * angleX + angleY * angleY);
+            if (angleMag > AimbotModule.Fov) return;
+
             float sens = Mathf.Clamp(AimbotModule.Sensitivity, 0.01f, 3f);
             float px = angleX * sens;
             float py = angleY * sens;
@@ -214,7 +217,7 @@ public class EspBehaviour : MonoBehaviour
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
         finally { WeaponLog.Active = false; }
     }
-
+    
     [HideFromIl2Cpp]
     void FindMainCameraHolder()
     {
