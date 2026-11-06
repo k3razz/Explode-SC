@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime.InteropTypes;
@@ -15,7 +16,7 @@ public enum AimBone
 public static class AimbotModule
 {
     public static bool Enabled = false;
-    public static float Fov = 90f;
+    public static float Fov = 20f;
     public static bool DrawFovCircle = false;
     public static float Sensitivity = 0.15f;
     public static AimBone Bone = AimBone.Head;
