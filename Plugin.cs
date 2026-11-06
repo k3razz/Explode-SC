@@ -31,6 +31,7 @@ public class Plugin : BasePlugin
     public static ConfigEntry<string> CfgAimbotBone;
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
+    public static ConfigEntry<bool> CfgAimbotAimOnTeammates;
 
     public static ConfigEntry<bool> CfgWeaponNoSpread;
     public static ConfigEntry<bool> CfgWeaponNoRecoil;
@@ -75,6 +76,8 @@ public class Plugin : BasePlugin
             CfgAimbotBone = ConfigFile.Bind("AimLock", "Bone", "Head");
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
+            CfgAimbotAimOnTeammates = ConfigFile.Bind("AimLock", "AimOnTeammates", false,
+                "If true, aimbot will also lock onto teammates.");
 
             CfgWeaponNoSpread = ConfigFile.Bind("Weapon", "NoSpread", false);
             CfgWeaponNoRecoil = ConfigFile.Bind("Weapon", "NoRecoil", false);
