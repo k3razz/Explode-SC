@@ -19,7 +19,7 @@ public static class KeybindState
     public static bool ToggleMode = false;
     public static bool Capturing = false;
     public static KeyCode CapturingBackup = KeyCode.None;
-    public static bool AimbotActive = false; // зажат бинд или toggle on
+    public static bool AimbotActive = false;
     public static bool LastKeyState = false;
 
     // Интро
@@ -37,4 +37,14 @@ public static class UiState
     public static int MenuSection = 0;    // Main=0, Screen=1
     public static int MenuTab = 0;        // ESP=0, AIM=1 (внутри Main)
     public static int MenuTabScreen = 0;  // Hud=0 (внутри Screen)
+
+    // Меню
+    public static Vector2 MenuPosition = new Vector2(-1f, -1f); // -1 = ещё не инициализировано
+    public static bool MenuDragging = false;
+    public static Vector2 MenuDragOffset;
+    public static float MenuScale = 0.25f;        // 25%..200% — доля от экрана
+    public static float MenuScroll = 0f;          // текущий скролл контента (пиксели)
+
+    // Hud
+    public static bool HudWatermark = true;
 }
