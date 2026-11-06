@@ -97,6 +97,10 @@ public class EspBehaviour : MonoBehaviour
             BombStatusRenderer.Enabled = Plugin.CfgShowBombStatus.Value;
             BombStatusRenderer.Position = new Vector2(Plugin.CfgBombStatusX.Value, Plugin.CfgBombStatusY.Value);
 
+            // Hud / меню
+            UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, 0.25f, 2f);
+            UiState.HudWatermark = Plugin.CfgHudWatermark.Value;
+
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
@@ -154,6 +158,12 @@ public class EspBehaviour : MonoBehaviour
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
             }
+
+            // Инициализация позиции меню
+            if (UiState.MenuPosition.x < 0 || UiState.MenuPosition.y < 0)
+                UiState.MenuPosition = new Vector2(
+                    (Screen.width - Screen.width * UiState.MenuScale) / 2f,
+                    (Screen.height - Screen.height * UiState.MenuScale) / 2f);
 
             _holderCheckTimer += Time.deltaTime;
             if (_holderCheckTimer >= HolderCheckInterval)
