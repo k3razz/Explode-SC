@@ -76,7 +76,7 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.DrawFovCircle = Plugin.CfgAimbotDrawFov.Value;
             AimbotModule.Sensitivity = Plugin.CfgAimbotSensitivity.Value;
             if (Enum.TryParse(Plugin.CfgAimbotBone.Value, out AimBone bone)) AimbotModule.Bone = bone;
-            else AimbotModule.Bone = AimBone.Body;
+            else AimbotModule.Bone = AimBone.Head;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
@@ -190,11 +190,11 @@ public class EspBehaviour : MonoBehaviour
             float angleX = AimbotModule.TargetAngleX;
             float angleY = AimbotModule.TargetAngleY;
 
-            float sens = Mathf.Clamp(AimbotModule.Sensitivity, 0.01f, 1.5f);
+            float sens = Mathf.Clamp(AimbotModule.Sensitivity, 0.01f, 3f);
             float px = angleX * sens;
             float py = angleY * sens;
 
-            const float MaxStep = 25f;
+            const float MaxStep = 150f;
             if (px > MaxStep) px = MaxStep;
             if (px < -MaxStep) px = -MaxStep;
             if (py > MaxStep) py = MaxStep;
