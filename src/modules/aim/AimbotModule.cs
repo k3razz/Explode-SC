@@ -122,7 +122,6 @@ public static class AimbotModule
             try { if (!t.Transform.gameObject.activeInHierarchy) continue; } catch { }
 
             // === ФИЛЬТР ТИММЕЙТОВ ===
-            // Скипаем только если AimOnTeammates == false
             if (!AimOnTeammates && localTeam > 0 && t.Team > 0 && t.Team == localTeam) continue;
 
             Vector3 center = GetAimPoint(t);
