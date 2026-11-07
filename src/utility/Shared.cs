@@ -14,7 +14,6 @@ public static class KeybindState
 {
     public static KeyCode MenuKey = KeyCode.Insert;
 
-    // Аимбот
     public static KeyCode AimbotKey = KeyCode.Mouse1;
     public static bool ToggleMode = false;
     public static bool Capturing = false;
@@ -22,7 +21,6 @@ public static class KeybindState
     public static bool AimbotActive = false;
     public static bool LastKeyState = false;
 
-    // Интро
     public static bool IntroPlayed = false;
     public static bool IntroActive = false;
     public static float IntroAnimTime = 0f;
@@ -39,11 +37,11 @@ public static class UiState
     public static int MenuTabScreen = 0;  // Hud=0 (внутри Screen)
 
     // Меню
-    public static Vector2 MenuPosition = new Vector2(-1f, -1f); // -1 = ещё не инициализировано
+    public static Vector2 MenuPosition = new Vector2(-1f, -1f);
     public static bool MenuDragging = false;
     public static Vector2 MenuDragOffset;
-    public static float MenuScale = 0.25f;        // 25%..200% — доля от экрана
-    public static float MenuScroll = 0f;          // текущий скролл контента (пиксели)
+    public static float MenuScale = 0.25f;
+    public static float MenuScroll = 0f;
 
     // Hud
     public static bool HudWatermark = true;
