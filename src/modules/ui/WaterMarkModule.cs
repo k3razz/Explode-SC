@@ -11,21 +11,21 @@ public static class WatermarkModule
 
     private static float _lastFpsUpdate = 0f;
     private static int _fps = 0;
-    private static int _ping = -1; // -1 = HOST
+    private static int _ping = -1;
 
     public static void Update()
     {
-        if (Time.time - _lastFpsUpdate >= 1f)
+        // Считаем FPS каждые 0.5 секунды
+        if (Time.time - _lastFpsUpdate >= 0.5f)
         {
-            _fps = Mathf.RoundToInt(1f / Time.unscaledDeltaTime);
+            float dt = Time.unscaledDeltaTime;
+            if (dt > 0f) _fps = Mathf.RoundToInt(1f / dt);
             _lastFpsUpdate = Time.time;
             UpdatePing();
         }
 
         if (Position.x < 0 || Position.y < 0)
-        {
             Position = new Vector2(Screen.width / 2f, Screen.height - 40f);
-        }
     }
 
     private static void UpdatePing()
@@ -67,7 +67,7 @@ public static class WatermarkModule
 
     public static string GetText()
     {
-        string pingStr = _ping < 0 ? "HOST" : $"{_ping}ms";
-        return $"Explode | {_fps} FPS | {pingStr}";
+        string fpsStr = $"{_fps} FPS";
+        return $"Explode • {fpsStr} • BETA";
     }
 }
