@@ -41,7 +41,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyDynamicESP
-          path: bin/Release/net6.0-windows10.0.19041.0/MyDynamicESP.dll
+          path: |
+            bin/Release/net6.0-windows10.0.19041.0/MyDynamicESP.dll
+            bin/Release/net6.0-windows10.0.19041.0/WinRT.Runtime.dll
+            bin/Release/net6.0-windows10.0.19041.0/Microsoft.Windows.SDK.NET.dll
           if-no-files-found: error
 
   release:
@@ -56,15 +59,6 @@ jobs:
         with:
           name: MyDynamicESP
           path: artifacts
-
-      - name: Extract zip if present
-        shell: bash
-        run: |
-          shopt -s globstar nullglob
-          for z in artifacts/**/*.zip; do
-            echo "Extracting $z"
-            unzip -o "$z" -d artifacts/extracted
-          done
 
       - name: Determine release mode
         id: mode
@@ -126,7 +120,7 @@ jobs:
           body: Testing release dll
           prerelease: true
           files: |
-            artifacts/**/*.dll
+            artifacts/*.dll
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -140,7 +134,7 @@ jobs:
           body: ${{ steps.mode.outputs.notes }}
           prerelease: false
           files: |
-            artifacts/**/*.dll
+            artifacts/*.dll
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
