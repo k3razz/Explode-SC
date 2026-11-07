@@ -41,5 +41,4 @@ public static class UiState
     public static float MenuScroll = 0f;
 
     public static bool HudWatermark = true;
-    public static bool HudMedia = true;
 }
