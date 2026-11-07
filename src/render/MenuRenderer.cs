@@ -159,11 +159,14 @@ public static class MenuRenderer
         // Левая колонка — разделы
         float tabX = panelRect.x + 5f;
         float tabY = panelRect.y + 10f;
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Main", UiState.MenuSection == 0))
+        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Visuals", UiState.MenuSection == 0))
         { UiState.MenuSection = 0; UiState.MenuScroll = 0f; }
         tabY += 39f;
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Screen", UiState.MenuSection == 1))
+        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Legit", UiState.MenuSection == 1))
         { UiState.MenuSection = 1; UiState.MenuScroll = 0f; }
+        tabY += 39f;
+        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Hud", UiState.MenuSection == 2))
+        { UiState.MenuSection = 2; UiState.MenuScroll = 0f; }
 
         DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 2f, panelRect.height), ColDivider);
 
@@ -172,8 +175,9 @@ public static class MenuRenderer
         float contentW = panelRect.width - 128f;
         float contentH = panelRect.height - 20f;
 
-        if (UiState.MenuSection == 0) DrawMainSection(contentX, contentY, contentW, contentH);
-        else DrawScreenSection(contentX, contentY, contentW, contentH);
+        if (UiState.MenuSection == 0) DrawSectionContent(contentX, contentY, contentW, contentH, 0);
+        else if (UiState.MenuSection == 1) DrawSectionContent(contentX, contentY, contentW, contentH, 1);
+        else DrawSectionContent(contentX, contentY, contentW, contentH, 2);
 
         DrawMenuWatermark(panelRect);
     }
@@ -210,49 +214,19 @@ public static class MenuRenderer
         }
     }
 
-    private static void DrawMainSection(float bx, float y, float bw, float bh)
+    // section: 0 = Visuals (ESP), 1 = Legit (AIM), 2 = Hud
+    private static void DrawSectionContent(float bx, float y, float bw, float bh, int section)
     {
-        // Вкладки ESP и AIM — одна строка, стабильные клики
-        float tabW = 90f;
-        float tabH = 28f;
-        float gap = 8f;
-
-        Rect espRect = new Rect(bx, y, tabW, tabH);
-        Rect aimRect = new Rect(bx + tabW + gap, y, tabW, tabH);
-
-        if (DrawSubTab(espRect, "ESP", UiState.MenuTab == 0)) { UiState.MenuTab = 0; UiState.MenuScroll = 0f; }
-        if (DrawSubTab(aimRect, "AIM", UiState.MenuTab == 1)) { UiState.MenuTab = 1; UiState.MenuScroll = 0f; }
-
-        float blockY = y + tabH + 8f;
-        float blockH = bh - tabH - 8f;
-
-        DrawScrollableContent(new Rect(bx, blockY, bw, blockH), UiState.MenuTab == 0 ? 0 : 1);
+        DrawScrollableContent(new Rect(bx, y, bw, bh), section);
     }
 
-    private static void DrawScreenSection(float bx, float y, float bw, float bh)
+    private static void DrawScrollableContent(Rect view, int section)
     {
-        float tabW = 90f;
-        float tabH = 28f;
-
-        Rect hudRect = new Rect(bx, y, tabW, tabH);
-        if (DrawSubTab(hudRect, "Hud", UiState.MenuTabScreen == 0)) { UiState.MenuTabScreen = 0; UiState.MenuScroll = 0f; }
-
-        float blockY = y + tabH + 8f;
-        float blockH = bh - tabH - 8f;
-
-        DrawScrollableContent(new Rect(bx, blockY, bw, blockH), 2);
-    }
-
-    // 0 = ESP, 1 = AIM, 2 = Hud
-    private static void DrawScrollableContent(Rect view, int tab)
-    {
-        // Считаем полную высоту контента «виртуально»
-        float contentHeight = MeasureContent(tab, view.width - 32f);
+        float contentHeight = MeasureContent(section, view.width - 32f);
 
         float viewH = view.height;
         float maxScroll = Mathf.Max(0f, contentHeight - viewH);
 
-        // Колесо мыши
         Event e = Event.current;
         if (e != null && view.Contains(e.mousePosition) && e.type == EventType.ScrollWheel)
         {
@@ -262,11 +236,10 @@ public static class MenuRenderer
         }
         UiState.MenuScroll = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
 
-        // Группа с обрезкой
         GUI.BeginGroup(view);
         Rect inner = new Rect(0f, -UiState.MenuScroll, view.width, contentHeight);
 
-        switch (tab)
+        switch (section)
         {
             case 0: DrawEspBlock(inner.x, inner.y, inner.width, inner.height); break;
             case 1: DrawAimBlock(inner.x, inner.y, inner.width, inner.height); break;
@@ -275,7 +248,6 @@ public static class MenuRenderer
 
         GUI.EndGroup();
 
-        // Скроллбар
         if (maxScroll > 0f)
         {
             float sbW = 6f;
@@ -287,17 +259,13 @@ public static class MenuRenderer
         }
     }
 
-    private static float MeasureContent(int tab, float innerW)
+    private static float MeasureContent(int section, float innerW)
     {
-        // Приблизительная высота для скролла — считаем по строкам
-        switch (tab)
+        switch (section)
         {
-            case 0: // ESP: заголовок + 4 строки по 30
-                return 36f + 30f * 4f + 16f;
-            case 1: // AIM: заголовок + 3 toggle + 2 label/btn + 1 btn + 1 btn + 1 btn
-                return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f;
-            default: // Hud: заголовок + 3 toggle + label + 2 btn
-                return 36f + 30f * 3f + 22f + 28f + 16f;
+            case 0: return 36f + 30f * 4f + 16f;                                  // ESP
+            case 1: return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f; // AIM
+            default: return 36f + 30f * 3f + 22f + 28f + 16f;                     // Hud
         }
     }
 
@@ -432,19 +400,23 @@ public static class MenuRenderer
         {
             UiState.MenuScale = Mathf.Clamp(UiState.MenuScale - 0.05f, 0.25f, 2f);
             Plugin.CfgMenuScale.Value = UiState.MenuScale;
-            // Пересчёт позиции, чтобы меню не улетало
-            UiState.MenuPosition = new Vector2(
-                Mathf.Clamp(UiState.MenuPosition.x, 0f, Screen.width - Screen.width * UiState.MenuScale),
-                Mathf.Clamp(UiState.MenuPosition.y, 0f, Screen.height - Screen.height * UiState.MenuScale));
+            ClampMenuPosition();
         }
         if (SmallButton(new Rect(itemX + (itemW + 4f) / 2f, y, (itemW - 4f) / 2f, 24f), "+"))
         {
             UiState.MenuScale = Mathf.Clamp(UiState.MenuScale + 0.05f, 0.25f, 2f);
             Plugin.CfgMenuScale.Value = UiState.MenuScale;
-            UiState.MenuPosition = new Vector2(
-                Mathf.Clamp(UiState.MenuPosition.x, 0f, Screen.width - Screen.width * UiState.MenuScale),
-                Mathf.Clamp(UiState.MenuPosition.y, 0f, Screen.height - Screen.height * UiState.MenuScale));
+            ClampMenuPosition();
         }
+    }
+
+    private static void ClampMenuPosition()
+    {
+        float w = Screen.width * UiState.MenuScale;
+        float h = Screen.height * UiState.MenuScale;
+        UiState.MenuPosition = new Vector2(
+            Mathf.Clamp(UiState.MenuPosition.x, 0f, Mathf.Max(0f, Screen.width - w)),
+            Mathf.Clamp(UiState.MenuPosition.y, 0f, Mathf.Max(0f, Screen.height - h)));
     }
 
     // === Хелперы ===
@@ -452,14 +424,6 @@ public static class MenuRenderer
     private static bool DrawSectionButton(Rect rect, string label, bool active)
     {
         if (active) DrawRect(rect, ColTabActive, 9f);
-        bool clicked = ClickZone(rect);
-        DrawCentered(label, rect, active ? Color.white : ColText, false);
-        return clicked;
-    }
-
-    private static bool DrawSubTab(Rect rect, string label, bool active)
-    {
-        DrawRect(rect, active ? ColTabActive : ColBlockBorder, 6f);
         bool clicked = ClickZone(rect);
         DrawCentered(label, rect, active ? Color.white : ColText, false);
         return clicked;
