@@ -168,7 +168,7 @@ public static class MenuRenderer
         if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Hud", UiState.MenuSection == 2))
         { UiState.MenuSection = 2; UiState.MenuScroll = 0f; }
 
-        DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 2f, panelRect.height), ColDivider);
+        DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 1f, panelRect.height), ColDivider);
 
         float contentX = panelRect.x + 118f;
         float contentY = panelRect.y + 10f;
@@ -263,9 +263,9 @@ public static class MenuRenderer
     {
         switch (section)
         {
-            case 0: return 36f + 30f * 4f + 16f;                                  // ESP
-            case 1: return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f; // AIM
-            default: return 36f + 30f * 3f + 22f + 28f + 16f;                     // Hud
+            case 0: return 36f + 30f * 4f + 16f;
+            case 1: return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f;
+            default: return 36f + 30f * 3f + 22f + 28f + 16f;
         }
     }
 
@@ -277,8 +277,10 @@ public static class MenuRenderer
         Vector2 size = GetTextSize(label);
         float wmW = size.x + 24f;
         float wmH = size.y + 10f;
+
+        // Чётко по центру под меню, отступ 8px от нижней границы панели
         float wmX = panelRect.x + (panelRect.width - wmW) / 2f;
-        float wmY = panelRect.yMax - wmH - 8f;
+        float wmY = panelRect.yMax + 8f;
 
         DrawRect(new Rect(wmX, wmY, wmW, wmH), ColWatermarkBg, 8f);
         GUI.color = ColText;
