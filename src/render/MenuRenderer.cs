@@ -22,7 +22,6 @@ public static class MenuRenderer
     public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
     public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
-    public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 255);
 
     public static void EnsureTextures()
     {
@@ -188,8 +187,6 @@ public static class MenuRenderer
         if (UiState.MenuSection == 0) DrawSectionContent(contentX, contentY, contentW, contentH, 0);
         else if (UiState.MenuSection == 1) DrawSectionContent(contentX, contentY, contentW, contentH, 1);
         else DrawSectionContent(contentX, contentY, contentW, contentH, 2);
-
-        DrawMenuWatermark(panelRect);
     }
 
     private static void HandleDrag(Rect panelRect)
@@ -276,24 +273,6 @@ public static class MenuRenderer
             case 1: return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f;
             default: return 36f + 30f * 3f + 22f + 28f + 28f + 16f;
         }
-    }
-
-    private static void DrawMenuWatermark(Rect panelRect)
-    {
-        if (!UiState.HudWatermark) return;
-        string label = WatermarkModule.GetText();
-
-        Vector2 size = GetTextSize(label);
-        float wmW = size.x + 24f;
-        float wmH = size.y + 10f;
-
-        float wmX = panelRect.x + (panelRect.width - wmW) / 2f;
-        float wmY = panelRect.yMax + 8f;
-
-        DrawRect(new Rect(wmX, wmY, wmW, wmH), ColWatermarkBg, Radius);
-        GUI.color = ColText;
-        GUI.Label(new Rect(wmX + 12f, wmY + 5f, size.x + 2f, size.y + 2f), label);
-        GUI.color = Color.white;
     }
 
     private static void DrawEspBlock(float x, float y, float bw, float bh)
