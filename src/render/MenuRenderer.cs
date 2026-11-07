@@ -6,6 +6,7 @@ namespace MyDynamicESP;
 public static class MenuRenderer
 {
     public const float TabWidth = 94f;
+    public const float Radius = 10f;
 
     private static Texture2D _whiteTex;
     private static Texture2D _circleTex;
@@ -21,7 +22,7 @@ public static class MenuRenderer
     public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
     public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
-    public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 255);
+    public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 217);
 
     public static void EnsureTextures()
     {
@@ -154,9 +155,8 @@ public static class MenuRenderer
         Rect panelRect = GetPanelRect();
         HandleDrag(panelRect);
 
-        DrawRect(panelRect, ColPanelBg);
+        DrawRect(panelRect, ColPanelBg, Radius);
 
-        // Левая колонка — разделы
         float tabX = panelRect.x + 5f;
         float tabY = panelRect.y + 10f;
         if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Visuals", UiState.MenuSection == 0))
@@ -214,7 +214,6 @@ public static class MenuRenderer
         }
     }
 
-    // section: 0 = Visuals (ESP), 1 = Legit (AIM), 2 = Hud
     private static void DrawSectionContent(float bx, float y, float bw, float bh, int section)
     {
         DrawScrollableContent(new Rect(bx, y, bw, bh), section);
@@ -272,17 +271,16 @@ public static class MenuRenderer
     private static void DrawMenuWatermark(Rect panelRect)
     {
         if (!UiState.HudWatermark) return;
-        string label = $"Explode • Beta • {System.DateTime.Now:HH:mm dd.MM}";
+        string label = WatermarkModule.GetText();
 
         Vector2 size = GetTextSize(label);
         float wmW = size.x + 24f;
         float wmH = size.y + 10f;
 
-        // Чётко по центру под меню, отступ 8px от нижней границы панели
         float wmX = panelRect.x + (panelRect.width - wmW) / 2f;
         float wmY = panelRect.yMax + 8f;
 
-        DrawRect(new Rect(wmX, wmY, wmW, wmH), ColWatermarkBg, 8f);
+        DrawRect(new Rect(wmX, wmY, wmW, wmH), ColWatermarkBg, Radius);
         GUI.color = ColText;
         GUI.Label(new Rect(wmX + 12f, wmY + 5f, size.x + 2f, size.y + 2f), label);
         GUI.color = Color.white;
@@ -290,7 +288,7 @@ public static class MenuRenderer
 
     private static void DrawEspBlock(float x, float y, float bw, float bh)
     {
-        DrawRect(new Rect(x, y, bw, bh), ColBlockBg);
+        DrawRect(new Rect(x, y, bw, bh), ColBlockBg, Radius);
         DrawBorder(new Rect(x, y, bw, bh), ColBlockBorder, 1f);
 
         DrawCentered("ESP", new Rect(x, y + 8f, bw, 20f), ColText, true);
@@ -311,7 +309,7 @@ public static class MenuRenderer
 
     private static void DrawAimBlock(float x, float y, float bw, float bh)
     {
-        DrawRect(new Rect(x, y, bw, bh), ColBlockBg);
+        DrawRect(new Rect(x, y, bw, bh), ColBlockBg, Radius);
         DrawBorder(new Rect(x, y, bw, bh), ColBlockBorder, 1f);
 
         DrawCentered("AIM", new Rect(x, y + 8f, bw, 20f), ColText, true);
@@ -379,7 +377,7 @@ public static class MenuRenderer
 
     private static void DrawRenderBlock(float x, float y, float bw, float bh)
     {
-        DrawRect(new Rect(x, y, bw, bh), ColBlockBg);
+        DrawRect(new Rect(x, y, bw, bh), ColBlockBg, Radius);
         DrawBorder(new Rect(x, y, bw, bh), ColBlockBorder, 1f);
 
         DrawCentered("Hud", new Rect(x, y + 8f, bw, 20f), ColText, true);
@@ -421,11 +419,44 @@ public static class MenuRenderer
             Mathf.Clamp(UiState.MenuPosition.y, 0f, Mathf.Max(0f, Screen.height - h)));
     }
 
-    // === Хелперы ===
+    // === Публичные хелперы ===
+
+    public static void DrawRect(Rect rect, Color col, float radius = 0f)
+    {
+        EnsureTextures();
+        if (radius <= 0f)
+        {
+            GUI.color = col;
+            GUI.DrawTexture(rect, _whiteTex);
+            GUI.color = Color.white;
+            return;
+        }
+        DrawRoundedRect(col, rect, radius);
+    }
+
+    public static void DrawRoundedRect(Color col, Rect rect, float radius)
+    {
+        EnsureTextures();
+        float r = Mathf.Min(radius, Mathf.Min(rect.width, rect.height) * 0.5f);
+        GUI.color = col;
+
+        // Центр
+        GUI.DrawTexture(new Rect(rect.x + r, rect.y, rect.width - r * 2f, rect.height), _whiteTex);
+        GUI.DrawTexture(new Rect(rect.x, rect.y + r, rect.width, rect.height - r * 2f), _whiteTex);
+
+        // Углы
+        float d = r * 2f;
+        GUI.DrawTexture(new Rect(rect.x, rect.y, d, d), _circleTex);
+        GUI.DrawTexture(new Rect(rect.xMax - d, rect.y, d, d), _circleTex);
+        GUI.DrawTexture(new Rect(rect.x, rect.yMax - d, d, d), _circleTex);
+        GUI.DrawTexture(new Rect(rect.xMax - d, rect.yMax - d, d, d), _circleTex);
+
+        GUI.color = Color.white;
+    }
 
     private static bool DrawSectionButton(Rect rect, string label, bool active)
     {
-        if (active) DrawRect(rect, ColTabActive, 9f);
+        if (active) DrawRect(rect, ColTabActive, Radius);
         bool clicked = ClickZone(rect);
         DrawCentered(label, rect, active ? Color.white : ColText, false);
         return clicked;
@@ -473,33 +504,6 @@ public static class MenuRenderer
         GUI.color = col;
         string render = bold ? $"<b>{text}</b>" : text;
         GUI.Label(new Rect(rect.x + (rect.width - size.x) / 2f, rect.y + (rect.height - size.y) / 2f, size.x + 2f, size.y + 2f), render);
-        GUI.color = Color.white;
-    }
-
-    private static void DrawRect(Rect rect, Color col, float radius = 0f)
-    {
-        if (radius <= 0f)
-        {
-            GUI.color = col;
-            GUI.DrawTexture(rect, _whiteTex);
-            GUI.color = Color.white;
-            return;
-        }
-        DrawRoundedRect(rect, col, radius);
-    }
-
-    private static void DrawRoundedRect(Rect rect, Color col, float radius)
-    {
-        GUI.color = col;
-        GUI.DrawTexture(new Rect(rect.x + radius, rect.y, rect.width - radius * 2f, rect.height), _whiteTex);
-        GUI.DrawTexture(new Rect(rect.x, rect.y + radius, rect.width, rect.height - radius * 2f), _whiteTex);
-
-        float d = radius * 2f;
-        GUI.DrawTexture(new Rect(rect.x, rect.y, d, d), _circleTex);
-        GUI.DrawTexture(new Rect(rect.xMax - d, rect.y, d, d), _circleTex);
-        GUI.DrawTexture(new Rect(rect.x, rect.yMax - d, d, d), _circleTex);
-        GUI.DrawTexture(new Rect(rect.xMax - d, rect.yMax - d, d, d), _circleTex);
-
         GUI.color = Color.white;
     }
 
