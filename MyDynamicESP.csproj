@@ -49,6 +49,10 @@
       <HintPath>libs/interop/UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>libs/interop/UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.InputSystem">
       <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
       <Private>false</Private>
