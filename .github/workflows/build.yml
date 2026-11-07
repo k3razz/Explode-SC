@@ -41,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyDynamicESP
-          path: bin/Release/net6.0/MyDynamicESP.dll
+          path: bin/Release/net6.0-windows10.0.19041.0/MyDynamicESP.dll
           if-no-files-found: error
 
   release:
