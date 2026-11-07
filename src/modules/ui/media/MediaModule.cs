@@ -2,9 +2,6 @@ using UnityEngine;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Windows.Media.Control;
-using Windows.Storage.Streams;
-using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace MyDynamicESP;
 
@@ -26,7 +23,52 @@ public static class MediaModule
     private static float _lastFetch = 0f;
     private static bool _isFetching = false;
     private static readonly Queue<Action> _mainThreadQueue = new Queue<Action>();
-    private static GlobalSystemMediaTransportControlsSessionManager _manager = null;
+    private static object _manager = null;
+    private static bool _winrtAvailable = true;
+    private static bool _initFailed = false;
+
+    private static void EnsureWinRT()
+    {
+        if (_manager != null || _initFailed) return;
+        try
+        {
+            var t = Type.GetType("Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Microsoft.Windows.SDK.NET");
+            if (t == null)
+            {
+                _initFailed = true;
+                _winrtAvailable = false;
+                Plugin.LogSource?.LogWarning("[Media] Microsoft.Windows.SDK.NET not loaded, media disabled.");
+                return;
+            }
+            var reqMethod = t.GetMethod("RequestAsync");
+            if (reqMethod != null)
+            {
+                var task = reqMethod.Invoke(null, null) as Task;
+                if (task != null)
+                {
+                    task.ContinueWith(tk =>
+                    {
+                        try
+                        {
+                            var resultProp = tk.GetType().GetProperty("Result");
+                            _manager = resultProp?.GetValue(tk);
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.LogSource?.LogError($"[Media] RequestAsync EX: {ex.Message}");
+                            _initFailed = true;
+                        }
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _initFailed = true;
+            _winrtAvailable = false;
+            Plugin.LogSource?.LogError($"[Media] EnsureWinRT EX: {ex.Message}");
+        }
+    }
 
     public static void Update()
     {
@@ -37,8 +79,11 @@ public static class MediaModule
         }
 
         if (!Enabled) return;
+        if (_initFailed) return;
 
-        if (Time.time - _lastFetch >= 2f && !_isFetching)
+        EnsureWinRT();
+
+        if (Time.time - _lastFetch >= 2f && !_isFetching && _manager != null)
         {
             _lastFetch = Time.time;
             _isFetching = true;
@@ -50,10 +95,10 @@ public static class MediaModule
     {
         try
         {
-            if (_manager == null)
-                _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            if (_manager == null) return;
 
-            var session = _manager.GetCurrentSession();
+            var getSession = _manager.GetType().GetMethod("GetCurrentSession");
+            var session = getSession?.Invoke(_manager, null);
             if (session == null)
             {
                 EnqueueMainThread(() =>
@@ -69,32 +114,64 @@ public static class MediaModule
                 return;
             }
 
-            var props = await session.TryGetMediaPropertiesAsync();
-            var timeline = session.GetTimelineProperties();
-            var playbackInfo = session.GetPlaybackInfo();
+            var tryGetProps = session.GetType().GetMethod("TryGetMediaPropertiesAsync");
+            var propsTask = tryGetProps?.Invoke(session, null) as Task;
+            if (propsTask == null) return;
+            await propsTask;
 
-            string title = props.Title ?? "";
-            string artist = props.Artist ?? "";
-            float progress = (float)timeline.Position.TotalSeconds;
-            float duration = (float)timeline.EndTime.TotalSeconds;
-            bool playing = playbackInfo.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-            string player = session.SourceAppUserModelId ?? "";
+            var props = propsTask.GetType().GetProperty("Result")?.GetValue(propsTask);
+            if (props == null) return;
 
-            Texture2D art = null;
-            if (props.Thumbnail != null)
+            string title = props.GetType().GetProperty("Title")?.GetValue(props) as string ?? "";
+            string artist = props.GetType().GetProperty("Artist")?.GetValue(props) as string ?? "";
+
+            var getTimeline = session.GetType().GetMethod("GetTimelineProperties");
+            var timeline = getTimeline?.Invoke(session, null);
+            float progress = 0f, duration = 0f;
+            if (timeline != null)
+            {
+                var pos = timeline.GetType().GetProperty("Position")?.GetValue(timeline);
+                var end = timeline.GetType().GetProperty("EndTime")?.GetValue(timeline);
+                if (pos != null) progress = (float)((TimeSpan)pos).TotalSeconds;
+                if (end != null) duration = (float)((TimeSpan)end).TotalSeconds;
+            }
+
+            var getPlayback = session.GetType().GetMethod("GetPlaybackInfo");
+            var playbackInfo = getPlayback?.Invoke(session, null);
+            bool playing = false;
+            if (playbackInfo != null)
+            {
+                var status = playbackInfo.GetType().GetProperty("PlaybackStatus")?.GetValue(playbackInfo);
+                playing = status?.ToString() == "Playing";
+            }
+
+            // Только байты картинки в фоновом потоке
+            byte[] artBytes = null;
+            var thumbProp = props.GetType().GetProperty("Thumbnail");
+            var thumb = thumbProp?.GetValue(props);
+            if (thumb != null)
             {
                 try
                 {
-                    using (var stream = await props.Thumbnail.OpenReadAsync())
+                    var openRead = thumb.GetType().GetMethod("OpenReadAsync");
+                    var streamTask = openRead?.Invoke(thumb, null) as Task;
+                    if (streamTask != null)
                     {
-                        byte[] buffer = new byte[stream.Size];
-                        using (var reader = new DataReader(stream))
+                        await streamTask;
+                        var stream = streamTask.GetType().GetProperty("Result")?.GetValue(streamTask);
+                        if (stream != null)
                         {
-                            await reader.LoadAsync((uint)stream.Size);
-                            reader.ReadBytes(buffer);
+                            var sizeProp = stream.GetType().GetProperty("Size");
+                            uint size = sizeProp != null ? (uint)sizeProp.GetValue(stream) : 0;
+                            var readMethod = stream.GetType().GetMethod("ReadAsync", new[] { typeof(byte[]), typeof(uint), typeof(uint) });
+                            if (readMethod != null && size > 0)
+                            {
+                                byte[] buffer = new byte[size];
+                                var readTask = readMethod.Invoke(stream, new object[] { buffer, (uint)0, size }) as Task;
+                                if (readTask != null) await readTask;
+                                artBytes = buffer;
+                            }
                         }
-                        art = new Texture2D(2, 2);
-                        art.LoadImage(buffer);
                     }
                 }
                 catch { }
@@ -107,11 +184,20 @@ public static class MediaModule
                 Progress = progress;
                 Duration = duration;
                 IsPlaying = playing;
-                PlayerName = player;
-                if (art != null)
+
+                // Texture2D создаём ТОЛЬКО на главном потоке
+                if (artBytes != null && artBytes.Length > 0)
                 {
-                    if (AlbumArt != null) UnityEngine.Object.Destroy(AlbumArt);
-                    AlbumArt = art;
+                    try
+                    {
+                        if (AlbumArt != null) UnityEngine.Object.Destroy(AlbumArt);
+                        AlbumArt = new Texture2D(2, 2);
+                        UnityEngine.ImageConversion.LoadImage(AlbumArt, artBytes);
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.LogSource?.LogError($"[Media] Texture EX: {ex.Message}");
+                    }
                 }
             });
         }
