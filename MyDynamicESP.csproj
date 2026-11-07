@@ -57,13 +57,5 @@
       <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="WinRT.Runtime">
-      <HintPath>libs/WinRT.Runtime.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Microsoft.Windows.SDK.NET">
-      <HintPath>libs/Microsoft.Windows.SDK.NET.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
   </ItemGroup>
 </Project>
