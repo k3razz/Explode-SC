@@ -97,9 +97,11 @@ public class EspBehaviour : MonoBehaviour
             BombStatusRenderer.Enabled = Plugin.CfgShowBombStatus.Value;
             BombStatusRenderer.Position = new Vector2(Plugin.CfgBombStatusX.Value, Plugin.CfgBombStatusY.Value);
 
-            // Hud / меню
             UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, 0.25f, 2f);
             UiState.HudWatermark = Plugin.CfgHudWatermark.Value;
+
+            MediaModule.Enabled = Plugin.CfgMediaEnabled.Value;
+            MediaModule.Position = new Vector2(Plugin.CfgMediaX.Value, Plugin.CfgMediaY.Value);
 
             if (!KeybindState.IntroPlayed)
             {
@@ -139,6 +141,7 @@ public class EspBehaviour : MonoBehaviour
             BombEspModule.Update();
             WeaponCheats.Update();
             WeaponLog.Flush();
+            MediaModule.Update();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -159,7 +162,6 @@ public class EspBehaviour : MonoBehaviour
                 Cursor.lockState = CursorLockMode.None;
             }
 
-            // Инициализация позиции меню
             if (UiState.MenuPosition.x < 0 || UiState.MenuPosition.y < 0)
                 UiState.MenuPosition = new Vector2(
                     (Screen.width - Screen.width * UiState.MenuScale) / 2f,
@@ -205,7 +207,6 @@ public class EspBehaviour : MonoBehaviour
             if (!KeybindState.AimbotActive) return;
             if (!AimbotModule.HasTarget) return;
 
-            // страховка: не целимся в тиммейта (только если AimOnTeammates == false)
             var cur = AimbotModule.CurrentTarget;
             if (!AimbotModule.AimOnTeammates && cur != null && _localTeam > 0 && cur.Team > 0 && cur.Team == _localTeam)
                 return;
@@ -361,6 +362,7 @@ public class EspBehaviour : MonoBehaviour
                 Watermark.DrawText();
                 BindListRenderer.Draw();
                 BombStatusRenderer.Draw();
+                MediaRenderer.Draw();
             }
 
             if (isMouse)
@@ -368,6 +370,7 @@ public class EspBehaviour : MonoBehaviour
                 Watermark.HandleDrag();
                 BindListRenderer.HandleDrag();
                 BombStatusRenderer.HandleDrag();
+                MediaRenderer.HandleDrag();
             }
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
