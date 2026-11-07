@@ -54,7 +54,6 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgMenuScale;
     public static ConfigEntry<bool> CfgHudWatermark;
 
-    // Медиа-плеер
     public static ConfigEntry<bool> CfgMediaEnabled;
     public static ConfigEntry<float> CfgMediaX;
     public static ConfigEntry<float> CfgMediaY;
@@ -123,7 +122,6 @@ public class Plugin : BasePlugin
             BombStatusRenderer.Enabled = CfgShowBombStatus.Value;
             BombStatusRenderer.Position = new Vector2(CfgBombStatusX.Value, CfgBombStatusY.Value);
 
-            // Сброс вкладки при запуске игры
             UiState.MenuSection = 0;
 
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
