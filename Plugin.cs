@@ -51,9 +51,13 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgBombStatusX;
     public static ConfigEntry<float> CfgBombStatusY;
 
-    // Hud / меню
     public static ConfigEntry<float> CfgMenuScale;
     public static ConfigEntry<bool> CfgHudWatermark;
+
+    // Медиа-плеер
+    public static ConfigEntry<bool> CfgMediaEnabled;
+    public static ConfigEntry<float> CfgMediaX;
+    public static ConfigEntry<float> CfgMediaY;
 
     public override void Load()
     {
@@ -105,6 +109,10 @@ public class Plugin : BasePlugin
                 "Menu size as fraction of screen (0.25 = 25%, 2.0 = 200%).");
             CfgHudWatermark = ConfigFile.Bind("Hud", "Watermark", true);
 
+            CfgMediaEnabled = ConfigFile.Bind("Media", "Enabled", false);
+            CfgMediaX = ConfigFile.Bind("Media", "X", -1f);
+            CfgMediaY = ConfigFile.Bind("Media", "Y", -1f);
+
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
             TeamFilter.ShowSpectator = CfgShowSpectator.Value;
@@ -115,6 +123,9 @@ public class Plugin : BasePlugin
             BombStatusRenderer.Enabled = CfgShowBombStatus.Value;
             BombStatusRenderer.Position = new Vector2(CfgBombStatusX.Value, CfgBombStatusY.Value);
 
+            // Сброс вкладки при запуске игры
+            UiState.MenuSection = 0;
+
             ClassInjector.RegisterTypeInIl2Cpp<EspBehaviour>();
             ClassInjector.RegisterTypeInIl2Cpp<KeybindListener>();
 
@@ -122,8 +133,6 @@ public class Plugin : BasePlugin
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
 
             WeaponLog.Apply();
-
-            UiState.MenuSection = 0;
 
             Log.LogInfo("[ESP] Components added");
         }
