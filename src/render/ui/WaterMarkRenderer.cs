@@ -73,6 +73,7 @@ public static class Watermark
     {
         if (!WatermarkModule.Enabled) return;
         Rect r = GetRect();
-        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 217), r, Radius);
+        // Убрали прозрачность (255)
+        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 255), r, Radius);
     }
 }
