@@ -51,14 +51,12 @@ public static class MediaRenderer
     {
         if (!MediaModule.Enabled) return;
         if (!KeybindState.IntroDone) return;
-        if (string.IsNullOrEmpty(MediaModule.TrackTitle)) return; // Нет трека — не рисуем
+        if (string.IsNullOrEmpty(MediaModule.TrackTitle)) return;
 
         Rect rect = GetRect();
 
-        // Фон
         MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 255), rect, Radius);
 
-        // Обложка
         if (MediaModule.AlbumArt != null)
         {
             GUI.DrawTexture(new Rect(rect.x + 10f, rect.y + 10f, 60f, 60f), MediaModule.AlbumArt);
@@ -71,14 +69,11 @@ public static class MediaRenderer
         var textCol = new Color32(0xBD, 0xBC, 0xBC, 255);
         GUI.color = textCol;
 
-        // Название трека
         GUI.Label(new Rect(rect.x + 80f, rect.y + 10f, 130f, 20f), MediaModule.TrackTitle);
-
-        // Таймер
+        
         string time = $"{MediaModule.GetTimeString(MediaModule.Progress)}/{MediaModule.GetTimeString(MediaModule.Duration)}";
         GUI.Label(new Rect(rect.x + 80f, rect.y + 30f, 130f, 20f), time);
 
-        // Полоса прогресса
         float barX = rect.x + 80f;
         float barY = rect.y + 55f;
         float barW = 130f;
