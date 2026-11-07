@@ -24,8 +24,8 @@ public static class MediaModule
     private static bool _isFetching = false;
     private static readonly Queue<Action> _mainThreadQueue = new Queue<Action>();
     private static object _manager = null;
-    private static bool _winrtAvailable = true;
     private static bool _initFailed = false;
+    private static int _tick = 0;
 
     private static void EnsureWinRT()
     {
@@ -36,7 +36,6 @@ public static class MediaModule
             if (t == null)
             {
                 _initFailed = true;
-                _winrtAvailable = false;
                 Plugin.LogSource?.LogWarning("[Media] Microsoft.Windows.SDK.NET not loaded, media disabled.");
                 return;
             }
@@ -52,6 +51,7 @@ public static class MediaModule
                         {
                             var resultProp = tk.GetType().GetProperty("Result");
                             _manager = resultProp?.GetValue(tk);
+                            Plugin.LogSource?.LogInfo($"[Media] Manager initialized: {_manager != null}");
                         }
                         catch (Exception ex)
                         {
@@ -65,7 +65,6 @@ public static class MediaModule
         catch (Exception ex)
         {
             _initFailed = true;
-            _winrtAvailable = false;
             Plugin.LogSource?.LogError($"[Media] EnsureWinRT EX: {ex.Message}");
         }
     }
@@ -83,6 +82,10 @@ public static class MediaModule
 
         EnsureWinRT();
 
+        _tick++;
+        if (_tick % 120 == 0) // раз в ~2 секунды при 60 fps
+            Plugin.LogSource?.LogInfo($"[Media] Tick: enabled={Enabled}, manager={_manager != null}, title='{TrackTitle}'");
+
         if (Time.time - _lastFetch >= 2f && !_isFetching && _manager != null)
         {
             _lastFetch = Time.time;
@@ -97,12 +100,33 @@ public static class MediaModule
         {
             if (_manager == null) return;
 
+            object session = null;
+
+            // Сначала пробуем GetCurrentSession
             var getSession = _manager.GetType().GetMethod("GetCurrentSession");
-            var session = getSession?.Invoke(_manager, null);
+            session = getSession?.Invoke(_manager, null);
+
+            // Если пусто — берём первую из GetSessions
+            if (session == null)
+            {
+                var getSessions = _manager.GetType().GetMethod("GetSessions");
+                var sessionsObj = getSessions?.Invoke(_manager, null);
+                if (sessionsObj is System.Collections.IEnumerable enumerable)
+                {
+                    foreach (var s in enumerable)
+                    {
+                        session = s;
+                        break;
+                    }
+                }
+            }
+
             if (session == null)
             {
                 EnqueueMainThread(() =>
                 {
+                    if (!string.IsNullOrEmpty(TrackTitle))
+                        Plugin.LogSource?.LogInfo("[Media] No active session");
                     TrackTitle = "";
                     Artist = "";
                     Progress = 0f;
@@ -124,6 +148,8 @@ public static class MediaModule
 
             string title = props.GetType().GetProperty("Title")?.GetValue(props) as string ?? "";
             string artist = props.GetType().GetProperty("Artist")?.GetValue(props) as string ?? "";
+            var sourceProp = session.GetType().GetProperty("SourceAppUserModelId");
+            string appId = sourceProp?.GetValue(session) as string ?? "";
 
             var getTimeline = session.GetType().GetMethod("GetTimelineProperties");
             var timeline = getTimeline?.Invoke(session, null);
@@ -145,7 +171,6 @@ public static class MediaModule
                 playing = status?.ToString() == "Playing";
             }
 
-            // Только байты картинки в фоновом потоке
             byte[] artBytes = null;
             var thumbProp = props.GetType().GetProperty("Thumbnail");
             var thumb = thumbProp?.GetValue(props);
@@ -177,6 +202,7 @@ public static class MediaModule
                 catch { }
             }
 
+            bool changed = title != TrackTitle;
             EnqueueMainThread(() =>
             {
                 TrackTitle = title;
@@ -184,8 +210,8 @@ public static class MediaModule
                 Progress = progress;
                 Duration = duration;
                 IsPlaying = playing;
+                PlayerName = appId;
 
-                // Texture2D создаём ТОЛЬКО на главном потоке
                 if (artBytes != null && artBytes.Length > 0)
                 {
                     try
@@ -199,6 +225,9 @@ public static class MediaModule
                         Plugin.LogSource?.LogError($"[Media] Texture EX: {ex.Message}");
                     }
                 }
+
+                if (changed)
+                    Plugin.LogSource?.LogInfo($"[Media] Now playing: '{title}' by '{artist}' ({appId})");
             });
         }
         catch (Exception ex)
