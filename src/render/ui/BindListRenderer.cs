@@ -37,8 +37,7 @@ public static class BindListRenderer
             string mode = KeybindState.ToggleMode ? "Toggle" : "Hold";
             rows.Add(("AimLock", mode, KeybindState.AimbotKey.ToString()));
         }
-        if (rows.Count == 0 && KeybindState.MenuOpen)
-            rows.Add(("Example", "Hold", "J"));
+        // Убрали добавление "Example" — если нет реальных биндов, список пуст
         return rows;
     }
 
@@ -90,10 +89,12 @@ public static class BindListRenderer
         if (!KeybindState.IntroDone) return;
 
         var rows = GetRows();
+        if (rows.Count == 0) return; // Скрываем панель, если нет биндов
+
         var rect = GetRect();
 
-        // Фон панели со скруглением
-        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 217), rect, Radius);
+        // Фон панели без прозрачности (альфа 255)
+        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 255), rect, Radius);
 
         // Заголовок
         var headerCol = new Color32(0xBD, 0xBC, 0xBC, 255);
