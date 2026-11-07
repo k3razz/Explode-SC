@@ -58,4 +58,14 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="CopyWinRTDependencies" AfterTargets="Build">
+    <ItemGroup>
+      <WinRTFiles Include="$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\**\Microsoft.Windows.SDK.NET.dll" />
+      <WinRTFiles Include="$(NuGetPackageRoot)winrt.runtime\**\WinRT.Runtime.dll" />
+      <WinRTFiles Include="$(NuGetPackageRoot)microsoft.windows.sdk.net\**\Microsoft.Windows.SDK.NET.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WinRTFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Message Text="Copied WinRT deps: @(WinRTFiles)" Importance="high" />
+  </Target>
 </Project>
