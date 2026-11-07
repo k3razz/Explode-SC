@@ -1,10 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net6.0-windows10.0.19041.0</TargetFramework>
     <AssemblyName>MyDynamicESP</AssemblyName>
     <Version>1.0.0</Version>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWindowsForms>false</UseWindowsForms>
+    <UseWPF>false</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,7 +26,6 @@
       <HintPath>libs/Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
     <Reference Include="Il2Cppmscorlib">
       <HintPath>libs/interop/Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
@@ -53,5 +54,10 @@
       <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.NET" Version="10.0.19041.25" />
+    <PackageReference Include="WinRT.Runtime" Version="2.1.0" />
   </ItemGroup>
 </Project>
