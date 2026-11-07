@@ -22,7 +22,7 @@ public static class MenuRenderer
     public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
     public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
-    public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 217);
+    public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 255);
 
     public static void EnsureTextures()
     {
