@@ -32,15 +32,19 @@ public static class KeybindState
 public static class UiState
 {
     public static bool MenuVisible = false;
-    public static int MenuSection = 0;    // 0 = Visuals, 1 = Legit, 2 = Hud
+    public static int MenuSection = 0;
 
-    // Меню
     public static Vector2 MenuPosition = new Vector2(-1f, -1f);
     public static bool MenuDragging = false;
     public static Vector2 MenuDragOffset;
     public static float MenuScale = 0.25f;
     public static float MenuScroll = 0f;
 
-    // Hud
     public static bool HudWatermark = true;
+    public static bool HudMedia = true; // Добавлено для отображения медиа
+}
+
+public static class UiDragState
+{
+    public static bool AnyDragging = false;
 }
