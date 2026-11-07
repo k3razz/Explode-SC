@@ -2,6 +2,9 @@ using UnityEngine;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Windows.Media.Control;
+using Windows.Storage.Streams;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace MyDynamicESP;
 
@@ -18,12 +21,13 @@ public static class MediaModule
     public static float Duration = 0f;
     public static Texture2D AlbumArt = null;
     public static bool IsPlaying = false;
+    public static string PlayerName = "";
 
     private static float _lastFetch = 0f;
     private static bool _isFetching = false;
     private static readonly Queue<Action> _mainThreadQueue = new Queue<Action>();
+    private static GlobalSystemMediaTransportControlsSessionManager _manager = null;
 
-    // Вызывается из Update() в MainBehaivour
     public static void Update()
     {
         lock (_mainThreadQueue)
@@ -46,33 +50,70 @@ public static class MediaModule
     {
         try
         {
-            // Для работы нужно добавить пакет Microsoft.Windows.SDK.NET (или использовать WinRT)
-            // В Unity Il2Cpp используется System.Runtime.InteropServices.WindowsRuntime
-            /*
-            var manager = await Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-            var session = manager.GetCurrentSession();
-            if (session != null)
-            {
-                var props = await session.TryGetMediaPropertiesAsync();
-                var timeline = session.GetTimelineProperties();
+            if (_manager == null)
+                _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
 
-                // Обновляем данные в главном потоке
+            var session = _manager.GetCurrentSession();
+            if (session == null)
+            {
                 EnqueueMainThread(() =>
                 {
-                    TrackTitle = props.Title;
-                    Artist = props.Artist;
-                    Progress = (float)timeline.Position.TotalSeconds;
-                    Duration = (float)timeline.EndTime.TotalSeconds;
-                    IsPlaying = session.GetPlaybackInfo().PlaybackStatus == Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-
-                    // Загрузка обложки
-                    if (props.Thumbnail != null)
-                    {
-                        LoadThumbnail(props.Thumbnail);
-                    }
+                    TrackTitle = "";
+                    Artist = "";
+                    Progress = 0f;
+                    Duration = 0f;
+                    IsPlaying = false;
+                    PlayerName = "";
+                    if (AlbumArt != null) { UnityEngine.Object.Destroy(AlbumArt); AlbumArt = null; }
                 });
+                return;
             }
-            */
+
+            var props = await session.TryGetMediaPropertiesAsync();
+            var timeline = session.GetTimelineProperties();
+            var playbackInfo = session.GetPlaybackInfo();
+
+            string title = props.Title ?? "";
+            string artist = props.Artist ?? "";
+            float progress = (float)timeline.Position.TotalSeconds;
+            float duration = (float)timeline.EndTime.TotalSeconds;
+            bool playing = playbackInfo.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            string player = session.SourceAppUserModelId ?? "";
+
+            Texture2D art = null;
+            if (props.Thumbnail != null)
+            {
+                try
+                {
+                    using (var stream = await props.Thumbnail.OpenReadAsync())
+                    {
+                        byte[] buffer = new byte[stream.Size];
+                        using (var reader = new DataReader(stream))
+                        {
+                            await reader.LoadAsync((uint)stream.Size);
+                            reader.ReadBytes(buffer);
+                        }
+                        art = new Texture2D(2, 2);
+                        art.LoadImage(buffer);
+                    }
+                }
+                catch { }
+            }
+
+            EnqueueMainThread(() =>
+            {
+                TrackTitle = title;
+                Artist = artist;
+                Progress = progress;
+                Duration = duration;
+                IsPlaying = playing;
+                PlayerName = player;
+                if (art != null)
+                {
+                    if (AlbumArt != null) UnityEngine.Object.Destroy(AlbumArt);
+                    AlbumArt = art;
+                }
+            });
         }
         catch (Exception ex)
         {
