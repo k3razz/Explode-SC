@@ -19,7 +19,7 @@ public static class MenuRenderer
     public static readonly Color ColBlockBg = new Color32(0x00, 0x05, 0x1B, 255);
     public static readonly Color ColBlockBorder = new Color32(0x20, 0x33, 0x50, 255);
     public static readonly Color ColText = new Color32(0xBD, 0xBC, 0xBC, 255);
-    public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
+    public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255); // Серый для разделов
     public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
     public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 255);
@@ -157,19 +157,34 @@ public static class MenuRenderer
 
         DrawRect(panelRect, ColPanelBg, Radius);
 
+        // Левая колонка
         float tabX = panelRect.x + 5f;
         float tabY = panelRect.y + 10f;
+
+        // --- Раздел Main ---
+        DrawCentered("Main", new Rect(tabX, tabY, TabWidth, 20f), ColTextDim, false);
+        tabY += 24f;
+        
         if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Visuals", UiState.MenuSection == 0))
         { UiState.MenuSection = 0; UiState.MenuScroll = 0f; }
         tabY += 39f;
+        
         if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Legit", UiState.MenuSection == 1))
         { UiState.MenuSection = 1; UiState.MenuScroll = 0f; }
         tabY += 39f;
+
+        // --- Раздел Screen ---
+        tabY += 10f;
+        DrawCentered("Screen", new Rect(tabX, tabY, TabWidth, 20f), ColTextDim, false);
+        tabY += 24f;
+
         if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Hud", UiState.MenuSection == 2))
         { UiState.MenuSection = 2; UiState.MenuScroll = 0f; }
 
+        // Разделитель
         DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 1f, panelRect.height), ColDivider);
 
+        // Контент
         float contentX = panelRect.x + 118f;
         float contentY = panelRect.y + 10f;
         float contentW = panelRect.width - 128f;
