@@ -19,7 +19,7 @@ public static class MenuRenderer
     public static readonly Color ColBlockBg = new Color32(0x00, 0x05, 0x1B, 255);
     public static readonly Color ColBlockBorder = new Color32(0x20, 0x33, 0x50, 255);
     public static readonly Color ColText = new Color32(0xBD, 0xBC, 0xBC, 255);
-    public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255); // Серый для разделов
+    public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
     public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
     public static readonly Color ColWatermarkBg = new Color32(0x01, 0x09, 0x2C, 255);
@@ -157,11 +157,9 @@ public static class MenuRenderer
 
         DrawRect(panelRect, ColPanelBg, Radius);
 
-        // Левая колонка
         float tabX = panelRect.x + 5f;
         float tabY = panelRect.y + 10f;
-
-        // --- Раздел Main ---
+        
         DrawCentered("Main", new Rect(tabX, tabY, TabWidth, 20f), ColTextDim, false);
         tabY += 24f;
         
@@ -173,7 +171,6 @@ public static class MenuRenderer
         { UiState.MenuSection = 1; UiState.MenuScroll = 0f; }
         tabY += 39f;
 
-        // --- Раздел Screen ---
         tabY += 10f;
         DrawCentered("Screen", new Rect(tabX, tabY, TabWidth, 20f), ColTextDim, false);
         tabY += 24f;
@@ -181,10 +178,8 @@ public static class MenuRenderer
         if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Hud", UiState.MenuSection == 2))
         { UiState.MenuSection = 2; UiState.MenuScroll = 0f; }
 
-        // Разделитель
         DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 1f, panelRect.height), ColDivider);
 
-        // Контент
         float contentX = panelRect.x + 118f;
         float contentY = panelRect.y + 10f;
         float contentW = panelRect.width - 128f;
@@ -279,7 +274,7 @@ public static class MenuRenderer
         {
             case 0: return 36f + 30f * 4f + 16f;
             case 1: return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f;
-            default: return 36f + 30f * 3f + 22f + 28f + 16f;
+            default: return 36f + 30f * 3f + 22f + 28f + 28f + 16f;
         }
     }
 
@@ -408,6 +403,8 @@ public static class MenuRenderer
         y += rowH;
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Bomb Status", ref BombStatusRenderer.Enabled);
         y += rowH;
+        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Media", ref MediaModule.Enabled);
+        y += rowH;
 
         LabelRow(new Rect(itemX, y, itemW, 20f), $"Menu size: {UiState.MenuScale * 100f:F0}%");
         y += 22f;
@@ -423,6 +420,18 @@ public static class MenuRenderer
             Plugin.CfgMenuScale.Value = UiState.MenuScale;
             ClampMenuPosition();
         }
+        y += 28f;
+
+        if (MediaModule.Enabled)
+        {
+            if (SmallButton(new Rect(itemX, y, itemW, 24f), "Reset Media Pos"))
+            {
+                MediaModule.Position = new Vector2(Screen.width - 250f, 100f);
+                Plugin.CfgMediaX.Value = MediaModule.Position.x;
+                Plugin.CfgMediaY.Value = MediaModule.Position.y;
+            }
+            y += 28f;
+        }
     }
 
     private static void ClampMenuPosition()
@@ -433,8 +442,6 @@ public static class MenuRenderer
             Mathf.Clamp(UiState.MenuPosition.x, 0f, Mathf.Max(0f, Screen.width - w)),
             Mathf.Clamp(UiState.MenuPosition.y, 0f, Mathf.Max(0f, Screen.height - h)));
     }
-
-    // === Публичные хелперы ===
 
     public static void DrawRect(Rect rect, Color col, float radius = 0f)
     {
@@ -455,11 +462,9 @@ public static class MenuRenderer
         float r = Mathf.Min(radius, Mathf.Min(rect.width, rect.height) * 0.5f);
         GUI.color = col;
 
-        // Центр
         GUI.DrawTexture(new Rect(rect.x + r, rect.y, rect.width - r * 2f, rect.height), _whiteTex);
         GUI.DrawTexture(new Rect(rect.x, rect.y + r, rect.width, rect.height - r * 2f), _whiteTex);
 
-        // Углы
         float d = r * 2f;
         GUI.DrawTexture(new Rect(rect.x, rect.y, d, d), _circleTex);
         GUI.DrawTexture(new Rect(rect.xMax - d, rect.y, d, d), _circleTex);
