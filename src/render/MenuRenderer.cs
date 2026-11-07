@@ -403,8 +403,6 @@ public static class MenuRenderer
         y += rowH;
         ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Bomb Status", ref BombStatusRenderer.Enabled);
         y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Media", ref MediaModule.Enabled);
-        y += rowH;
 
         LabelRow(new Rect(itemX, y, itemW, 20f), $"Menu size: {UiState.MenuScale * 100f:F0}%");
         y += 22f;
@@ -421,17 +419,6 @@ public static class MenuRenderer
             ClampMenuPosition();
         }
         y += 28f;
-
-        if (MediaModule.Enabled)
-        {
-            if (SmallButton(new Rect(itemX, y, itemW, 24f), "Reset Media Pos"))
-            {
-                MediaModule.Position = new Vector2(Screen.width - 250f, 100f);
-                Plugin.CfgMediaX.Value = MediaModule.Position.x;
-                Plugin.CfgMediaY.Value = MediaModule.Position.y;
-            }
-            y += 28f;
-        }
     }
 
     private static void ClampMenuPosition()
