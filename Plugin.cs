@@ -79,13 +79,7 @@ public class Plugin : BasePlugin
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
             CfgAimbotAimOnTeammates = ConfigFile.Bind("AimLock", "AimOnTeammates", false,
                 "If true, aimbot will also lock onto teammates.");
-
-            CfgWeaponNoSpread = ConfigFile.Bind("Weapon", "NoSpread", false);
-            CfgWeaponNoRecoil = ConfigFile.Bind("Weapon", "NoRecoil", false);
-            CfgWeaponRapidFire = ConfigFile.Bind("Weapon", "RapidFire", false);
-            CfgWeaponMaxWallbang = ConfigFile.Bind("Weapon", "MaxWallbang", false);
-            CfgWeaponMaxArmorPent = ConfigFile.Bind("Weapon", "MaxArmorPent", false);
-
+                
             CfgWatermarkEnabled = ConfigFile.Bind("Render", "WatermarkEnabled", true);
             CfgWatermarkX = ConfigFile.Bind("Render", "WatermarkX", -1f);
             CfgWatermarkY = ConfigFile.Bind("Render", "WatermarkY", -1f);
