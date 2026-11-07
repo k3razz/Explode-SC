@@ -32,13 +32,7 @@ public class Plugin : BasePlugin
     public static ConfigEntry<bool> CfgAimbotToggleMode;
     public static ConfigEntry<string> CfgAimbotKey;
     public static ConfigEntry<bool> CfgAimbotAimOnTeammates;
-
-    public static ConfigEntry<bool> CfgWeaponNoSpread;
-    public static ConfigEntry<bool> CfgWeaponNoRecoil;
-    public static ConfigEntry<bool> CfgWeaponRapidFire;
-    public static ConfigEntry<bool> CfgWeaponMaxWallbang;
-    public static ConfigEntry<bool> CfgWeaponMaxArmorPent;
-
+    
     public static ConfigEntry<bool> CfgWatermarkEnabled;
     public static ConfigEntry<float> CfgWatermarkX;
     public static ConfigEntry<float> CfgWatermarkY;
