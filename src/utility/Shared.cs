@@ -41,10 +41,5 @@ public static class UiState
     public static float MenuScroll = 0f;
 
     public static bool HudWatermark = true;
-    public static bool HudMedia = true; // Добавлено для отображения медиа
-}
-
-public static class UiDragState
-{
-    public static bool AnyDragging = false;
+    public static bool HudMedia = true;
 }
