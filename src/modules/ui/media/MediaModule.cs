@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
@@ -25,48 +26,71 @@ public static class MediaModule
     private static readonly Queue<Action> _mainThreadQueue = new Queue<Action>();
     private static object _manager = null;
     private static bool _initFailed = false;
+    private static bool _initStarted = false;
     private static int _tick = 0;
 
     private static void EnsureWinRT()
     {
-        if (_manager != null || _initFailed) return;
-        try
+        if (_manager != null || _initFailed || _initStarted) return;
+        _initStarted = true;
+
+        Plugin.LogSource?.LogInfo("[Media] Starting WinRT init on background thread...");
+
+        Task.Run(async () =>
         {
-            var t = Type.GetType("Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Microsoft.Windows.SDK.NET");
-            if (t == null)
+            try
             {
-                _initFailed = true;
-                Plugin.LogSource?.LogWarning("[Media] Microsoft.Windows.SDK.NET not loaded, media disabled.");
-                return;
-            }
-            var reqMethod = t.GetMethod("RequestAsync");
-            if (reqMethod != null)
-            {
-                var task = reqMethod.Invoke(null, null) as Task;
-                if (task != null)
+                // Даём Unity время, чтобы COM был инициализирован
+                await Task.Delay(500);
+
+                var t = Type.GetType("Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Microsoft.Windows.SDK.NET");
+                if (t == null)
                 {
-                    task.ContinueWith(tk =>
-                    {
-                        try
-                        {
-                            var resultProp = tk.GetType().GetProperty("Result");
-                            _manager = resultProp?.GetValue(tk);
-                            Plugin.LogSource?.LogInfo($"[Media] Manager initialized: {_manager != null}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Plugin.LogSource?.LogError($"[Media] RequestAsync EX: {ex.Message}");
-                            _initFailed = true;
-                        }
-                    });
+                    Plugin.LogSource?.LogWarning("[Media] Type not found: Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager");
+                    _initFailed = true;
+                    return;
                 }
+
+                Plugin.LogSource?.LogInfo($"[Media] Type found: {t.FullName}");
+
+                var reqMethod = t.GetMethod("RequestAsync");
+                if (reqMethod == null)
+                {
+                    Plugin.LogSource?.LogError("[Media] RequestAsync method not found");
+                    _initFailed = true;
+                    return;
+                }
+
+                Plugin.LogSource?.LogInfo("[Media] Calling RequestAsync...");
+                var task = reqMethod.Invoke(null, null) as Task;
+                if (task == null)
+                {
+                    Plugin.LogSource?.LogError("[Media] RequestAsync returned null task");
+                    _initFailed = true;
+                    return;
+                }
+
+                await task;
+                Plugin.LogSource?.LogInfo($"[Media] RequestAsync completed, status={task.Status}");
+
+                var resultProp = task.GetType().GetProperty("Result");
+                var result = resultProp?.GetValue(task);
+                if (result == null)
+                {
+                    Plugin.LogSource?.LogError("[Media] RequestAsync result is null");
+                    _initFailed = true;
+                    return;
+                }
+
+                _manager = result;
+                Plugin.LogSource?.LogInfo($"[Media] Manager initialized: {_manager.GetType().FullName}");
             }
-        }
-        catch (Exception ex)
-        {
-            _initFailed = true;
-            Plugin.LogSource?.LogError($"[Media] EnsureWinRT EX: {ex.Message}");
-        }
+            catch (Exception ex)
+            {
+                Plugin.LogSource?.LogError($"[Media] EnsureWinRT EX: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                _initFailed = true;
+            }
+        });
     }
 
     public static void Update()
@@ -78,13 +102,19 @@ public static class MediaModule
         }
 
         if (!Enabled) return;
-        if (_initFailed) return;
+        if (_initFailed)
+        {
+            _tick++;
+            if (_tick % 300 == 0) // раз в 5 секунд
+                Plugin.LogSource?.LogWarning("[Media] Init failed, media disabled");
+            return;
+        }
 
         EnsureWinRT();
 
         _tick++;
-        if (_tick % 120 == 0) // раз в ~2 секунды при 60 fps
-            Plugin.LogSource?.LogInfo($"[Media] Tick: enabled={Enabled}, manager={_manager != null}, title='{TrackTitle}'");
+        if (_tick % 120 == 0)
+            Plugin.LogSource?.LogInfo($"[Media] Tick: enabled={Enabled}, manager={_manager != null}, initStarted={_initStarted}, title='{TrackTitle}'");
 
         if (Time.time - _lastFetch >= 2f && !_isFetching && _manager != null)
         {
@@ -102,11 +132,9 @@ public static class MediaModule
 
             object session = null;
 
-            // Сначала пробуем GetCurrentSession
             var getSession = _manager.GetType().GetMethod("GetCurrentSession");
             session = getSession?.Invoke(_manager, null);
 
-            // Если пусто — берём первую из GetSessions
             if (session == null)
             {
                 var getSessions = _manager.GetType().GetMethod("GetSessions");
@@ -125,8 +153,6 @@ public static class MediaModule
             {
                 EnqueueMainThread(() =>
                 {
-                    if (!string.IsNullOrEmpty(TrackTitle))
-                        Plugin.LogSource?.LogInfo("[Media] No active session");
                     TrackTitle = "";
                     Artist = "";
                     Progress = 0f;
@@ -232,7 +258,7 @@ public static class MediaModule
         }
         catch (Exception ex)
         {
-            Plugin.LogSource?.LogError($"[Media] Fetch error: {ex.Message}");
+            Plugin.LogSource?.LogError($"[Media] Fetch error: {ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
