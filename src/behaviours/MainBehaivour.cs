@@ -100,9 +100,6 @@ public class EspBehaviour : MonoBehaviour
             UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, 0.25f, 2f);
             UiState.HudWatermark = Plugin.CfgHudWatermark.Value;
 
-            MediaModule.Enabled = Plugin.CfgMediaEnabled.Value;
-            MediaModule.Position = new Vector2(Plugin.CfgMediaX.Value, Plugin.CfgMediaY.Value);
-
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
@@ -141,7 +138,6 @@ public class EspBehaviour : MonoBehaviour
             BombEspModule.Update();
             WeaponCheats.Update();
             WeaponLog.Flush();
-            MediaModule.Update();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -362,7 +358,6 @@ public class EspBehaviour : MonoBehaviour
                 Watermark.DrawText();
                 BindListRenderer.Draw();
                 BombStatusRenderer.Draw();
-                MediaRenderer.Draw();
             }
 
             if (isMouse)
@@ -370,7 +365,6 @@ public class EspBehaviour : MonoBehaviour
                 Watermark.HandleDrag();
                 BindListRenderer.HandleDrag();
                 BombStatusRenderer.HandleDrag();
-                MediaRenderer.HandleDrag();
             }
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
