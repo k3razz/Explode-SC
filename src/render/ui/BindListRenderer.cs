@@ -15,12 +15,12 @@ public static class BindListRenderer
 {
     private const float PadX = 12f;
     private const float PadY = 8f;
-    private const float RowH = 18f;
-    private const float Gap = 4f;
+    private const float RowH = 20f;
     private const float HeaderH = 22f;
-    private const float PanelWidth = 260f;
+    private const float PanelWidth = 220f;
     private const float DefaultX = 20f;
     private const float DefaultY = 80f;
+    private const float Radius = 10f;
 
     private static Vector2 GetPosition()
     {
@@ -29,23 +29,24 @@ public static class BindListRenderer
         return BindListState.Position;
     }
 
-    private static List<string> GetRows()
+    private static List<(string module, string mode, string bind)> GetRows()
     {
-        var rows = new List<string>();
+        var rows = new List<(string, string, string)>();
         if (AimbotModule.Enabled && KeybindState.AimbotActive)
         {
-            string mode = KeybindState.ToggleMode ? "toggle" : "hold";
-            rows.Add($"AimLock    [{mode}]    [{KeybindState.AimbotKey}]");
+            string mode = KeybindState.ToggleMode ? "Toggle" : "Hold";
+            rows.Add(("AimLock", mode, KeybindState.AimbotKey.ToString()));
         }
         if (rows.Count == 0 && KeybindState.MenuOpen)
-            rows.Add("Example    [hold]    [J]");
+            rows.Add(("Example", "Hold", "J"));
         return rows;
     }
 
     public static Rect GetRect()
     {
         var rows = GetRows();
-        float h = PadY * 2f + HeaderH + 4f + rows.Count * (RowH + Gap);
+        float rowTotal = rows.Count > 0 ? rows.Count * RowH + (rows.Count - 1) * 4f : 0f;
+        float h = PadY * 2f + HeaderH + rowTotal + (rows.Count > 0 ? 6f : 0f);
         var pos = GetPosition();
         return new Rect(pos.x, pos.y, PanelWidth, h);
     }
@@ -71,8 +72,8 @@ public static class BindListRenderer
         {
             Vector2 newPos = mouse - BindListState.DragOffset;
             BindListState.Position = newPos;
-            Plugin.CfgBindListX.Value = newPos.x;
-            Plugin.CfgBindListY.Value = newPos.y;
+            if (Plugin.CfgBindListX != null) Plugin.CfgBindListX.Value = newPos.x;
+            if (Plugin.CfgBindListY != null) Plugin.CfgBindListY.Value = newPos.y;
             e.Use();
         }
         else if (e.type == EventType.MouseUp && e.button == 0 && BindListState.IsDragging)
@@ -89,22 +90,34 @@ public static class BindListRenderer
         if (!KeybindState.IntroDone) return;
 
         var rows = GetRows();
-        if (rows.Count == 0) return;
-
         var rect = GetRect();
-        UiPanel.Draw(rect, 0.85f);
 
-        GUI.color = new Color(1f, 0.2f, 0.2f, 1f);
-        GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, rect.height), Texture2D.whiteTexture);
-        GUI.color = Color.white;
+        // Фон панели со скруглением
+        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 217), rect, Radius);
 
-        GUI.Label(new Rect(rect.x + PadX, rect.y + PadY, PanelWidth - PadX * 2f, RowH), "Binds");
+        // Заголовок
+        var headerCol = new Color32(0xBD, 0xBC, 0xBC, 255);
+        Vector2 headerSize = GUI.skin.label.CalcSize(new GUIContent("Binds"));
+        GUI.color = headerCol;
+        GUI.Label(new Rect(rect.x + (rect.width - headerSize.x) / 2f, rect.y + PadY, headerSize.x + 2f, headerSize.y + 2f), "Binds");
 
-        float ry = rect.y + PadY + HeaderH + 4f;
+        // Разделитель под заголовком
+        float sepY = rect.y + PadY + HeaderH;
+        MenuRenderer.DrawRect(new Rect(rect.x + PadX, sepY, rect.width - PadX * 2f, 1f), new Color(1f, 1f, 1f, 0.08f));
+
+        // Строки: "Module • Mode   Bind"
+        float ry = sepY + 6f;
         foreach (var r in rows)
         {
-            GUI.Label(new Rect(rect.x + PadX, ry, PanelWidth - PadX * 2f, RowH), r);
-            ry += RowH + Gap;
+            string left = $"{r.module} • {r.mode}";
+            Vector2 leftSize = GUI.skin.label.CalcSize(new GUIContent(left));
+            GUI.color = headerCol;
+            GUI.Label(new Rect(rect.x + PadX, ry, leftSize.x + 2f, RowH), left);
+
+            Vector2 bindSize = GUI.skin.label.CalcSize(new GUIContent(r.bind));
+            GUI.Label(new Rect(rect.xMax - PadX - bindSize.x, ry, bindSize.x + 2f, RowH), r.bind);
+
+            ry += RowH + 4f;
         }
 
         GUI.color = Color.white;
