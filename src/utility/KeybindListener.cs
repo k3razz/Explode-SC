@@ -70,7 +70,7 @@ public class KeybindListener : MonoBehaviour
             {
                 KeybindState.MenuOpen = !KeybindState.MenuOpen;
                 UiState.MenuVisible = KeybindState.MenuOpen;
-                UiState.MenuTab = 0;
+                UiState.MenuScroll = 0f;
             }
 
             if (KeybindState.Capturing) { HandleCapture(); return; }
