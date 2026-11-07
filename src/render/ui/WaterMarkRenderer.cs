@@ -10,6 +10,7 @@ public static class Watermark
 
     private const float PadX = 14f;
     private const float PadY = 8f;
+    private const float Radius = 10f;
 
     public static Rect GetRect()
     {
@@ -29,7 +30,7 @@ public static class Watermark
     {
         if (!WatermarkModule.Enabled) return;
         Rect rect = GetRect();
-        GUI.color = Color.white;
+        GUI.color = new Color32(0xBD, 0xBC, 0xBC, 255);
         GUI.Label(new Rect(rect.x + PadX, rect.y + PadY, rect.width - PadX * 2f, rect.height - PadY * 2f), _lastText);
         GUI.color = Color.white;
     }
@@ -71,6 +72,7 @@ public static class Watermark
     public static void DrawBackground(Texture2D whiteTex)
     {
         if (!WatermarkModule.Enabled) return;
-        UiPanel.Draw(GetRect(), 0.85f);
+        Rect r = GetRect();
+        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 217), r, Radius);
     }
 }
