@@ -32,9 +32,7 @@ public static class KeybindState
 public static class UiState
 {
     public static bool MenuVisible = false;
-    public static int MenuSection = 0;    // Main=0, Screen=1
-    public static int MenuTab = 0;        // ESP=0, AIM=1 (внутри Main)
-    public static int MenuTabScreen = 0;  // Hud=0 (внутри Screen)
+    public static int MenuSection = 0;    // 0 = Visuals, 1 = Legit, 2 = Hud
 
     // Меню
     public static Vector2 MenuPosition = new Vector2(-1f, -1f);
