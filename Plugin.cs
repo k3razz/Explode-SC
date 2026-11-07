@@ -123,6 +123,8 @@ public class Plugin : BasePlugin
 
             WeaponLog.Apply();
 
+            UiState.MenuSection = 0;
+
             Log.LogInfo("[ESP] Components added");
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
