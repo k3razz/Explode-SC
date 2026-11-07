@@ -70,7 +70,13 @@ public class KeybindListener : MonoBehaviour
             {
                 KeybindState.MenuOpen = !KeybindState.MenuOpen;
                 UiState.MenuVisible = KeybindState.MenuOpen;
-                UiState.MenuScroll = 0f;
+
+                if (KeybindState.MenuOpen)
+                {
+                    // Меню открывается — восстанавливаем последнюю вкладку (она уже в MenuSection)
+                    UiState.MenuScroll = 0f;
+                }
+                // Если меню закрывается — MenuSection просто остается как есть
             }
 
             if (KeybindState.Capturing) { HandleCapture(); return; }
