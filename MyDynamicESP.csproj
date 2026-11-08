@@ -57,5 +57,9 @@
       <HintPath>libs/interop/Unity.InputSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
+<Reference Include="UnityEngine.AnimationModule">
+  <HintPath>libs/interop/UnityEngine.AnimationModule.dll</HintPath>
+  <Private>false</Private>
+</Reference>
   </ItemGroup>
 </Project>
