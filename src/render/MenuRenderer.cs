@@ -6,7 +6,6 @@ namespace MyDynamicESP;
 
 public static class MenuRenderer
 {
-    // ───────────────────────── Константы ─────────────────────────
     public const float TabWidth = 94f;
     public const float Radius = 10f;
 
@@ -25,7 +24,6 @@ public static class MenuRenderer
 
     private const string HeaderTitle = "<color=#FF8C1A>E</color>xplode";
 
-    // ───────────────────────── Палитра ─────────────────────────
     public static readonly Color ColPanelBg = new Color32(0x0B, 0x0F, 0x1A, 255);
     public static readonly Color ColTabActive = new Color32(0x1B, 0x23, 0x40, 255);
     public static readonly Color ColDivider = new Color32(0xA0, 0xB2, 0xDE, 255);
@@ -41,10 +39,9 @@ public static class MenuRenderer
     private static readonly Color ColLine = new Color(0.627f, 0.698f, 0.871f, 0.12f);
     private static readonly Color ColButtonHover = new Color32(0x2E, 0x39, 0x5C, 255);
 
-    private static readonly string[] BoneNames = { "Head", "Neck", "Chest" };
+    private static readonly string[] BoneNames = { "Neck", "Head", "Chest" };
     private static readonly string[] ModeNames = { "Hold", "Toggle" };
 
-    // ───────────────────────── Состояние ─────────────────────────
     private static Texture2D _white, _circle, _ring;
     private static readonly Dictionary<int, GUIStyle> _fillStyles = new();
     private static readonly Dictionary<int, GUIStyle> _outlineStyles = new();
@@ -64,7 +61,12 @@ public static class MenuRenderer
     private static int _introFs;
     private static float _introWE, _introWR;
 
-    // ───────────────────────── Инициализация ─────────────────────────
+    private static int _openDropdown = -1;
+    private static Rect _dropdownRect;
+    private static string[] _dropdownOptions;
+    private static int _dropdownSelected;
+    private static Action<int> _dropdownCallback;
+
     public static void EnsureTextures()
     {
         if (_white == null)
@@ -108,7 +110,6 @@ public static class MenuRenderer
         return s;
     }
 
-    // ───────────────────────── Текстуры (SDF) ─────────────────────────
     private static Texture2D MakeCircle(int size, bool ring, float thickness)
     {
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
@@ -170,7 +171,6 @@ public static class MenuRenderer
         return st;
     }
 
-    // ───────────────────────── Хелперы ─────────────────────────
     private static bool IsRepaint() => Event.current != null && Event.current.type == EventType.Repaint;
     private static Color Tint(Color c) => new Color(c.r, c.g, c.b, c.a * _alpha);
     private static float Smooth01(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
@@ -211,7 +211,6 @@ public static class MenuRenderer
         return new Rect(p.x, p.y, w, h);
     }
 
-    // ───────────────────────── Примитивы ─────────────────────────
     public static void DrawRect(Rect rect, Color col, float radius = 0f)
     {
         if (!IsRepaint()) return;
@@ -264,7 +263,6 @@ public static class MenuRenderer
         return _inputOk && r.Contains(e.mousePosition);
     }
 
-    // ───────────────────────── FOV-круг ─────────────────────────
     public static void DrawFovCircle()
     {
         if (!IsRepaint()) return;
@@ -287,7 +285,6 @@ public static class MenuRenderer
         GUI.color = Color.white;
     }
 
-    // ───────────────────────── Интро ─────────────────────────
     public static void DrawIntroAnimation(Texture2D whiteTex, float t)
     {
         if (!IsRepaint()) return;
@@ -342,7 +339,6 @@ public static class MenuRenderer
         GUI.color = Color.white;
     }
 
-    // ───────────────────────── Меню ─────────────────────────
     public static void DrawMenu(Texture2D whiteTex)
     {
         Event e = Event.current;
@@ -484,7 +480,6 @@ public static class MenuRenderer
         return Click(rect);
     }
 
-    // ───────────────────────── Скролл-область ─────────────────────────
     private static void DrawScrollable(Rect view, int section)
     {
         Event e = Event.current;
@@ -570,9 +565,37 @@ public static class MenuRenderer
             DrawRect(new Rect(track.x, thumbY, track.width, thumbH),
                      new Color(ColDivider.r, ColDivider.g, ColDivider.b, active ? 0.65f : 0.35f), 3f);
         }
+
+        // Draw dropdown overlay AFTER everything else, so it's on top
+        DrawDropdownOverlay();
     }
 
-    // ───────────────────────── Секции ─────────────────────────
+    private static void DrawDropdownOverlay()
+    {
+        if (_openDropdown == -1 || _dropdownOptions == null) return;
+
+        Event e = Event.current;
+        Rect listRect = new Rect(_dropdownRect.x, _dropdownRect.y, _dropdownRect.width, _dropdownOptions.Length * 22f + 4f);
+        DrawRect(listRect, ColBlockBg, 6f);
+        DrawOutline(listRect, ColBlockBorder, 6f);
+
+        for (int i = 0; i < _dropdownOptions.Length; i++)
+        {
+            Rect item = new Rect(listRect.x + 2f, listRect.y + 2f + i * 22f, listRect.width - 4f, 22f);
+            bool hover = Hover(item);
+            if (hover) DrawRect(item, new Color(1f, 1f, 1f, 0.06f), 4f);
+            Text(item, _dropdownOptions[i], _sLeft, i == _dropdownSelected ? ColAccent : ColText);
+            if (Click(item))
+            {
+                _dropdownCallback?.Invoke(i);
+                _openDropdown = -1;
+            }
+        }
+
+        if (e != null && e.type == EventType.MouseDown && !listRect.Contains(e.mousePosition) && !_dropdownRect.Contains(e.mousePosition))
+            _openDropdown = -1;
+    }
+
     private static void DrawEspBlock()
     {
         BlockTitle("ESP");
@@ -580,6 +603,10 @@ public static class MenuRenderer
         ToggleRow("Show Spec", ref TeamFilter.ShowSpectator);
         ToggleRow("Show T", ref TeamFilter.ShowTr);
         ToggleRow("Show CT", ref TeamFilter.ShowCt);
+
+        Space(8f);
+        BlockTitle("World");
+        // Пока пусто
     }
 
     private static void DrawAimBlock()
@@ -602,24 +629,22 @@ public static class MenuRenderer
 
         Space(4f);
 
-        int boneIdx = AimbotModule.Bone == AimBone.Head ? 0
-                    : AimbotModule.Bone == AimBone.Neck ? 1
+        int boneIdx = AimbotModule.Bone == AimBone.Neck ? 0
+                    : AimbotModule.Bone == AimBone.Head ? 1
                     : AimbotModule.Bone == AimBone.Chest ? 2 : -1;
-        int boneClick = Segmented("Bone", BoneNames, boneIdx);
-        if (boneClick >= 0 && boneClick != boneIdx)
+        Dropdown("Bone", BoneNames, boneIdx, (i) =>
         {
-            AimBone b = boneClick == 0 ? AimBone.Head : boneClick == 1 ? AimBone.Neck : AimBone.Chest;
+            AimBone b = i == 0 ? AimBone.Neck : i == 1 ? AimBone.Head : AimBone.Chest;
             AimbotModule.Bone = b;
             Plugin.CfgAimbotBone.Value = b.ToString();
-        }
+        });
 
         int modeIdx = KeybindState.ToggleMode ? 1 : 0;
-        int modeClick = Segmented("Mode", ModeNames, modeIdx);
-        if (modeClick >= 0 && modeClick != modeIdx)
+        Dropdown("Mode", ModeNames, modeIdx, (i) =>
         {
-            KeybindState.ToggleMode = modeClick == 1;
+            KeybindState.ToggleMode = i == 1;
             Plugin.CfgAimbotToggleMode.Value = KeybindState.ToggleMode;
-        }
+        });
 
         Rect r = Next(30f);
         Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), "Bind", _sLeft, ColText);
@@ -650,15 +675,16 @@ public static class MenuRenderer
         Space(6f);
 
         float cur = Mathf.Clamp(UiState.MenuScale, MinScale, MaxScale);
-        int dir = Stepper("Menu size", $"{cur * 100f:F0}%");
-        if (dir != 0)
-        {
-            UiState.MenuScale = Mathf.Clamp(cur + dir * 0.05f, MinScale, MaxScale);
-            Plugin.CfgMenuScale.Value = UiState.MenuScale;
-        }
+        Dropdown("Menu size", new[] { "25%", "50%", "75%", "100%", "125%", "150%", "200%" },
+            Mathf.Clamp(Mathf.RoundToInt((cur - 0.25f) / 0.25f), 0, 6),
+            (i) =>
+            {
+                float[] vals = { 0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f };
+                UiState.MenuScale = vals[i];
+                Plugin.CfgMenuScale.Value = UiState.MenuScale;
+            });
     }
 
-    // ───────────────────────── Виджеты ─────────────────────────
     private static Rect Next(float h, float gap = 0f)
     {
         var r = new Rect(_ix, _y, _iw, h);
@@ -742,44 +768,28 @@ public static class MenuRenderer
         v = Mathf.Clamp(val, min, max);
     }
 
-    private static int Segmented(string label, string[] names, int selected)
+    // Dropdown widget
+    private static void Dropdown(string label, string[] options, int selected, Action<int> onSelect)
     {
         Rect r = Next(30f);
         Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), label, _sLeft, ColText);
 
-        float segW = 62f;
-        float total = segW * names.Length;
-        Rect bar = new Rect(r.xMax - 8f - total, r.y + 3f, total, 24f);
-        DrawRect(bar, ColToggleTrack, 7f);
+        Rect btn = new Rect(r.xMax - 8f - 150f, r.y + 3f, 150f, 24f);
+        int id = label.GetHashCode();
+        bool open = _openDropdown == id;
 
-        int clicked = -1;
-        for (int i = 0; i < names.Length; i++)
+        if (Button(btn, options[selected] + (open ? " ▲" : " ▼"), open))
         {
-            Rect seg = new Rect(bar.x + i * segW + 2f, bar.y + 2f, segW - 4f, bar.height - 4f);
-            bool act = i == selected;
-            if (act) DrawRect(seg, ColAccent, 5f);
-            else if (Hover(seg)) DrawRect(seg, new Color(1f, 1f, 1f, 0.07f), 5f);
-            Text(seg, names[i], _sCenter, act ? Color.white : ColText);
-            if (Click(seg)) clicked = i;
+            if (open) _openDropdown = -1;
+            else
+            {
+                _openDropdown = id;
+                _dropdownRect = btn;
+                _dropdownOptions = options;
+                _dropdownSelected = selected;
+                _dropdownCallback = onSelect;
+            }
         }
-        return clicked;
-    }
-
-    private static int Stepper(string label, string valueText)
-    {
-        Rect r = Next(30f);
-        Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), label, _sLeft, ColText);
-
-        float bs = 24f;
-        Rect plus = new Rect(r.xMax - 8f - bs, r.y + 3f, bs, bs);
-        Rect val = new Rect(plus.x - 62f, r.y, 62f, r.height);
-        Rect minus = new Rect(val.x - bs, r.y + 3f, bs, bs);
-
-        int dir = 0;
-        if (Button(minus, "-", false)) dir = -1;
-        Text(val, valueText, _sCenter, ColText);
-        if (Button(plus, "+", false)) dir = 1;
-        return dir;
     }
 
     private static bool Button(Rect r, string text, bool active)
