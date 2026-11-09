@@ -48,10 +48,6 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgMenuScale;
     public static ConfigEntry<bool> CfgHudWatermark;
 
-    public static ConfigEntry<bool> CfgMediaEnabled;
-    public static ConfigEntry<float> CfgMediaX;
-    public static ConfigEntry<float> CfgMediaY;
-
     public override void Load()
     {
         Instance = this;
@@ -92,13 +88,9 @@ public class Plugin : BasePlugin
             CfgBombStatusX = ConfigFile.Bind("Misc", "BombStatusX", -1f);
             CfgBombStatusY = ConfigFile.Bind("Misc", "BombStatusY", -1f);
 
-            CfgMenuScale = ConfigFile.Bind("Hud", "MenuScale", 0.25f,
+            CfgMenuScale = ConfigFile.Bind("Hud", "MenuScale", 1.0f,
                 "Menu size as fraction of screen (0.25 = 25%, 2.0 = 200%).");
             CfgHudWatermark = ConfigFile.Bind("Hud", "Watermark", true);
-
-            CfgMediaEnabled = ConfigFile.Bind("Media", "Enabled", false);
-            CfgMediaX = ConfigFile.Bind("Media", "X", -1f);
-            CfgMediaY = ConfigFile.Bind("Media", "Y", -1f);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
