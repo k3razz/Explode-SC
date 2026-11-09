@@ -20,8 +20,6 @@ public static class AimbotModule
     public static bool DrawFovCircle = false;
     public static float Sensitivity = 0.15f;
     public static AimBone Bone = AimBone.Head;
-
-    // Если true — аим цепляет и тиммейтов. По умолчанию false.
     public static bool AimOnTeammates = false;
 
     public static bool HasTarget = false;
@@ -35,14 +33,13 @@ public static class AimbotModule
     private const float ChestOffset = 1.1f;
     private const float NeckOffset = 1.45f;
 
-    // Кэш для костей (Transform) и Animator (если SkinnedMeshRenderer не даёт результат)
-    private static readonly Dictionary<int, Animator> _animatorCache = new();
-    private static readonly Dictionary<int, Transform> _boneCache = new();
-    private static readonly Dictionary<int, SkinnedMeshRenderer> _smrCache = new();
-
+    // Из дампа: BipedMap.Head = 0x20, BipedMap.Neck = 0x28
     private const int OFF_BIPED_HEAD = 0x20;
     private const int OFF_BIPED_NECK = 0x28;
-    private const int OFF_BIPED_SPINE = 0x30;
+    private const int OFF_BIPED_SPINE = 0x30; // предполагаем, что Chest/Spine = 0x30
+
+    private static readonly Dictionary<int, Animator> _animatorCache = new();
+    private static readonly Dictionary<int, Transform> _boneCache = new();
 
     public static Tracked CurrentTarget => _currentTarget;
 
@@ -81,25 +78,19 @@ public static class AimbotModule
     {
         if (t == null || t.Transform == null) return Vector3.zero;
 
-        int id = t.Transform.gameObject.GetInstanceID();
-
-        // 1. Пробуем SkinnedMeshRenderer (самый точный, т.к. учитывает IK и деформацию)
-        var smr = GetCachedSMR(id, t.Transform.gameObject);
-        if (smr != null && smr.bones != null && smr.bones.Length > 0)
+        // 1. BipedMap — самый точный для этой игры (из дампа: Head = 0x20, Neck = 0x28)
+        if (t.BipedMap != null)
         {
-            // Индексы костей (0=Hips, 1=Spine, 2=Chest, 3=Neck, 4=Head).
-            // При необходимости подгони под игру.
-            int boneIdx = Bone == AimBone.Head ? 4
-                        : Bone == AimBone.Neck ? 3
-                        : 2;
+            int offset = Bone == AimBone.Head ? OFF_BIPED_HEAD
+                       : Bone == AimBone.Neck ? OFF_BIPED_NECK
+                       : OFF_BIPED_SPINE;
 
-            if (boneIdx < smr.bones.Length && smr.bones[boneIdx] != null)
-            {
-                return smr.bones[boneIdx].position;
-            }
+            var tr = ReadTransform(t.BipedMap, offset);
+            if (tr != null) return tr.position;
         }
 
-        // 2. Пробуем Animator (через GetBoneTransform)
+        // 2. Animator — если BipedMap пустой
+        int id = t.Transform.gameObject.GetInstanceID();
         var anim = GetCachedAnimator(id, t.Transform.gameObject);
         if (anim != null && anim.isHuman)
         {
@@ -111,34 +102,11 @@ public static class AimbotModule
             if (tr != null) return tr.position;
         }
 
-        // 3. Фоллбэк на старый BipedMap
-        if (t.BipedMap != null)
-        {
-            int offset = Bone == AimBone.Head ? OFF_BIPED_HEAD
-                       : Bone == AimBone.Neck ? OFF_BIPED_NECK
-                       : OFF_BIPED_SPINE;
-
-            var tr = ReadTransform(t.BipedMap, offset);
-            if (tr != null) return tr.position;
-        }
-
-        // 4. Самый последний фоллбэк — смещение от корня
+        // 3. Смещение от корня — если всё остальное не сработало
         float fallback = Bone == AimBone.Head ? HeadOffset
                        : Bone == AimBone.Neck ? NeckOffset
                        : ChestOffset;
         return t.Transform.position + Vector3.up * fallback;
-    }
-
-    private static SkinnedMeshRenderer GetCachedSMR(int id, GameObject go)
-    {
-        if (_smrCache.TryGetValue(id, out var cached) && cached != null) return cached;
-        try
-        {
-            var smr = go.GetComponentInChildren<SkinnedMeshRenderer>();
-            _smrCache[id] = smr;
-            return smr;
-        }
-        catch { return null; }
     }
 
     private static Animator GetCachedAnimator(int id, GameObject go)
@@ -211,11 +179,9 @@ public static class AimbotModule
         return best;
     }
 
-    // Очистка кэша (вызывать при смене карты)
     public static void ClearCaches()
     {
         _animatorCache.Clear();
-        _smrCache.Clear();
         _boneCache.Clear();
     }
 }
