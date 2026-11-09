@@ -566,7 +566,6 @@ public static class MenuRenderer
                      new Color(ColDivider.r, ColDivider.g, ColDivider.b, active ? 0.65f : 0.35f), 3f);
         }
 
-        // Draw dropdown overlay AFTER everything else, so it's on top
         DrawDropdownOverlay();
     }
 
@@ -615,6 +614,7 @@ public static class MenuRenderer
         ToggleRow("Enabled", ref AimbotModule.Enabled);
         ToggleRow("FOV Circle", ref AimbotModule.DrawFovCircle);
         ToggleRow("Aim on Teammates", ref AimbotModule.AimOnTeammates);
+        if (Plugin.CfgAimbotAimOnTeammates != null) Plugin.CfgAimbotAimOnTeammates.Value = AimbotModule.AimOnTeammates;
         Space(6f);
 
         float fov = AimbotModule.Fov;
@@ -672,7 +672,14 @@ public static class MenuRenderer
         ToggleRow("Watermark", ref UiState.HudWatermark);
         ToggleRow("Show Bind List", ref BindListState.Enabled);
         ToggleRow("Show Bomb Status", ref BombStatusRenderer.Enabled);
-        Space(6f);
+
+        Space(8f);
+        BlockTitle("Watermark");
+        ToggleRow("WM FPS", ref Watermark.ShowFps);
+        ToggleRow("WM Time", ref Watermark.ShowTime);
+        ToggleRow("WM Date", ref Watermark.ShowDate);
+        ToggleRow("WM Session", ref Watermark.ShowSession);
+        Space(4f);
 
         float cur = Mathf.Clamp(UiState.MenuScale, MinScale, MaxScale);
         Dropdown("Menu size", new[] { "25%", "50%", "75%", "100%", "125%", "150%", "200%" },
@@ -768,7 +775,6 @@ public static class MenuRenderer
         v = Mathf.Clamp(val, min, max);
     }
 
-    // Dropdown widget
     private static void Dropdown(string label, string[] options, int selected, Action<int> onSelect)
     {
         Rect r = Next(30f);
