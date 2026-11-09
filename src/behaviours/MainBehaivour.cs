@@ -79,12 +79,6 @@ public class EspBehaviour : MonoBehaviour
             if (Enum.TryParse(Plugin.CfgAimbotBone.Value, out AimBone bone)) AimbotModule.Bone = bone;
             else AimbotModule.Bone = AimBone.Neck;
 
-            WeaponCheats.NoSpread = Plugin.CfgWeaponNoSpread.Value;
-            WeaponCheats.NoRecoil = Plugin.CfgWeaponNoRecoil.Value;
-            WeaponCheats.RapidFire = Plugin.CfgWeaponRapidFire.Value;
-            WeaponCheats.MaxWallbang = Plugin.CfgWeaponMaxWallbang.Value;
-            WeaponCheats.MaxArmorPent = Plugin.CfgWeaponMaxArmorPent.Value;
-
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
             else KeybindState.AimbotKey = KeyCode.Mouse0;
@@ -136,8 +130,6 @@ public class EspBehaviour : MonoBehaviour
 
             WatermarkModule.Update();
             BombEspModule.Update();
-            WeaponCheats.Update();
-            WeaponLog.Flush();
 
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
@@ -235,7 +227,6 @@ public class EspBehaviour : MonoBehaviour
             }
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
-        finally { WeaponLog.Active = false; }
     }
 
     [HideFromIl2Cpp]
