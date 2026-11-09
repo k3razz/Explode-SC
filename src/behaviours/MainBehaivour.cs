@@ -77,7 +77,13 @@ public class EspBehaviour : MonoBehaviour
             AimbotModule.Sensitivity = Plugin.CfgAimbotSensitivity.Value;
             AimbotModule.AimOnTeammates = Plugin.CfgAimbotAimOnTeammates.Value;
             if (Enum.TryParse(Plugin.CfgAimbotBone.Value, out AimBone bone)) AimbotModule.Bone = bone;
-            else AimbotModule.Bone = AimBone.Head;
+            else AimbotModule.Bone = AimBone.Neck;
+
+            WeaponCheats.NoSpread = Plugin.CfgWeaponNoSpread.Value;
+            WeaponCheats.NoRecoil = Plugin.CfgWeaponNoRecoil.Value;
+            WeaponCheats.RapidFire = Plugin.CfgWeaponRapidFire.Value;
+            WeaponCheats.MaxWallbang = Plugin.CfgWeaponMaxWallbang.Value;
+            WeaponCheats.MaxArmorPent = Plugin.CfgWeaponMaxArmorPent.Value;
 
             KeybindState.ToggleMode = Plugin.CfgAimbotToggleMode.Value;
             if (Enum.TryParse(Plugin.CfgAimbotKey.Value, out KeyCode kc)) KeybindState.AimbotKey = kc;
@@ -130,7 +136,9 @@ public class EspBehaviour : MonoBehaviour
 
             WatermarkModule.Update();
             BombEspModule.Update();
-            
+            WeaponCheats.Update();
+            WeaponLog.Flush();
+
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
                 KeybindState.IntroAnimTime += Time.deltaTime;
@@ -227,7 +235,7 @@ public class EspBehaviour : MonoBehaviour
             }
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
-        catch { }
+        finally { WeaponLog.Active = false; }
     }
 
     [HideFromIl2Cpp]
@@ -648,7 +656,7 @@ public class EspBehaviour : MonoBehaviour
             if (_botType == null && _playerType == null) return;
             UpdateLocalTeam();
             
-            AimbotModule.ClearCaches(); // очистка кэша костей
+            AimbotModule.ClearCaches();
             
             EspModule.SeenList.Clear();
             ScanTypeInternal(_botType, true, "Bot");
