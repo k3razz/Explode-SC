@@ -9,7 +9,7 @@ using Il2CppInterop.Runtime.Injection;
 
 namespace MyDynamicESP;
 
-[BepInPlugin("com.you.dynamicesp", "MyDynamicESP", "1.0.0.0")]
+[BepInPlugin("com.you.dynamicesp", "ExplodeDLC", "2.0.0.0")]
 public class Plugin : BasePlugin
 {
     public static ManualLogSource LogSource;
@@ -74,7 +74,7 @@ public class Plugin : BasePlugin
             CfgAimbotFov = ConfigFile.Bind("AimLock", "Fov", 20f);
             CfgAimbotDrawFov = ConfigFile.Bind("AimLock", "DrawFov", false);
             CfgAimbotSensitivity = ConfigFile.Bind("AimLock", "Sensitivity", 0.15f);
-            CfgAimbotBone = ConfigFile.Bind("AimLock", "Bone", "Head");
+            CfgAimbotBone = ConfigFile.Bind("AimLock", "Bone", "Neck");
             CfgAimbotToggleMode = ConfigFile.Bind("AimLock", "ToggleMode", false);
             CfgAimbotKey = ConfigFile.Bind("AimLock", "Key", "Mouse0");
             CfgAimbotAimOnTeammates = ConfigFile.Bind("AimLock", "AimOnTeammates", false,
@@ -119,6 +119,15 @@ public class Plugin : BasePlugin
             IL2CPPChainloader.AddUnityComponent<EspBehaviour>();
 
             Log.LogInfo("[ESP] Components added");
+            Log.LogInfo("");
+            Log.LogInfo("[Explode] Welcome to Explode DLC!");
+            Log.LogInfo("");
+            Log.LogInfo("   ,d88b.d88b,");
+            Log.LogInfo("   88888888888");
+            Log.LogInfo("   `Y8888888Y'      Made with love");
+            Log.LogInfo("     `Y888Y'");
+            Log.LogInfo("       `Y'");
+            Log.LogInfo("");
         }
         catch (Exception e) { Log.LogError($"[ESP] Load EX: {e}"); }
     }
