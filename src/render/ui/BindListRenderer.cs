@@ -14,13 +14,33 @@ public static class BindListState
 public static class BindListRenderer
 {
     private const float PadX = 12f;
-    private const float PadY = 8f;
-    private const float RowH = 20f;
-    private const float HeaderH = 22f;
+    private const float PadY = 10f;
+    private const float RowH = 22f;
+    private const float HeaderH = 24f;
     private const float PanelWidth = 220f;
     private const float DefaultX = 20f;
     private const float DefaultY = 80f;
     private const float Radius = 10f;
+
+    // Цвета из MenuRenderer
+    private static readonly Color ColPanelBg = new Color32(0x0B, 0x0F, 0x1A, 255);
+    private static readonly Color ColBlockBg = new Color32(0x11, 0x17, 0x2A, 255);
+    private static readonly Color ColBorder = new Color32(0x23, 0x2B, 0x45, 255);
+    private static readonly Color ColText = new Color32(0xD5, 0xD9, 0xE6, 255);
+    private static readonly Color ColTextDim = new Color32(0x7C, 0x86, 0xA2, 255);
+    private static readonly Color ColAccent = new Color32(0x5B, 0x8C, 0xFF, 255);
+
+    private static Texture2D _whiteTex;
+
+    private static void EnsureTex()
+    {
+        if (_whiteTex == null)
+        {
+            _whiteTex = new Texture2D(1, 1, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
+            _whiteTex.SetPixel(0, 0, Color.white);
+            _whiteTex.Apply();
+        }
+    }
 
     private static Vector2 GetPosition()
     {
@@ -37,7 +57,6 @@ public static class BindListRenderer
             string mode = KeybindState.ToggleMode ? "Toggle" : "Hold";
             rows.Add(("AimLock", mode, KeybindState.AimbotKey.ToString()));
         }
-        // Убрали добавление "Example" — если нет реальных биндов, список пуст
         return rows;
     }
 
@@ -70,6 +89,8 @@ public static class BindListRenderer
         else if (e.type == EventType.MouseDrag && BindListState.IsDragging)
         {
             Vector2 newPos = mouse - BindListState.DragOffset;
+            newPos.x = Mathf.Clamp(newPos.x, 0f, Screen.width - PanelWidth);
+            newPos.y = Mathf.Clamp(newPos.y, 0f, Screen.height - rect.height);
             BindListState.Position = newPos;
             if (Plugin.CfgBindListX != null) Plugin.CfgBindListX.Value = newPos.x;
             if (Plugin.CfgBindListY != null) Plugin.CfgBindListY.Value = newPos.y;
@@ -89,33 +110,33 @@ public static class BindListRenderer
         if (!KeybindState.IntroDone) return;
 
         var rows = GetRows();
-        if (rows.Count == 0) return; // Скрываем панель, если нет биндов
+        if (rows.Count == 0) return;
 
+        EnsureTex();
         var rect = GetRect();
 
-        // Фон панели без прозрачности (альфа 255)
-        MenuRenderer.DrawRoundedRect(new Color32(0x01, 0x09, 0x2C, 255), rect, Radius);
+        // Фон
+        MenuRenderer.DrawRoundedRect(ColBlockBg, rect, Radius);
 
         // Заголовок
-        var headerCol = new Color32(0xBD, 0xBC, 0xBC, 255);
-        Vector2 headerSize = GUI.skin.label.CalcSize(new GUIContent("Binds"));
-        GUI.color = headerCol;
-        GUI.Label(new Rect(rect.x + (rect.width - headerSize.x) / 2f, rect.y + PadY, headerSize.x + 2f, headerSize.y + 2f), "Binds");
+        GUI.color = ColText;
+        GUI.Label(new Rect(rect.x + PadX, rect.y + 4f, rect.width - PadX * 2f, HeaderH), "Binds", GUI.skin.label);
+        GUI.color = Color.white;
 
-        // Разделитель под заголовком
-        float sepY = rect.y + PadY + HeaderH;
-        MenuRenderer.DrawRect(new Rect(rect.x + PadX, sepY, rect.width - PadX * 2f, 1f), new Color(1f, 1f, 1f, 0.08f));
+        // Разделитель
+        MenuRenderer.DrawRect(new Rect(rect.x + PadX, rect.y + HeaderH + 4f, rect.width - PadX * 2f, 1f), new Color(1f, 1f, 1f, 0.08f));
 
-        // Строки: "Module • Mode   Bind"
-        float ry = sepY + 6f;
+        // Строки
+        float ry = rect.y + HeaderH + 10f;
         foreach (var r in rows)
         {
             string left = $"{r.module} • {r.mode}";
             Vector2 leftSize = GUI.skin.label.CalcSize(new GUIContent(left));
-            GUI.color = headerCol;
+            GUI.color = ColText;
             GUI.Label(new Rect(rect.x + PadX, ry, leftSize.x + 2f, RowH), left);
 
             Vector2 bindSize = GUI.skin.label.CalcSize(new GUIContent(r.bind));
+            GUI.color = ColAccent;
             GUI.Label(new Rect(rect.xMax - PadX - bindSize.x, ry, bindSize.x + 2f, RowH), r.bind);
 
             ry += RowH + 4f;
