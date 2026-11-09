@@ -1,91 +1,273 @@
-using UnityEngine;
+using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace MyDynamicESP;
 
 public static class MenuRenderer
 {
+    // ───────────────────────── Константы ─────────────────────────
     public const float TabWidth = 94f;
     public const float Radius = 10f;
 
-    private static Texture2D _whiteTex;
-    private static Texture2D _circleTex;
-    private static Texture2D _ringTex;
-    private static readonly Dictionary<string, Vector2> _textCache = new();
+    public const float BaseWidth = 560f;
+    public const float BaseHeight = 400f;
+    public const float MinScale = 0.25f;
+    public const float MaxScale = 2f;
 
-    public static readonly Color ColPanelBg = new Color32(0x00, 0x05, 0x19, 255);
-    public static readonly Color ColTabActive = new Color32(0x01, 0x09, 0x2C, 255);
+    public const float IntroDuration = 3.3f;
+
+    private const float HeaderH = 36f;
+    private const float Pad = 10f;
+    private const float SidebarDividerX = 104f;
+    private const float ContentX = 118f;
+    private const int SectionCount = 3;
+
+    private const string HeaderTitle = "<color=#FF8C1A>E</color>xplode";
+
+    // ───────────────────────── Палитра ─────────────────────────
+    public static readonly Color ColPanelBg = new Color32(0x0B, 0x0F, 0x1A, 255);
+    public static readonly Color ColTabActive = new Color32(0x1B, 0x23, 0x40, 255);
     public static readonly Color ColDivider = new Color32(0xA0, 0xB2, 0xDE, 255);
-    public static readonly Color ColBlockBg = new Color32(0x00, 0x05, 0x1B, 255);
-    public static readonly Color ColBlockBorder = new Color32(0x20, 0x33, 0x50, 255);
-    public static readonly Color ColText = new Color32(0xBD, 0xBC, 0xBC, 255);
-    public static readonly Color ColTextDim = new Color32(0x66, 0x66, 0x66, 255);
-    public static readonly Color ColToggleTrack = new Color32(0x07, 0x1A, 0x3D, 255);
+    public static readonly Color ColBlockBg = new Color32(0x11, 0x17, 0x2A, 255);
+    public static readonly Color ColBlockBorder = new Color32(0x23, 0x2B, 0x45, 255);
+    public static readonly Color ColText = new Color32(0xD5, 0xD9, 0xE6, 255);
+    public static readonly Color ColTextDim = new Color32(0x7C, 0x86, 0xA2, 255);
+    public static readonly Color ColToggleTrack = new Color32(0x1E, 0x26, 0x40, 255);
     public static readonly Color ColToggleKnob = new Color32(0xFB, 0xFB, 0xFB, 255);
+    public static readonly Color ColAccent = new Color32(0x5B, 0x8C, 0xFF, 255);
+    public static readonly Color ColOrange = new Color32(0xFF, 0x8C, 0x1A, 255);
 
+    private static readonly Color ColLine = new Color(0.627f, 0.698f, 0.871f, 0.12f);
+    private static readonly Color ColButtonHover = new Color32(0x2E, 0x39, 0x5C, 255);
+
+    private static readonly string[] BoneNames = { "Head", "Neck", "Chest" };
+    private static readonly string[] ModeNames = { "Hold", "Toggle" };
+
+    // ───────────────────────── Состояние ─────────────────────────
+    private static Texture2D _white, _circle, _ring;
+    private static readonly Dictionary<int, GUIStyle> _fillStyles = new();
+    private static readonly Dictionary<int, GUIStyle> _outlineStyles = new();
+    private static readonly Dictionary<int, float> _anim = new();
+
+    private static Font _font;
+    private static GUIStyle _sLeft, _sRight, _sCenter, _sTitle, _sBold, _sIntro;
+
+    private static float _alpha = 1f;
+    private static bool _inputOk = true;
+    private static float _open;
+    private static int _lastFrame = -10;
+    private static readonly float[] _contentH = new float[SectionCount];
+    private static float _ix, _iw, _y;
+    private static float _sbGrab;
+
+    private static int _introFs;
+    private static float _introWE, _introWR;
+
+    // ───────────────────────── Инициализация ─────────────────────────
     public static void EnsureTextures()
     {
-        if (_whiteTex == null)
+        if (_white == null)
         {
-            _whiteTex = new Texture2D(1, 1);
-            _whiteTex.SetPixel(0, 0, Color.white);
-            _whiteTex.Apply();
+            _white = new Texture2D(1, 1, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
+            _white.SetPixel(0, 0, Color.white);
+            _white.Apply();
         }
-        if (_circleTex == null) _circleTex = MakeCircle(128, false, 0f);
-        if (_ringTex == null) _ringTex = MakeCircle(128, true, 2f);
+        if (_circle == null) _circle = MakeCircle(256, false, 0f);
+        if (_ring == null) _ring = MakeCircle(256, true, 2.2f);
     }
 
+    private static void EnsureStyles()
+    {
+        if (_sLeft != null) return;
+
+        try { _font = Font.CreateDynamicFontFromOSFont(new[] { "Segoe UI", "Inter", "Roboto", "Arial" }, 14); }
+        catch { _font = null; }
+
+        _sLeft = MakeStyle(TextAnchor.MiddleLeft, 13, FontStyle.Normal, true);
+        _sRight = MakeStyle(TextAnchor.MiddleRight, 13, FontStyle.Normal, true);
+        _sCenter = MakeStyle(TextAnchor.MiddleCenter, 12, FontStyle.Normal, true);
+        _sTitle = MakeStyle(TextAnchor.MiddleLeft, 15, FontStyle.Bold, true);
+        _sBold = MakeStyle(TextAnchor.MiddleCenter, 14, FontStyle.Bold, true);
+        _sIntro = MakeStyle(TextAnchor.MiddleLeft, 80, FontStyle.Bold, false);
+    }
+
+    private static GUIStyle MakeStyle(TextAnchor anchor, int size, FontStyle fs, bool rich)
+    {
+        var s = new GUIStyle
+        {
+            alignment = anchor,
+            fontSize = size,
+            fontStyle = fs,
+            richText = rich,
+            wordWrap = false,
+            clipping = TextClipping.Overflow
+        };
+        if (_font != null) s.font = _font;
+        s.normal.textColor = Color.white;
+        return s;
+    }
+
+    // ───────────────────────── Текстуры (SDF) ─────────────────────────
     private static Texture2D MakeCircle(int size, bool ring, float thickness)
     {
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        tex.filterMode = FilterMode.Bilinear;
-        tex.wrapMode = TextureWrapMode.Clamp;
-        var pixels = new Color32[size * size];
-        float center = size / 2f;
-        float outer = size / 2f - 1f;
-        float inner = outer - thickness;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            hideFlags = HideFlags.HideAndDontSave,
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        var px = new Color32[size * size];
+        float c = size * 0.5f;
+        float outer = c - 1f;
         for (int y = 0; y < size; y++)
             for (int x = 0; x < size; x++)
             {
-                float dx = x - center + 0.5f, dy = y - center + 0.5f;
-                float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                float a = 0f;
-                if (ring)
-                {
-                    if (dist <= outer && dist >= inner)
-                        a = Mathf.Clamp01(Mathf.Min(outer - dist, dist - inner) / 1.5f);
-                }
-                else
-                {
-                    a = Mathf.Clamp01((outer - dist) / 1.5f);
-                }
-                pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                float dx = x + 0.5f - c, dy = y + 0.5f - c;
+                float d = Mathf.Sqrt(dx * dx + dy * dy) - outer;
+                float a = Mathf.Clamp01(0.5f - d);
+                if (ring) a = Mathf.Clamp01(a - Mathf.Clamp01(0.5f - d - thickness));
+                px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
             }
-        tex.SetPixels32(pixels);
+        tex.SetPixels32(px);
         tex.Apply();
         return tex;
     }
 
-    private static Vector2 GetTextSize(string text)
+    private static GUIStyle RoundedStyle(float radius, bool outline)
     {
-        if (_textCache.TryGetValue(text, out var size)) return size;
-        size = GUI.skin.label.CalcSize(new GUIContent(text));
-        _textCache[text] = size;
-        return size;
+        int r = Mathf.Clamp(Mathf.RoundToInt(radius), 1, 64);
+        var dict = outline ? _outlineStyles : _fillStyles;
+        if (dict.TryGetValue(r, out var cached) && cached.normal.background != null) return cached;
+
+        int n = r * 2 + 2;
+        var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+        {
+            hideFlags = HideFlags.HideAndDontSave,
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        var px = new Color32[n * n];
+        float half = n * 0.5f;
+        float inner = half - r;
+        for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float qx = Mathf.Abs(x + 0.5f - half) - inner;
+                float qy = Mathf.Abs(y + 0.5f - half) - inner;
+                float ox = Mathf.Max(qx, 0f), oy = Mathf.Max(qy, 0f);
+                float d = Mathf.Sqrt(ox * ox + oy * oy) + Mathf.Min(Mathf.Max(qx, qy), 0f) - r;
+                float a = Mathf.Clamp01(0.5f - d);
+                if (outline) a = Mathf.Clamp01(a - Mathf.Clamp01(-0.5f - d));
+                px[y * n + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+        tex.SetPixels32(px);
+        tex.Apply();
+
+        var st = new GUIStyle { border = new RectOffset(r, r, r, r) };
+        st.normal.background = tex;
+        dict[r] = st;
+        return st;
+    }
+
+    // ───────────────────────── Хелперы ─────────────────────────
+    private static bool IsRepaint() => Event.current != null && Event.current.type == EventType.Repaint;
+    private static Color Tint(Color c) => new Color(c.r, c.g, c.b, c.a * _alpha);
+    private static float Smooth01(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+    private static float EaseOut(float t) { t = Mathf.Clamp01(t); return 1f - (1f - t) * (1f - t) * (1f - t); }
+    private static int Key(string s, int salt) => s.GetHashCode() * 397 ^ (UiState.MenuSection * 7919 + salt);
+
+    private static float Anim(int key, float target, float speed)
+    {
+        if (!_anim.TryGetValue(key, out float v)) { v = target; _anim[key] = v; }
+        if (IsRepaint())
+        {
+            v = Mathf.MoveTowards(v, target, Time.unscaledDeltaTime * speed);
+            _anim[key] = v;
+        }
+        return v;
+    }
+
+    private static float Scale()
+    {
+        float s = Mathf.Clamp(UiState.MenuScale, MinScale, MaxScale);
+        float fit = Mathf.Min((Screen.width - 20f) / BaseWidth, (Screen.height - 20f) / BaseHeight);
+        return Mathf.Max(0.3f, Mathf.Min(s, fit));
     }
 
     public static Rect GetPanelRect()
     {
-        float w = Screen.width * UiState.MenuScale;
-        float h = Screen.height * UiState.MenuScale;
-        Vector2 pos = UiState.MenuPosition;
-        if (pos.x < 0 || pos.y < 0)
-            pos = new Vector2((Screen.width - w) / 2f, (Screen.height - h) / 2f);
-        return new Rect(pos.x, pos.y, w, h);
+        float s = Scale();
+        float w = BaseWidth * s, h = BaseHeight * s;
+        Vector2 p = UiState.MenuPosition;
+        if (!UiState.MenuPositionSet || p.x < 0f || p.y < 0f)
+        {
+            p = new Vector2((Screen.width - w) / 2f, (Screen.height - h) / 2f);
+            UiState.MenuPosition = p;
+            UiState.MenuPositionSet = true;
+        }
+        p.x = Mathf.Clamp(p.x, 0f, Mathf.Max(0f, Screen.width - w));
+        p.y = Mathf.Clamp(p.y, 0f, Mathf.Max(0f, Screen.height - h));
+        return new Rect(p.x, p.y, w, h);
     }
 
+    // ───────────────────────── Примитивы ─────────────────────────
+    public static void DrawRect(Rect rect, Color col, float radius = 0f)
+    {
+        if (!IsRepaint()) return;
+        EnsureTextures();
+        GUI.color = Tint(col);
+        if (radius <= 0.5f) GUI.DrawTexture(rect, _white);
+        else
+        {
+            float r = Mathf.Min(radius, Mathf.Min(rect.width, rect.height) * 0.5f);
+            RoundedStyle(r, false).Draw(rect, GUIContent.none, false, false, false, false);
+        }
+        GUI.color = Color.white;
+    }
+
+    public static void DrawRoundedRect(Color col, Rect rect, float radius) => DrawRect(rect, col, radius);
+
+    private static void DrawOutline(Rect rect, Color col, float radius)
+    {
+        if (!IsRepaint()) return;
+        EnsureTextures();
+        GUI.color = Tint(col);
+        float r = Mathf.Min(radius, Mathf.Min(rect.width, rect.height) * 0.5f);
+        RoundedStyle(Mathf.Max(1f, r), true).Draw(rect, GUIContent.none, false, false, false, false);
+        GUI.color = Color.white;
+    }
+
+    private static void Text(Rect r, string s, GUIStyle st, Color c)
+    {
+        if (!IsRepaint()) return;
+        GUI.color = Tint(c);
+        GUI.Label(r, s, st);
+        GUI.color = Color.white;
+    }
+
+    private static bool Click(Rect r)
+    {
+        Event e = Event.current;
+        if (_inputOk && e.type == EventType.MouseDown && e.button == 0 && r.Contains(e.mousePosition))
+        {
+            e.Use();
+            return true;
+        }
+        return false;
+    }
+
+    private static bool Hover(Rect r)
+    {
+        Event e = Event.current;
+        if (e == null) return false;
+        return _inputOk && r.Contains(e.mousePosition);
+    }
+
+    // ───────────────────────── FOV-круг ─────────────────────────
     public static void DrawFovCircle()
     {
+        if (!IsRepaint()) return;
         EnsureTextures();
         if (!AimbotModule.DrawFovCircle) return;
         if (!AimbotModule.Enabled) return;
@@ -99,94 +281,155 @@ public static class MenuRenderer
             fovScreen, fovScreen);
 
         GUI.color = new Color(1f, 1f, 1f, 0.04f);
-        GUI.DrawTexture(rect, _circleTex);
+        GUI.DrawTexture(rect, _circle);
         GUI.color = new Color(1f, 1f, 1f, 0.85f);
-        GUI.DrawTexture(rect, _ringTex);
+        GUI.DrawTexture(rect, _ring);
         GUI.color = Color.white;
     }
 
+    // ───────────────────────── Интро ─────────────────────────
     public static void DrawIntroAnimation(Texture2D whiteTex, float t)
     {
+        if (!IsRepaint()) return;
+        EnsureTextures();
+        EnsureStyles();
+
         float sw = Screen.width, sh = Screen.height;
 
-        float bgAlpha = 0f;
-        if (t >= 0f && t < 0.3f) bgAlpha = Mathf.Lerp(0f, 0.65f, (t - 0f) / 0.3f);
-        else if (t >= 0.3f && t < 1.6f) bgAlpha = 0.65f;
-        else if (t >= 1.6f && t < 2.0f) bgAlpha = Mathf.Lerp(0.65f, 0f, (t - 1.6f) / 0.4f);
-
-        if (bgAlpha > 0f)
+        float master = 1f - Smooth01((t - (IntroDuration - 0.4f)) / 0.4f);
+        float bgA = 0.65f * Smooth01(t / 0.3f) * master;
+        if (bgA > 0.001f)
         {
-            GUI.color = new Color(0.1f, 0.1f, 0.1f, bgAlpha);
-            GUI.DrawTexture(new Rect(0, 0, sw, sh), whiteTex);
+            GUI.color = new Color(0.04f, 0.05f, 0.09f, bgA);
+            GUI.DrawTexture(new Rect(0, 0, sw, sh), _white);
             GUI.color = Color.white;
         }
+        if (master <= 0.001f) return;
 
-        float logoAlpha = 0f;
-        if (t >= 0.3f && t < 0.8f) logoAlpha = Mathf.Lerp(0f, 1f, (t - 0.3f) / 0.5f);
-        else if (t >= 0.8f && t < 1.2f) logoAlpha = 1f;
-        else if (t >= 1.2f && t < 1.6f) logoAlpha = Mathf.Lerp(1f, 0f, (t - 1.2f) / 0.4f);
-
-        if (logoAlpha > 0f)
+        int fs = Mathf.Clamp(Mathf.RoundToInt(sh * 0.11f), 56, 140);
+        if (fs != _introFs)
         {
-            string eLetter = "E";
-            string rest = "xplode";
-            float logoY = sh * 0.35f;
-            float eWidth = 55f;
-            float restWidth = rest.Length * 55f;
-            float totalWidth = eWidth + restWidth;
-            float startX = sw / 2f - totalWidth / 2f;
-
-            GUI.color = new Color(0f, 0f, 0f, logoAlpha * 0.6f);
-            GUI.Label(new Rect(startX + 3f, logoY + 3f, totalWidth, 120f), eLetter + rest);
-            GUI.color = new Color(1f, 0.2f, 0.2f, logoAlpha);
-            GUI.Label(new Rect(startX, logoY, eWidth + 4f, 120f), eLetter);
-            GUI.color = new Color(1f, 1f, 1f, logoAlpha);
-            GUI.Label(new Rect(startX + eWidth, logoY, restWidth + 4f, 120f), rest);
-            GUI.color = Color.white;
+            _introFs = fs;
+            _sIntro.fontSize = fs;
+            _introWE = _sIntro.CalcSize(new GUIContent("E")).x;
+            _introWR = _sIntro.CalcSize(new GUIContent("xplode")).x;
         }
+
+        float eAlpha = Smooth01(t / 0.35f) * master;
+        float paint = Smooth01((t - 0.75f) / 0.6f);
+        float move = Smooth01((t - 1.45f) / 0.7f);
+        float restA = Smooth01((t - 2.1f) / 0.6f) * master;
+
+        float total = _introWE + _introWR;
+        float xFinal = sw / 2f - total / 2f;
+        float xStart = sw / 2f - _introWE / 2f;
+        float xE = Mathf.Lerp(xStart, xFinal, move);
+
+        float h = fs * 1.6f;
+        float y = sh / 2f - h / 2f;
+        Color eCol = Color.Lerp(Color.white, ColOrange, paint);
+
+        GUI.color = new Color(0f, 0f, 0f, eAlpha * 0.55f);
+        GUI.Label(new Rect(xE + 3f, y + 3f, _introWE + 16f, h), "E", _sIntro);
+        GUI.color = new Color(0f, 0f, 0f, restA * 0.55f);
+        GUI.Label(new Rect(xFinal + _introWE + 3f, y + 3f, _introWR + 16f, h), "xplode", _sIntro);
+
+        GUI.color = new Color(eCol.r, eCol.g, eCol.b, eAlpha);
+        GUI.Label(new Rect(xE, y, _introWE + 16f, h), "E", _sIntro);
+        GUI.color = new Color(1f, 1f, 1f, restA);
+        GUI.Label(new Rect(xFinal + _introWE, y, _introWR + 16f, h), "xplode", _sIntro);
+
+        GUI.color = Color.white;
     }
 
+    // ───────────────────────── Меню ─────────────────────────
     public static void DrawMenu(Texture2D whiteTex)
     {
+        Event e = Event.current;
+        if (e == null) return;
         EnsureTextures();
-        _whiteTex = whiteTex;
+        EnsureStyles();
 
+        int fr = Time.frameCount;
+        if (e.type == EventType.Repaint)
+        {
+            if (fr - _lastFrame > 1) _open = 0f;
+            _lastFrame = fr;
+            _open = Mathf.MoveTowards(_open, 1f, Time.unscaledDeltaTime / 0.18f);
+        }
+
+        if (!UiState.MenuVisible && UiDragState.AnyDragging)
+        {
+            UiDragState.AnyDragging = false;
+            UiState.MenuDragging = false;
+        }
+
+        if (_anim.Count > 200) _anim.Clear();
+
+        float eo = EaseOut(_open);
         Rect panelRect = GetPanelRect();
         HandleDrag(panelRect);
+        panelRect = GetPanelRect();
 
-        DrawRect(panelRect, ColPanelBg, Radius);
+        float s = Scale();
+        float k = Mathf.Lerp(0.95f, 1f, eo);
+        _alpha = eo;
+        _inputOk = true;
 
-        float tabX = panelRect.x + 5f;
-        float tabY = panelRect.y + 10f;
-        
-        DrawCentered("Main", new Rect(tabX, tabY, TabWidth, 20f), ColTextDim, false);
-        tabY += 24f;
-        
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Visuals", UiState.MenuSection == 0))
-        { UiState.MenuSection = 0; UiState.MenuScroll = 0f; }
-        tabY += 39f;
-        
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Legit", UiState.MenuSection == 1))
-        { UiState.MenuSection = 1; UiState.MenuScroll = 0f; }
-        tabY += 39f;
+        Matrix4x4 oldMatrix = GUI.matrix;
+        Vector2 c = panelRect.center;
+        GUI.matrix = oldMatrix
+            * Matrix4x4.TRS(new Vector3(c.x, c.y, 0f), Quaternion.identity, new Vector3(s * k, s * k, 1f))
+            * Matrix4x4.TRS(new Vector3(-BaseWidth / 2f, -BaseHeight / 2f, 0f), Quaternion.identity, Vector3.one);
 
-        tabY += 10f;
-        DrawCentered("Screen", new Rect(tabX, tabY, TabWidth, 20f), ColTextDim, false);
-        tabY += 24f;
+        Rect panel = new Rect(0f, 0f, BaseWidth, BaseHeight);
 
-        if (DrawSectionButton(new Rect(tabX, tabY, TabWidth, 36f), "Hud", UiState.MenuSection == 2))
-        { UiState.MenuSection = 2; UiState.MenuScroll = 0f; }
+        for (int i = 0; i < 4; i++)
+        {
+            float g = 4f + i * 4f;
+            DrawRect(new Rect(panel.x - g, panel.y - g + 4f, panel.width + g * 2f, panel.height + g * 2f),
+                     new Color(0f, 0f, 0f, 0.10f - i * 0.02f), Radius + g);
+        }
+        DrawRect(panel, ColPanelBg, Radius);
+        DrawOutline(panel, ColBlockBorder, Radius);
 
-        DrawRect(new Rect(panelRect.x + 104f, panelRect.y, 1f, panelRect.height), ColDivider);
+        Text(new Rect(16f, 0f, 220f, HeaderH), HeaderTitle, _sTitle, Color.white);
+        DrawRect(new Rect(Pad, HeaderH, BaseWidth - Pad * 2f, 1f), ColLine);
 
-        float contentX = panelRect.x + 118f;
-        float contentY = panelRect.y + 10f;
-        float contentW = panelRect.width - 128f;
-        float contentH = panelRect.height - 20f;
+        float tabX = 8f;
+        float tabY = HeaderH + 10f;
 
-        if (UiState.MenuSection == 0) DrawSectionContent(contentX, contentY, contentW, contentH, 0);
-        else if (UiState.MenuSection == 1) DrawSectionContent(contentX, contentY, contentW, contentH, 1);
-        else DrawSectionContent(contentX, contentY, contentW, contentH, 2);
+        Text(new Rect(tabX + 8f, tabY, TabWidth, 18f), "Main", _sLeft, ColTextDim);
+        tabY += 22f;
+        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Visuals", 0)) SetSection(0);
+        tabY += 36f;
+        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Legit", 1)) SetSection(1);
+        tabY += 36f;
+
+        tabY += 8f;
+        Text(new Rect(tabX + 8f, tabY, TabWidth, 18f), "Screen", _sLeft, ColTextDim);
+        tabY += 22f;
+        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Hud", 2)) SetSection(2);
+
+        DrawRect(new Rect(SidebarDividerX, HeaderH + Pad, 1f, BaseHeight - HeaderH - Pad * 2f), ColLine);
+
+        float cy = HeaderH + Pad;
+        Rect view = new Rect(ContentX, cy, BaseWidth - ContentX - Pad, BaseHeight - cy - Pad);
+        DrawScrollable(view, Mathf.Clamp(UiState.MenuSection, 0, SectionCount - 1));
+
+        GUI.matrix = oldMatrix;
+        _alpha = 1f;
+        _inputOk = true;
+
+        if (panelRect.Contains(e.mousePosition) &&
+            (e.type == EventType.MouseDown || e.type == EventType.MouseUp || e.type == EventType.ScrollWheel))
+            e.Use();
+    }
+
+    private static void SetSection(int i)
+    {
+        UiState.MenuSection = i;
+        UiState.MenuScroll = 0f;
     }
 
     private static void HandleDrag(Rect panelRect)
@@ -196,7 +439,7 @@ public static class MenuRenderer
 
         if (e.type == EventType.MouseDown && e.button == 0)
         {
-            Rect handle = new Rect(panelRect.x, panelRect.y, panelRect.width, 26f);
+            Rect handle = new Rect(panelRect.x, panelRect.y, panelRect.width, HeaderH * Scale());
             if (handle.Contains(e.mousePosition) && !UiDragState.AnyDragging)
             {
                 UiState.MenuDragging = true;
@@ -207,149 +450,183 @@ public static class MenuRenderer
         }
         else if (e.type == EventType.MouseDrag && UiState.MenuDragging)
         {
-            Vector2 newPos = e.mousePosition - UiState.MenuDragOffset;
-            newPos.x = Mathf.Clamp(newPos.x, -panelRect.width + 60f, Screen.width - 60f);
-            newPos.y = Mathf.Clamp(newPos.y, 0f, Screen.height - 30f);
-            UiState.MenuPosition = newPos;
+            Vector2 p = e.mousePosition - UiState.MenuDragOffset;
+            p.x = Mathf.Clamp(p.x, 0f, Mathf.Max(0f, Screen.width - panelRect.width));
+            p.y = Mathf.Clamp(p.y, 0f, Mathf.Max(0f, Screen.height - panelRect.height));
+            UiState.MenuPosition = p;
             e.Use();
         }
-        else if (e.type == EventType.MouseUp && e.button == 0 && UiState.MenuDragging)
+
+        if (UiState.MenuDragging && e.rawType == EventType.MouseUp)
         {
             UiState.MenuDragging = false;
             UiDragState.AnyDragging = false;
-            e.Use();
+            if (e.type == EventType.MouseUp) e.Use();
         }
     }
 
-    private static void DrawSectionContent(float bx, float y, float bw, float bh, int section)
+    private static bool SectionButton(Rect rect, string label, int index)
     {
-        DrawScrollableContent(new Rect(bx, y, bw, bh), section);
+        bool active = UiState.MenuSection == index;
+        float h = Anim(index * 977 + 13, Hover(rect) ? 1f : 0f, 10f);
+
+        if (active)
+        {
+            DrawRect(rect, ColTabActive, Radius);
+            DrawRect(new Rect(rect.x + 4f, rect.y + 8f, 3f, rect.height - 16f), ColAccent, 1.5f);
+        }
+        else if (h > 0.01f)
+            DrawRect(rect, new Color(1f, 1f, 1f, 0.05f * h), Radius);
+
+        Text(new Rect(rect.x + 16f, rect.y, rect.width - 16f, rect.height), label, _sLeft,
+             active ? Color.white : Color.Lerp(ColText, Color.white, h));
+
+        return Click(rect);
     }
 
-    private static void DrawScrollableContent(Rect view, int section)
+    // ───────────────────────── Скролл-область ─────────────────────────
+    private static void DrawScrollable(Rect view, int section)
     {
-        float contentHeight = MeasureContent(section, view.width - 32f);
-
-        float viewH = view.height;
-        float maxScroll = Mathf.Max(0f, contentHeight - viewH);
-
         Event e = Event.current;
-        if (e != null && view.Contains(e.mousePosition) && e.type == EventType.ScrollWheel)
+        float contentH = _contentH[section];
+        float maxScroll = Mathf.Max(0f, contentH - view.height);
+        bool hasBar = maxScroll > 0.5f;
+        bool mouseIn = view.Contains(e.mousePosition);
+
+        if (e.type == EventType.ScrollWheel && mouseIn)
         {
             UiState.MenuScroll += e.delta.y * 24f;
-            UiState.MenuScroll = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
             e.Use();
         }
+
+        int sid = GUIUtility.GetControlID(FocusType.Passive);
+        Rect track = new Rect(view.xMax - 6f, view.y, 6f, view.height);
+        float thumbH = hasBar ? Mathf.Max(24f, view.height * view.height / contentH) : 0f;
+        float travel = Mathf.Max(1f, view.height - thumbH);
+        float cur = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
+        float thumbY = view.y + travel * (hasBar ? cur / maxScroll : 0f);
+        Rect hit = new Rect(track.x - 5f, view.y, 16f, view.height);
+
+        if (hasBar)
+        {
+            EventType type = e.type;
+            bool grabbing = false;
+            if (type == EventType.MouseDown && e.button == 0 && hit.Contains(e.mousePosition))
+            {
+                GUIUtility.hotControl = sid;
+                Rect thumbRect = new Rect(track.x, thumbY, track.width, thumbH);
+                _sbGrab = thumbRect.Contains(e.mousePosition) ? e.mousePosition.y - thumbY : thumbH * 0.5f;
+                grabbing = true;
+                e.Use();
+            }
+            else if (type == EventType.MouseDrag && GUIUtility.hotControl == sid)
+            {
+                grabbing = true;
+                e.Use();
+            }
+            if (grabbing)
+                UiState.MenuScroll = Mathf.Clamp01((e.mousePosition.y - _sbGrab - view.y) / travel) * maxScroll;
+            if (GUIUtility.hotControl == sid && e.rawType == EventType.MouseUp)
+            {
+                GUIUtility.hotControl = 0;
+                if (e.type == EventType.MouseUp) e.Use();
+            }
+        }
+
         UiState.MenuScroll = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
+        float scroll = UiState.MenuScroll;
 
+        bool prevInput = _inputOk;
+        _inputOk = prevInput && (mouseIn || GUIUtility.hotControl != 0);
         GUI.BeginGroup(view);
-        Rect inner = new Rect(0f, -UiState.MenuScroll, view.width, contentHeight);
+
+        float bw = view.width - (hasBar ? 10f : 0f);
+        _ix = 16f;
+        _iw = bw - 32f;
+        _y = -scroll;
+        float top = _y;
+
+        Rect block = new Rect(0f, top, bw, Mathf.Max(contentH, view.height));
+        DrawRect(block, ColBlockBg, Radius);
+        DrawOutline(block, ColBlockBorder, Radius);
 
         switch (section)
         {
-            case 0: DrawEspBlock(inner.x, inner.y, inner.width, inner.height); break;
-            case 1: DrawAimBlock(inner.x, inner.y, inner.width, inner.height); break;
-            default: DrawRenderBlock(inner.x, inner.y, inner.width, inner.height); break;
+            case 0: DrawEspBlock(); break;
+            case 1: DrawAimBlock(); break;
+            default: DrawHudBlock(); break;
         }
 
+        _contentH[section] = _y - top + 8f;
         GUI.EndGroup();
+        _inputOk = prevInput;
 
-        if (maxScroll > 0f)
+        if (hasBar)
         {
-            float sbW = 6f;
-            Rect track = new Rect(view.xMax - sbW - 2f, view.y, sbW, viewH);
-            DrawRect(track, new Color(1f, 1f, 1f, 0.08f), 3f);
-            float thumbH = Mathf.Max(24f, viewH * (viewH / contentHeight));
-            float thumbY = view.y + (viewH - thumbH) * (UiState.MenuScroll / maxScroll);
-            DrawRect(new Rect(track.x, thumbY, sbW, thumbH), ColDivider, 3f);
+            cur = Mathf.Clamp(UiState.MenuScroll, 0f, maxScroll);
+            thumbY = view.y + travel * (cur / maxScroll);
+            bool active = GUIUtility.hotControl == sid || hit.Contains(e.mousePosition);
+            DrawRect(track, new Color(1f, 1f, 1f, 0.06f), 3f);
+            DrawRect(new Rect(track.x, thumbY, track.width, thumbH),
+                     new Color(ColDivider.r, ColDivider.g, ColDivider.b, active ? 0.65f : 0.35f), 3f);
         }
     }
 
-    private static float MeasureContent(int section, float innerW)
+    // ───────────────────────── Секции ─────────────────────────
+    private static void DrawEspBlock()
     {
-        switch (section)
-        {
-            case 0: return 36f + 30f * 4f + 16f;
-            case 1: return 36f + 30f * 3f + 22f + 28f + 22f + 28f + 28f + 28f + 28f + 16f;
-            default: return 36f + 30f * 3f + 22f + 28f + 28f + 16f;
-        }
+        BlockTitle("ESP");
+        ToggleRow("Enabled", ref EspModule.BoxesEnabled);
+        ToggleRow("Show Spec", ref TeamFilter.ShowSpectator);
+        ToggleRow("Show T", ref TeamFilter.ShowTr);
+        ToggleRow("Show CT", ref TeamFilter.ShowCt);
     }
 
-    private static void DrawEspBlock(float x, float y, float bw, float bh)
+    private static void DrawAimBlock()
     {
-        DrawRect(new Rect(x, y, bw, bh), ColBlockBg, Radius);
-        DrawBorder(new Rect(x, y, bw, bh), ColBlockBorder, 1f);
+        BlockTitle("AIM");
+        ToggleRow("Enabled", ref AimbotModule.Enabled);
+        ToggleRow("FOV Circle", ref AimbotModule.DrawFovCircle);
+        ToggleRow("Aim on Teammates", ref AimbotModule.AimOnTeammates);
+        Space(6f);
 
-        DrawCentered("ESP", new Rect(x, y + 8f, bw, 20f), ColText, true);
-        y += 36f;
+        float fov = AimbotModule.Fov;
+        bool fovDone = Slider("FOV", ref fov, 1f, 180f, "F0", "°", 1f);
+        if (!Mathf.Approximately(fov, AimbotModule.Fov)) AimbotModule.Fov = fov;
+        if (fovDone) Plugin.CfgAimbotFov.Value = AimbotModule.Fov;
 
-        float itemX = x + 16f;
-        float itemW = bw - 32f;
-        float rowH = 30f;
+        float sens = AimbotModule.Sensitivity;
+        bool sensDone = Slider("Sensitivity", ref sens, 0.01f, 3f, "F2", "", 0.01f);
+        if (!Mathf.Approximately(sens, AimbotModule.Sensitivity)) AimbotModule.Sensitivity = sens;
+        if (sensDone) Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity;
 
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Enabled", ref EspModule.BoxesEnabled);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Spec", ref TeamFilter.ShowSpectator);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show T", ref TeamFilter.ShowTr);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show CT", ref TeamFilter.ShowCt);
-    }
+        Space(4f);
 
-    private static void DrawAimBlock(float x, float y, float bw, float bh)
-    {
-        DrawRect(new Rect(x, y, bw, bh), ColBlockBg, Radius);
-        DrawBorder(new Rect(x, y, bw, bh), ColBlockBorder, 1f);
-
-        DrawCentered("AIM", new Rect(x, y + 8f, bw, 20f), ColText, true);
-        y += 36f;
-
-        float itemX = x + 16f;
-        float itemW = bw - 32f;
-        float rowH = 30f;
-
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Enabled", ref AimbotModule.Enabled);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "FOV Circle", ref AimbotModule.DrawFovCircle);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Aim on Teammates", ref AimbotModule.AimOnTeammates);
-        y += rowH;
-
-        LabelRow(new Rect(itemX, y, itemW, 20f), $"FOV: {AimbotModule.Fov:F0}°");
-        y += 22f;
-        if (SmallButton(new Rect(itemX, y, (itemW - 4f) / 2f, 24f), "-"))
-        { AimbotModule.Fov = Mathf.Max(1f, AimbotModule.Fov - 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
-        if (SmallButton(new Rect(itemX + (itemW + 4f) / 2f, y, (itemW - 4f) / 2f, 24f), "+"))
-        { AimbotModule.Fov = Mathf.Min(180f, AimbotModule.Fov + 2f); Plugin.CfgAimbotFov.Value = AimbotModule.Fov; }
-        y += 28f;
-
-        LabelRow(new Rect(itemX, y, itemW, 20f), $"Sens: {AimbotModule.Sensitivity:F2}");
-        y += 22f;
-        if (SmallButton(new Rect(itemX, y, (itemW - 4f) / 2f, 24f), "-"))
-        { AimbotModule.Sensitivity = Mathf.Max(0.01f, AimbotModule.Sensitivity - 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
-        if (SmallButton(new Rect(itemX + (itemW + 4f) / 2f, y, (itemW - 4f) / 2f, 24f), "+"))
-        { AimbotModule.Sensitivity = Mathf.Min(3f, AimbotModule.Sensitivity + 0.05f); Plugin.CfgAimbotSensitivity.Value = AimbotModule.Sensitivity; }
-        y += 28f;
-
-        if (SmallButton(new Rect(itemX, y, itemW, 24f), $"Bone: {AimbotModule.Bone}"))
+        int boneIdx = AimbotModule.Bone == AimBone.Head ? 0
+                    : AimbotModule.Bone == AimBone.Neck ? 1
+                    : AimbotModule.Bone == AimBone.Chest ? 2 : -1;
+        int boneClick = Segmented("Bone", BoneNames, boneIdx);
+        if (boneClick >= 0 && boneClick != boneIdx)
         {
-            var next = AimbotModule.Bone == AimBone.Head ? AimBone.Neck
-                     : AimbotModule.Bone == AimBone.Neck ? AimBone.Chest
-                     : AimBone.Head;
-            AimbotModule.Bone = next;
-            Plugin.CfgAimbotBone.Value = next.ToString();
+            AimBone b = boneClick == 0 ? AimBone.Head : boneClick == 1 ? AimBone.Neck : AimBone.Chest;
+            AimbotModule.Bone = b;
+            Plugin.CfgAimbotBone.Value = b.ToString();
         }
-        y += 28f;
 
-        if (SmallButton(new Rect(itemX, y, itemW, 24f), $"Mode: {(KeybindState.ToggleMode ? "TOGGLE" : "HOLD")}"))
+        int modeIdx = KeybindState.ToggleMode ? 1 : 0;
+        int modeClick = Segmented("Mode", ModeNames, modeIdx);
+        if (modeClick >= 0 && modeClick != modeIdx)
         {
-            KeybindState.ToggleMode = !KeybindState.ToggleMode;
+            KeybindState.ToggleMode = modeClick == 1;
             Plugin.CfgAimbotToggleMode.Value = KeybindState.ToggleMode;
         }
-        y += 28f;
 
-        string keyName = KeybindState.Capturing ? "PRESS KEY... (Esc)" : KeybindState.AimbotKey.ToString();
-        if (SmallButton(new Rect(itemX, y, itemW, 24f), $"Bind: {keyName}"))
+        Rect r = Next(30f);
+        Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), "Bind", _sLeft, ColText);
+        Rect b2 = new Rect(r.xMax - 8f - 150f, r.y + 3f, 150f, 24f);
+        bool cap = KeybindState.Capturing;
+        string keyName = cap ? "Press key... (Esc)" : KeybindState.AimbotKey.ToString();
+        if (Button(b2, keyName, cap))
         {
             if (!KeybindState.Capturing)
             {
@@ -364,142 +641,154 @@ public static class MenuRenderer
         }
     }
 
-    private static void DrawRenderBlock(float x, float y, float bw, float bh)
+    private static void DrawHudBlock()
     {
-        DrawRect(new Rect(x, y, bw, bh), ColBlockBg, Radius);
-        DrawBorder(new Rect(x, y, bw, bh), ColBlockBorder, 1f);
+        BlockTitle("Hud");
+        ToggleRow("Watermark", ref UiState.HudWatermark);
+        ToggleRow("Show Bind List", ref BindListState.Enabled);
+        ToggleRow("Show Bomb Status", ref BombStatusRenderer.Enabled);
+        Space(6f);
 
-        DrawCentered("Hud", new Rect(x, y + 8f, bw, 20f), ColText, true);
-        y += 36f;
-
-        float itemX = x + 16f;
-        float itemW = bw - 32f;
-        float rowH = 30f;
-
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Watermark", ref UiState.HudWatermark);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Bind List", ref BindListState.Enabled);
-        y += rowH;
-        ToggleRow(new Rect(itemX, y, itemW, rowH), "Show Bomb Status", ref BombStatusRenderer.Enabled);
-        y += rowH;
-
-        LabelRow(new Rect(itemX, y, itemW, 20f), $"Menu size: {UiState.MenuScale * 100f:F0}%");
-        y += 22f;
-        if (SmallButton(new Rect(itemX, y, (itemW - 4f) / 2f, 24f), "-"))
+        float cur = Mathf.Clamp(UiState.MenuScale, MinScale, MaxScale);
+        int dir = Stepper("Menu size", $"{cur * 100f:F0}%");
+        if (dir != 0)
         {
-            UiState.MenuScale = Mathf.Clamp(UiState.MenuScale - 0.05f, 0.25f, 2f);
+            UiState.MenuScale = Mathf.Clamp(cur + dir * 0.05f, MinScale, MaxScale);
             Plugin.CfgMenuScale.Value = UiState.MenuScale;
-            ClampMenuPosition();
         }
-        if (SmallButton(new Rect(itemX + (itemW + 4f) / 2f, y, (itemW - 4f) / 2f, 24f), "+"))
+    }
+
+    // ───────────────────────── Виджеты ─────────────────────────
+    private static Rect Next(float h, float gap = 0f)
+    {
+        var r = new Rect(_ix, _y, _iw, h);
+        _y += h + gap;
+        return r;
+    }
+
+    private static void Space(float h) => _y += h;
+
+    private static void BlockTitle(string title)
+    {
+        Text(new Rect(_ix, _y + 6f, _iw, 20f), title, _sBold, ColText);
+        DrawRect(new Rect(_ix, _y + 31f, _iw, 1f), ColLine);
+        _y += 38f;
+    }
+
+    private static void ToggleRow(string label, ref bool value)
+    {
+        Rect r = Next(30f);
+        float h = Anim(Key(label, 1), Hover(r) ? 1f : 0f, 10f);
+        float a = Anim(Key(label, 2), value ? 1f : 0f, 8f);
+
+        if (h > 0.01f) DrawRect(r, new Color(1f, 1f, 1f, 0.04f * h), 6f);
+        Text(new Rect(r.x + 8f, r.y, r.width - 60f, r.height), label, _sLeft, Color.Lerp(ColText, Color.white, h));
+
+        Rect tg = new Rect(r.xMax - 8f - 34f, r.y + (r.height - 18f) / 2f, 34f, 18f);
+        DrawRect(tg, Color.Lerp(ColToggleTrack, ColAccent, a), 9f);
+        float ks = 14f;
+        float kx = Mathf.Lerp(tg.x + 2f, tg.xMax - 2f - ks, Smooth01(a));
+        DrawRect(new Rect(kx, tg.y + 2f, ks, ks), ColToggleKnob, 7f);
+
+        if (Click(r)) value = !value;
+    }
+
+    private static bool Slider(string label, ref float v, float min, float max, string fmt, string suffix, float step)
+    {
+        Rect r = Next(40f);
+        Text(new Rect(r.x + 8f, r.y, r.width * 0.6f, 20f), label, _sLeft, ColText);
+        Text(new Rect(r.x, r.y, r.width - 8f, 20f), v.ToString(fmt) + suffix, _sRight, ColTextDim);
+
+        Rect track = new Rect(r.x + 8f, r.y + 28f, r.width - 16f, 6f);
+        Rect hit = new Rect(track.x - 6f, r.y + 20f, track.width + 12f, 20f);
+
+        int id = GUIUtility.GetControlID(FocusType.Passive);
+        Event e = Event.current;
+        bool commit = false;
+
+        if (e.type == EventType.MouseDown && e.button == 0 && _inputOk && hit.Contains(e.mousePosition))
         {
-            UiState.MenuScale = Mathf.Clamp(UiState.MenuScale + 0.05f, 0.25f, 2f);
-            Plugin.CfgMenuScale.Value = UiState.MenuScale;
-            ClampMenuPosition();
+            GUIUtility.hotControl = id;
+            SetFromMouse(ref v, track, min, max, step);
+            e.Use();
         }
-        y += 28f;
-    }
-
-    private static void ClampMenuPosition()
-    {
-        float w = Screen.width * UiState.MenuScale;
-        float h = Screen.height * UiState.MenuScale;
-        UiState.MenuPosition = new Vector2(
-            Mathf.Clamp(UiState.MenuPosition.x, 0f, Mathf.Max(0f, Screen.width - w)),
-            Mathf.Clamp(UiState.MenuPosition.y, 0f, Mathf.Max(0f, Screen.height - h)));
-    }
-
-    public static void DrawRect(Rect rect, Color col, float radius = 0f)
-    {
-        EnsureTextures();
-        if (radius <= 0f)
+        else if (e.type == EventType.MouseDrag && GUIUtility.hotControl == id)
         {
-            GUI.color = col;
-            GUI.DrawTexture(rect, _whiteTex);
-            GUI.color = Color.white;
-            return;
+            SetFromMouse(ref v, track, min, max, step);
+            e.Use();
         }
-        DrawRoundedRect(col, rect, radius);
+        else if (e.rawType == EventType.MouseUp && GUIUtility.hotControl == id)
+        {
+            GUIUtility.hotControl = 0;
+            commit = true;
+            if (e.type == EventType.MouseUp) e.Use();
+        }
+
+        float t = Mathf.InverseLerp(min, max, v);
+        DrawRect(track, ColToggleTrack, 3f);
+        if (t > 0.001f) DrawRect(new Rect(track.x, track.y, track.width * t, track.height), ColAccent, 3f);
+        bool active = GUIUtility.hotControl == id || Hover(hit);
+        float ks = active ? 14f : 12f;
+        DrawRect(new Rect(track.x + track.width * t - ks / 2f, track.y + 3f - ks / 2f, ks, ks), ColToggleKnob, ks / 2f);
+
+        return commit;
     }
 
-    public static void DrawRoundedRect(Color col, Rect rect, float radius)
+    private static void SetFromMouse(ref float v, Rect track, float min, float max, float step)
     {
-        EnsureTextures();
-        float r = Mathf.Min(radius, Mathf.Min(rect.width, rect.height) * 0.5f);
-        GUI.color = col;
-
-        GUI.DrawTexture(new Rect(rect.x + r, rect.y, rect.width - r * 2f, rect.height), _whiteTex);
-        GUI.DrawTexture(new Rect(rect.x, rect.y + r, rect.width, rect.height - r * 2f), _whiteTex);
-
-        float d = r * 2f;
-        GUI.DrawTexture(new Rect(rect.x, rect.y, d, d), _circleTex);
-        GUI.DrawTexture(new Rect(rect.xMax - d, rect.y, d, d), _circleTex);
-        GUI.DrawTexture(new Rect(rect.x, rect.yMax - d, d, d), _circleTex);
-        GUI.DrawTexture(new Rect(rect.xMax - d, rect.yMax - d, d, d), _circleTex);
-
-        GUI.color = Color.white;
+        float t = Mathf.Clamp01((Event.current.mousePosition.x - track.x) / track.width);
+        float val = Mathf.Lerp(min, max, t);
+        if (step > 0f) val = Mathf.Round(val / step) * step;
+        v = Mathf.Clamp(val, min, max);
     }
 
-    private static bool DrawSectionButton(Rect rect, string label, bool active)
+    private static int Segmented(string label, string[] names, int selected)
     {
-        if (active) DrawRect(rect, ColTabActive, Radius);
-        bool clicked = ClickZone(rect);
-        DrawCentered(label, rect, active ? Color.white : ColText, false);
+        Rect r = Next(30f);
+        Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), label, _sLeft, ColText);
+
+        float segW = 62f;
+        float total = segW * names.Length;
+        Rect bar = new Rect(r.xMax - 8f - total, r.y + 3f, total, 24f);
+        DrawRect(bar, ColToggleTrack, 7f);
+
+        int clicked = -1;
+        for (int i = 0; i < names.Length; i++)
+        {
+            Rect seg = new Rect(bar.x + i * segW + 2f, bar.y + 2f, segW - 4f, bar.height - 4f);
+            bool act = i == selected;
+            if (act) DrawRect(seg, ColAccent, 5f);
+            else if (Hover(seg)) DrawRect(seg, new Color(1f, 1f, 1f, 0.07f), 5f);
+            Text(seg, names[i], _sCenter, act ? Color.white : ColText);
+            if (Click(seg)) clicked = i;
+        }
         return clicked;
     }
 
-    private static bool ClickZone(Rect rect)
+    private static int Stepper(string label, string valueText)
     {
-        Event e = Event.current;
-        return e != null && e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition);
+        Rect r = Next(30f);
+        Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), label, _sLeft, ColText);
+
+        float bs = 24f;
+        Rect plus = new Rect(r.xMax - 8f - bs, r.y + 3f, bs, bs);
+        Rect val = new Rect(plus.x - 62f, r.y, 62f, r.height);
+        Rect minus = new Rect(val.x - bs, r.y + 3f, bs, bs);
+
+        int dir = 0;
+        if (Button(minus, "-", false)) dir = -1;
+        Text(val, valueText, _sCenter, ColText);
+        if (Button(plus, "+", false)) dir = 1;
+        return dir;
     }
 
-    private static void ToggleRow(Rect rect, string label, ref bool value)
+    private static bool Button(Rect r, string text, bool active)
     {
-        DrawLeft(label, rect, ColText);
-        Rect toggle = new Rect(rect.xMax - 40f, rect.y + (rect.height - 16f) / 2f, 30f, 16f);
-        DrawRect(toggle, ColToggleTrack, 8f);
-
-        float knobSize = 17f;
-        float knobX = value ? toggle.xMax - knobSize + 0.5f : toggle.x - 0.5f;
-        DrawRect(new Rect(knobX, rect.y + (rect.height - knobSize) / 2f, knobSize, knobSize), ColToggleKnob, 8.5f);
-
-        if (ClickZone(rect)) value = !value;
-    }
-
-    private static void LabelRow(Rect rect, string label) => DrawLeft(label, rect, ColText);
-
-    private static bool SmallButton(Rect rect, string label)
-    {
-        DrawRect(rect, ColBlockBorder, 6f);
-        DrawCentered(label, rect, ColText, false);
-        return ClickZone(rect);
-    }
-
-    private static void DrawLeft(string text, Rect rect, Color col)
-    {
-        Vector2 size = GetTextSize(text);
-        GUI.color = col;
-        GUI.Label(new Rect(rect.x, rect.y + (rect.height - size.y) / 2f, rect.width, size.y + 2f), text);
-        GUI.color = Color.white;
-    }
-
-    private static void DrawCentered(string text, Rect rect, Color col, bool bold)
-    {
-        Vector2 size = GetTextSize(text);
-        GUI.color = col;
-        string render = bold ? $"<b>{text}</b>" : text;
-        GUI.Label(new Rect(rect.x + (rect.width - size.x) / 2f, rect.y + (rect.height - size.y) / 2f, size.x + 2f, size.y + 2f), render);
-        GUI.color = Color.white;
-    }
-
-    private static void DrawBorder(Rect rect, Color col, float thickness)
-    {
-        GUI.color = col;
-        GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, thickness), _whiteTex);
-        GUI.DrawTexture(new Rect(rect.x, rect.yMax - thickness, rect.width, thickness), _whiteTex);
-        GUI.DrawTexture(new Rect(rect.x, rect.y, thickness, rect.height), _whiteTex);
-        GUI.DrawTexture(new Rect(rect.xMax - thickness, rect.y, thickness, rect.height), _whiteTex);
-        GUI.color = Color.white;
+        bool hov = Hover(r);
+        Color fill = active ? new Color(ColAccent.r, ColAccent.g, ColAccent.b, 0.55f)
+                            : (hov ? ColButtonHover : ColBlockBorder);
+        DrawRect(r, fill, 6f);
+        Text(r, text, _sCenter, active ? Color.white : Color.Lerp(ColText, Color.white, hov ? 1f : 0f));
+        return Click(r);
     }
 }
