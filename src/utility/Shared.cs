@@ -39,6 +39,6 @@ public static class UiState
     public static Vector2 MenuDragOffset;
     public static float MenuScale = 0.25f;
     public static float MenuScroll = 0f;
-
+    public static bool MenuPositionSet = false;
     public static bool HudWatermark = true;
 }
