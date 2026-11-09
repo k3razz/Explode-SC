@@ -79,6 +79,7 @@ public class EspBehaviour : MonoBehaviour
             if (Enum.TryParse(Plugin.CfgAimbotBone.Value, out AimBone bone)) AimbotModule.Bone = bone;
             else AimbotModule.Bone = AimBone.Head;
 
+            // ─── Weapon (раскомментируй, если конфиги есть в Plugin.cs) ───
             WeaponCheats.NoSpread = Plugin.CfgWeaponNoSpread.Value;
             WeaponCheats.NoRecoil = Plugin.CfgWeaponNoRecoil.Value;
             WeaponCheats.RapidFire = Plugin.CfgWeaponRapidFire.Value;
@@ -97,7 +98,7 @@ public class EspBehaviour : MonoBehaviour
             BombStatusRenderer.Enabled = Plugin.CfgShowBombStatus.Value;
             BombStatusRenderer.Position = new Vector2(Plugin.CfgBombStatusX.Value, Plugin.CfgBombStatusY.Value);
 
-            UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, 0.25f, 2f);
+            UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, MenuRenderer.MinScale, MenuRenderer.MaxScale);
             UiState.HudWatermark = Plugin.CfgHudWatermark.Value;
 
             if (!KeybindState.IntroPlayed)
@@ -142,7 +143,7 @@ public class EspBehaviour : MonoBehaviour
             if (KeybindState.IntroActive && !KeybindState.IntroDone)
             {
                 KeybindState.IntroAnimTime += Time.deltaTime;
-                if (KeybindState.IntroAnimTime >= 2.0f)
+                if (KeybindState.IntroAnimTime >= MenuRenderer.IntroDuration)
                 {
                     KeybindState.IntroActive = false;
                     KeybindState.IntroDone = true;
@@ -238,8 +239,416 @@ public class EspBehaviour : MonoBehaviour
         finally { WeaponLog.Active = false; }
     }
 
-    // ... (методы FindMainCameraHolder, OnGUI, RunWatchdog и т.д. остаются БЕЗ ИЗМЕНЕНИЙ)
-    
+    [HideFromIl2Cpp]
+    void FindMainCameraHolder()
+    {
+        try
+        {
+            var pm = FindPlayerManager();
+            if (pm == null) return;
+
+            var localPlayer = ReadLocalPlayerFromPm(pm);
+            if (localPlayer == null) return;
+
+            AimShared.LocalPlayer = localPlayer;
+
+            IntPtr ptr = Marshal.ReadIntPtr(localPlayer.Pointer, OFF_PC_MAINCAMHOLDER);
+            if (ptr == IntPtr.Zero)
+            {
+                Plugin.LogSource?.LogInfo("[ESP] _mainCameraHolder = null");
+                return;
+            }
+
+            var tr = new Transform(ptr);
+            if (tr != null && tr.Pointer != IntPtr.Zero)
+            {
+                _mainCameraHolder = tr;
+                AimShared.MainCameraHolder = tr;
+                Plugin.LogSource?.LogInfo($"[ESP] _mainCameraHolder found: {tr.name} (parent={tr.parent?.name})");
+            }
+        }
+        catch (Exception e)
+        {
+            Plugin.LogSource?.LogError($"[ESP] FindMainCameraHolder EX: {e.Message}");
+        }
+    }
+
+    void OnGUI()
+    {
+        try
+        {
+            if (_whiteTex == null) { _whiteTex = new Texture2D(1, 1); _whiteTex.SetPixel(0, 0, Color.white); _whiteTex.Apply(); }
+            if (_cam == null) return;
+
+            var e = Event.current;
+            bool isRepaint = e == null || e.type == EventType.Repaint;
+            bool isMouse = e != null && (e.type == EventType.MouseDown || e.type == EventType.MouseDrag || e.type == EventType.MouseUp);
+
+            if (isRepaint)
+            {
+                if (EspModule.BoxesEnabled && !UiState.MenuVisible)
+                {
+                    foreach (var t in EspModule.ToDraw)
+                    {
+                        try
+                        {
+                            if (t.Transform == null) continue;
+                            Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
+                            Vector3 fw = t.Transform.position - Vector3.up * EspModule.FootOffset;
+                            Vector3 sh = _cam.WorldToScreenPoint(hw);
+                            Vector3 sf = _cam.WorldToScreenPoint(fw);
+                            if (sh.z < 0 || sf.z < 0) continue;
+
+                            float x = sh.x;
+                            float top = Screen.height - sh.y;
+                            float bottom = Screen.height - sf.y;
+                            float height = Mathf.Abs(bottom - top);
+                            float width = height * EspModule.BoxWidthRatio;
+                            if (width < 4f) width = 4f;
+                            if (height < 8f) height = 8f;
+                            float left = x - width / 2f;
+
+                            Color fill = t.Team == 1 ? new Color(1f, 0f, 0f, 0.12f) : new Color(0f, 0.5f, 1f, 0.12f);
+                            Color outl = t.Team == 1 ? Color.red : Color.cyan;
+
+                            GUI.color = fill;
+                            GUI.DrawTexture(new Rect(left, top, width, height), _whiteTex);
+                            GUI.color = outl;
+                            float th = 2f;
+                            GUI.DrawTexture(new Rect(left, top, width, th), _whiteTex);
+                            GUI.DrawTexture(new Rect(left, top + height - th, width, th), _whiteTex);
+                            GUI.DrawTexture(new Rect(left, top, th, height), _whiteTex);
+                            GUI.DrawTexture(new Rect(left + width - th, top, th, height), _whiteTex);
+                            GUI.color = Color.white;
+                        }
+                        catch { }
+                    }
+                }
+
+                if (EspModule.NamesEnabled && !UiState.MenuVisible)
+                {
+                    foreach (var t in EspModule.ToDraw)
+                    {
+                        try
+                        {
+                            if (t.Transform == null) continue;
+                            Vector3 hw = t.Transform.position + Vector3.up * EspModule.HeadOffset;
+                            Vector3 sh = _cam.WorldToScreenPoint(hw);
+                            if (sh.z < 0) continue;
+                            float x = sh.x;
+                            float top = Screen.height - sh.y;
+                            float dist = Vector3.Distance(_cam.transform.position, t.Transform.position);
+                            if (dist > EspModule.NameMaxDist) continue;
+
+                            string lbl = t.Name + (EspModule.DistanceEnabled ? $" [{dist:F0}m]" : "");
+                            Vector2 size = GUI.skin.label.CalcSize(new GUIContent(lbl));
+                            float lw = size.x + 10f;
+                            float ll = x - lw / 2f;
+
+                            GUI.color = new Color(0f, 0f, 0f, 0.65f);
+                            GUI.DrawTexture(new Rect(ll - 2f, top - 22f, lw + 4f, 20f), _whiteTex);
+                            GUI.color = Color.white;
+                            GUI.Label(new Rect(ll, top - 21f, lw, 18f), lbl);
+                        }
+                        catch { }
+                    }
+                }
+
+                MenuRenderer.DrawFovCircle();
+                Watermark.DrawBackground(_whiteTex);
+                Watermark.DrawText();
+                BindListRenderer.Draw();
+                BombStatusRenderer.Draw();
+            }
+
+            if (isMouse)
+            {
+                Watermark.HandleDrag();
+                BindListRenderer.HandleDrag();
+                BombStatusRenderer.HandleDrag();
+            }
+
+            if (KeybindState.IntroActive && !KeybindState.IntroDone)
+            {
+                if (isRepaint) MenuRenderer.DrawIntroAnimation(_whiteTex, KeybindState.IntroAnimTime);
+                return;
+            }
+
+            if (UiState.MenuVisible)
+                MenuRenderer.DrawMenu(_whiteTex);
+        }
+        catch { }
+        finally { GUI.color = Color.white; }
+    }
+
+    void RunWatchdog()
+    {
+        _watchdogTicks++;
+        try
+        {
+            if (_botType == null && _playerType == null) { _resolved = false; ResolveTypes(); }
+            if (_watchdogTicks % 6 == 0)
+            {
+                UpdateLocalTeam();
+                string holderInfo = _mainCameraHolder == null ? "null" : _mainCameraHolder.name;
+                Plugin.LogSource?.LogInfo($"[ESP] Watchdog #{_watchdogTicks}: tracked={EspModule.TrackedDict.Count}, localTeam={_localTeam}, aimlock={AimbotModule.Enabled}, active={KeybindState.AimbotActive}, hasTarget={AimbotModule.HasTarget}, holder={holderInfo}");
+            }
+        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] Watchdog EX: {e}"); }
+    }
+
+    [HideFromIl2Cpp]
+    int ReadTeamFromMember(MemberInfo member, object target)
+    {
+        if (member == null || target == null) return -1;
+        try
+        {
+            object val = null;
+            if (member is MethodInfo m) val = m.Invoke(target, null);
+            else if (member is PropertyInfo p) val = p.GetValue(target);
+            else if (member is FieldInfo f) val = f.GetValue(target);
+            if (val != null) return Convert.ToInt32(val is Enum en ? (object)en : val);
+        }
+        catch { }
+        return -1;
+    }
+
+    [HideFromIl2Cpp]
+    int ReadByteAtOffset(object obj, int offset)
+    {
+        try
+        {
+            IntPtr ptr = IntPtr.Zero;
+            if (obj is Il2CppObjectBase il2cppObj) ptr = il2cppObj.Pointer;
+            else if (obj is Component comp) ptr = comp.Pointer;
+            if (ptr == IntPtr.Zero) return -1;
+            return Marshal.ReadByte(ptr, offset);
+        }
+        catch { return -1; }
+    }
+
+    [HideFromIl2Cpp]
+    int ReadTeam(Component component, bool isBot)
+    {
+        if (component == null) return -1;
+        if (isBot)
+        {
+            int offTeam = ReadByteAtOffset(component, OFF_BOT_TEAM);
+            if (offTeam > 0 && offTeam <= 3) return offTeam;
+            int viaCfmp = ReadTeamViaCfmp(component);
+            if (viaCfmp >= 0) return viaCfmp;
+            return -1;
+        }
+        return ReadTeamViaCfmp(component);
+    }
+
+    [HideFromIl2Cpp]
+    int ReadTeamViaCfmp(Component component)
+    {
+        if (component == null) return -1;
+        int viaMember = ReadTeamFromMember(_playerTeamMember, component);
+        if (viaMember > 0 && viaMember <= 3) return viaMember;
+        try
+        {
+            int t = Marshal.ReadByte(component.Pointer, OFF_PC_CFMP);
+            if (t > 0 && t <= 3) return t;
+        }
+        catch { }
+        return -1;
+    }
+
+    [HideFromIl2Cpp]
+    Component FindPlayerManager()
+    {
+        if (_playerManagerType == null) return null;
+        if (_cachedPm != null)
+        {
+            try { if (_cachedPm.Pointer != IntPtr.Zero) return _cachedPm; } catch { }
+            _cachedPm = null;
+        }
+        try
+        {
+            var obj = UnityEngine.Object.FindObjectOfType(_playerManagerType);
+            if (obj != null)
+            {
+                _cachedPm = obj.TryCast<Component>();
+                if (_cachedPm != null)
+                {
+                    Plugin.LogSource?.LogInfo("[ESP] PlayerManager found via FindObjectOfType");
+                    return _cachedPm;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            LogThrottled("pm_foft_ex", $"[ESP] FindObjectOfType(PM) EX: {e.Message}", true);
+        }
+        return null;
+    }
+
+    [HideFromIl2Cpp]
+    Component ReadLocalPlayerFromPm(Component pm)
+    {
+        if (pm == null) return null;
+        try
+        {
+            IntPtr lpPtr = Marshal.ReadIntPtr(pm.Pointer, OFF_PM_CFOG);
+            if (lpPtr != IntPtr.Zero)
+            {
+                var lp = new Component(lpPtr);
+                if (lp != null && lp.Pointer != IntPtr.Zero) return lp;
+            }
+        }
+        catch { }
+        try
+        {
+            var dpkyProp = _playerManagerType.GetProperty("dpky",
+                (Il2CppSystem.Reflection.BindingFlags)(int)(
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.Instance));
+            if (dpkyProp != null)
+            {
+                var val = dpkyProp.GetValue(pm.Cast<Il2CppSystem.Object>());
+                if (val != null)
+                {
+                    var comp = val.TryCast<Component>();
+                    if (comp != null) return comp;
+                }
+            }
+        }
+        catch { }
+        try
+        {
+            var cfogField = _playerManagerType.GetField("<cfog>k__BackingField",
+                (Il2CppSystem.Reflection.BindingFlags)(int)(
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Instance));
+            if (cfogField != null)
+            {
+                var val = cfogField.GetValue(pm.Cast<Il2CppSystem.Object>());
+                if (val != null)
+                {
+                    var comp = val.TryCast<Component>();
+                    if (comp != null) return comp;
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    [HideFromIl2Cpp]
+    void UpdateLocalTeam()
+    {
+        try
+        {
+            if (_playerManagerType == null) return;
+            if (_cachedPm == null)
+            {
+                _pmRetryTimer += Time.deltaTime;
+                if (_pmRetryTimer < PmRetryInterval) return;
+                _pmRetryTimer = 0f;
+            }
+            var pm = FindPlayerManager();
+            if (pm == null)
+            {
+                LogThrottled("pm_null", "[ESP] PlayerManager not found", true);
+                return;
+            }
+            var localPlayer = ReadLocalPlayerFromPm(pm);
+            if (localPlayer == null)
+            {
+                LogThrottled("cfog_null", "[ESP] localPlayer is null", true);
+                return;
+            }
+            int newTeam = ReadTeamViaCfmp(localPlayer);
+            if (newTeam >= 0 && newTeam != _localTeam)
+            {
+                Plugin.LogSource?.LogInfo($"[ESP] Local team: {_localTeam} -> {newTeam}");
+                _localTeam = newTeam;
+            }
+        }
+        catch (Exception e) { LogThrottled("localt_ex", $"[ESP] LocalTeam EX: {e.Message}", true); }
+    }
+
+    [HideFromIl2Cpp]
+    private static bool IsTeamEnum(Type t) =>
+        t != null && t.IsEnum && (t.Name == "Team" || (t.FullName != null && t.FullName.EndsWith(".Team")));
+
+    [HideFromIl2Cpp]
+    private static Type FindTypeByName(string shortName, out string full)
+    {
+        full = null;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try { var d = asm.GetType(shortName); if (d != null) { full = d.FullName; return d; } } catch { }
+            try
+            {
+                foreach (var t in asm.GetTypes())
+                {
+                    if (t.Name == shortName) { full = t.FullName; return t; }
+                }
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    [HideFromIl2Cpp]
+    private static Type FindTypeByFullName(string fullName)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try { var t = asm.GetType(fullName); if (t != null) return t; } catch { }
+        }
+        return null;
+    }
+
+    [HideFromIl2Cpp]
+    private static MemberInfo FindTeamMember(Type start, out string owner)
+    {
+        owner = null;
+        if (start == null) return null;
+        Type s = start; int depth = 0;
+        while (s != null && s != typeof(object) && depth < 10)
+        {
+            foreach (var m in s.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (m.GetParameters().Length == 0 && IsTeamEnum(m.ReturnType)) { owner = $"{s.Name}.{m.Name}()"; return m; }
+            foreach (var p in s.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (IsTeamEnum(p.PropertyType) && p.GetGetMethod(true) != null) { owner = $"{s.Name}.{p.Name}"; return p; }
+            foreach (var f in s.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (IsTeamEnum(f.FieldType)) { owner = $"{s.Name}.{f.Name}"; return f; }
+            s = s.BaseType; depth++;
+        }
+        return null;
+    }
+
+    [HideFromIl2Cpp]
+    private static void ResolveTypes()
+    {
+        if (_resolved) return;
+        _resolved = true;
+        try
+        {
+            var bt = FindTypeByName("BotPlayerController", out _);
+            var pt = FindTypeByName("PlayerController", out _);
+
+            var pmType = FindTypeByFullName("Chillow.StandChillow.Player.PlayerManager")
+                         ?? FindTypeByName("PlayerManager", out _);
+
+            if (bt != null) _botType = Il2CppType.From(bt);
+            if (pt != null) _playerType = Il2CppType.From(pt);
+            if (pmType != null) _playerManagerType = Il2CppType.From(pmType);
+
+            _playerTeamMember = null;
+            string owner = null;
+            _playerTeamMember = FindTeamMember(pt, out owner);
+            Plugin.LogSource?.LogInfo($"[ESP] Team member: {owner ?? "null"}");
+            Plugin.LogSource?.LogInfo($"[ESP] Resolve: Bot={_botType != null}, Player={_playerType != null}, PM={_playerManagerType != null}, PMType={(pmType?.FullName ?? "null")}, Team={_playerTeamMember != null}");
+        }
+        catch (Exception e) { Plugin.LogSource?.LogError($"[ESP] ResolveTypes EX: {e}"); }
+    }
+
     void DoScan()
     {
         try
@@ -248,7 +657,7 @@ public class EspBehaviour : MonoBehaviour
             if (_botType == null && _playerType == null) return;
             UpdateLocalTeam();
             
-            AimbotModule.ClearCaches(); // Очищаем кэш костей при скане
+            AimbotModule.ClearCaches(); // очистка кэша костей
             
             EspModule.SeenList.Clear();
             ScanTypeInternal(_botType, true, "Bot");
@@ -258,5 +667,60 @@ public class EspBehaviour : MonoBehaviour
             foreach (var id in dead) EspModule.TrackedDict.Remove(id);
         }
         catch (Exception e) { LogThrottled("scan_ex", $"[ESP] DoScan EX: {e}", true); }
+    }
+
+    void ScanTypeInternal(Il2CppSystem.Type type, bool isBot, string label)
+    {
+        if (type == null) return;
+        try
+        {
+            var arr = FindObjectsOfType(type, false);
+            if (arr == null) return;
+            for (int i = 0; i < arr.Length; i++)
+            {
+                try
+                {
+                    var o = arr[i];
+                    if (o == null) continue;
+                    var c = o.TryCast<Component>();
+                    if (c == null) continue;
+                    var tr = c.transform;
+                    if (tr == null) continue;
+                    var go = c.gameObject;
+                    if (go == null) continue;
+                    int id = go.GetInstanceID();
+                    if (EspModule.SeenList.Contains(id)) continue;
+                    EspModule.SeenList.Add(id);
+
+                    int team = ReadTeam(c, isBot);
+                    string name = TryGetName(c, isBot);
+                    object biped = null;
+                    try { var bf = c.GetType().GetField("_characterBiped", BindingFlags.NonPublic | BindingFlags.Instance); if (bf != null) biped = bf.GetValue(c); } catch { }
+
+                    bool isNew = !EspModule.TrackedDict.ContainsKey(id);
+                    EspModule.TrackedDict[id] = new Tracked { Transform = tr, IsBot = isBot, Team = team, Name = name, BipedMap = biped };
+                    if (isNew) Plugin.LogSource?.LogInfo($"[ESP] +{label}: '{name}' team={team}");
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    [HideFromIl2Cpp]
+    string TryGetName(Component c, bool isBot)
+    {
+        try
+        {
+            foreach (var p in c.GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (p.PropertyType == typeof(string))
+                {
+                    var v = p.GetValue(c) as string;
+                    if (!string.IsNullOrEmpty(v) && v.Length < 25 && !v.Contains("Clone") && !v.Contains("Player") && !v.Contains("Bot")) return v;
+                }
+        }
+        catch { }
+        try { var n = c.gameObject.name; if (!string.IsNullOrEmpty(n) && n != "Player(Clone)" && n != "Bot" && n != "Player") return n; } catch { }
+        return isBot ? "Bot" : "Player";
     }
 }
