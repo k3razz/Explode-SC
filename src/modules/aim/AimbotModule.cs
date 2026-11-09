@@ -19,7 +19,7 @@ public static class AimbotModule
     public static float Fov = 20f;
     public static bool DrawFovCircle = false;
     public static float Sensitivity = 0.15f;
-    public static AimBone Bone = AimBone.Head;
+    public static AimBone Bone = AimBone.Neck; // По умолчанию шея
     public static bool AimOnTeammates = false;
 
     public static bool HasTarget = false;
@@ -33,10 +33,9 @@ public static class AimbotModule
     private const float ChestOffset = 1.1f;
     private const float NeckOffset = 1.45f;
 
-    // Из дампа: BipedMap.Head = 0x20, BipedMap.Neck = 0x28
     private const int OFF_BIPED_HEAD = 0x20;
     private const int OFF_BIPED_NECK = 0x28;
-    private const int OFF_BIPED_SPINE = 0x30; // предполагаем, что Chest/Spine = 0x30
+    private const int OFF_BIPED_SPINE = 0x30;
 
     private static readonly Dictionary<int, Animator> _animatorCache = new();
     private static readonly Dictionary<int, Transform> _boneCache = new();
@@ -78,7 +77,7 @@ public static class AimbotModule
     {
         if (t == null || t.Transform == null) return Vector3.zero;
 
-        // 1. BipedMap — самый точный для этой игры (из дампа: Head = 0x20, Neck = 0x28)
+        // 1. BipedMap (самый точный для этой игры)
         if (t.BipedMap != null)
         {
             int offset = Bone == AimBone.Head ? OFF_BIPED_HEAD
@@ -89,7 +88,7 @@ public static class AimbotModule
             if (tr != null) return tr.position;
         }
 
-        // 2. Animator — если BipedMap пустой
+        // 2. Animator
         int id = t.Transform.gameObject.GetInstanceID();
         var anim = GetCachedAnimator(id, t.Transform.gameObject);
         if (anim != null && anim.isHuman)
@@ -102,7 +101,7 @@ public static class AimbotModule
             if (tr != null) return tr.position;
         }
 
-        // 3. Смещение от корня — если всё остальное не сработало
+        // 3. Фоллбэк
         float fallback = Bone == AimBone.Head ? HeadOffset
                        : Bone == AimBone.Neck ? NeckOffset
                        : ChestOffset;
