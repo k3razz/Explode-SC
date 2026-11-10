@@ -20,7 +20,7 @@ public static class MenuRenderer
     private const float Pad = 10f;
     private const float SidebarDividerX = 104f;
     private const float ContentX = 118f;
-    private const int SectionCount = 3;
+    private const int SectionCount = 4;
 
     private const string HeaderTitle = "<color=#FF8C1A>E</color>xplode";
 
@@ -41,6 +41,8 @@ public static class MenuRenderer
 
     private static readonly string[] BoneNames = { "Neck", "Head", "Chest" };
     private static readonly string[] ModeNames = { "Hold", "Toggle" };
+    private static readonly string[] AA_YawNames = { "Up", "Down" };
+    private static readonly string[] AA_DirNames = { "Left", "Right", "Forward", "Backward" };
 
     private static Texture2D _white, _circle, _ring;
     private static readonly Dictionary<int, GUIStyle> _fillStyles = new();
@@ -61,8 +63,9 @@ public static class MenuRenderer
     private static int _introFs;
     private static float _introWE, _introWR;
 
+    // Dropdown state
     private static int _openDropdown = -1;
-    private static Rect _dropdownRect;
+    private static Rect _dropdownBtnRect;
     private static string[] _dropdownOptions;
     private static int _dropdownSelected;
     private static Action<int> _dropdownCallback;
@@ -401,17 +404,22 @@ public static class MenuRenderer
         tabY += 36f;
         if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Legit", 1)) SetSection(1);
         tabY += 36f;
+        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Rage", 2)) SetSection(2);
+        tabY += 36f;
 
         tabY += 8f;
         Text(new Rect(tabX + 8f, tabY, TabWidth, 18f), "Screen", _sLeft, ColTextDim);
         tabY += 22f;
-        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Hud", 2)) SetSection(2);
+        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Hud", 3)) SetSection(3);
 
         DrawRect(new Rect(SidebarDividerX, HeaderH + Pad, 1f, BaseHeight - HeaderH - Pad * 2f), ColLine);
 
         float cy = HeaderH + Pad;
         Rect view = new Rect(ContentX, cy, BaseWidth - ContentX - Pad, BaseHeight - cy - Pad);
         DrawScrollable(view, Mathf.Clamp(UiState.MenuSection, 0, SectionCount - 1));
+
+        // Draw dropdown on TOP of everything
+        DrawDropdownOverlay();
 
         GUI.matrix = oldMatrix;
         _alpha = 1f;
@@ -549,6 +557,7 @@ public static class MenuRenderer
         {
             case 0: DrawEspBlock(); break;
             case 1: DrawAimBlock(); break;
+            case 2: DrawRageBlock(); break;
             default: DrawHudBlock(); break;
         }
 
@@ -565,22 +574,29 @@ public static class MenuRenderer
             DrawRect(new Rect(track.x, thumbY, track.width, thumbH),
                      new Color(ColDivider.r, ColDivider.g, ColDivider.b, active ? 0.65f : 0.35f), 3f);
         }
-
-        DrawDropdownOverlay();
     }
 
+    // Dropdown overlay рисуется в координатах МЕНЮ (не скролла), чтобы быть поверх
     private static void DrawDropdownOverlay()
     {
         if (_openDropdown == -1 || _dropdownOptions == null) return;
 
         Event e = Event.current;
-        Rect listRect = new Rect(_dropdownRect.x, _dropdownRect.y, _dropdownRect.width, _dropdownOptions.Length * 22f + 4f);
+
+        // Кнопка dropdown (в координатах меню)
+        Rect btn = _dropdownBtnRect;
+
+        // Список под кнопкой
+        float itemH = 22f;
+        float listH = _dropdownOptions.Length * itemH + 4f;
+        Rect listRect = new Rect(btn.x, btn.yMax + 2f, btn.width, listH);
+
         DrawRect(listRect, ColBlockBg, 6f);
         DrawOutline(listRect, ColBlockBorder, 6f);
 
         for (int i = 0; i < _dropdownOptions.Length; i++)
         {
-            Rect item = new Rect(listRect.x + 2f, listRect.y + 2f + i * 22f, listRect.width - 4f, 22f);
+            Rect item = new Rect(listRect.x + 2f, listRect.y + 2f + i * itemH, listRect.width - 4f, itemH);
             bool hover = Hover(item);
             if (hover) DrawRect(item, new Color(1f, 1f, 1f, 0.06f), 4f);
             Text(item, _dropdownOptions[i], _sLeft, i == _dropdownSelected ? ColAccent : ColText);
@@ -591,7 +607,7 @@ public static class MenuRenderer
             }
         }
 
-        if (e != null && e.type == EventType.MouseDown && !listRect.Contains(e.mousePosition) && !_dropdownRect.Contains(e.mousePosition))
+        if (e != null && e.type == EventType.MouseDown && !listRect.Contains(e.mousePosition) && !btn.Contains(e.mousePosition))
             _openDropdown = -1;
     }
 
@@ -605,7 +621,6 @@ public static class MenuRenderer
 
         Space(8f);
         BlockTitle("World");
-        // Пока пусто
     }
 
     private static void DrawAimBlock()
@@ -663,6 +678,37 @@ public static class MenuRenderer
                 KeybindState.AimbotKey = KeybindState.CapturingBackup;
                 KeybindState.Capturing = false;
             }
+        }
+    }
+
+    private static void DrawRageBlock()
+    {
+        BlockTitle("RAGE");
+        ToggleRow("Anti-Aim", ref AntiAimModule.Enabled);
+        if (Plugin.CfgAntiAimEnabled != null) Plugin.CfgAntiAimEnabled.Value = AntiAimModule.Enabled;
+
+        if (AntiAimModule.Enabled)
+        {
+            Space(4f);
+
+            int yawIdx = AntiAimModule.Yaw == AntiAimYaw.Up ? 0 : 1;
+            Dropdown("AA Yaw", AA_YawNames, yawIdx, (i) =>
+            {
+                AntiAimModule.Yaw = i == 0 ? AntiAimYaw.Up : AntiAimYaw.Down;
+                Plugin.CfgAntiAimYaw.Value = AntiAimModule.Yaw.ToString();
+            });
+
+            int dirIdx = (int)AntiAimModule.Direction;
+            Dropdown("AA Dir", AA_DirNames, dirIdx, (i) =>
+            {
+                AntiAimModule.Direction = (AntiAimDir)i;
+                Plugin.CfgAntiAimDir.Value = AntiAimModule.Direction.ToString();
+            });
+
+            float angle = AntiAimModule.YawAngle;
+            bool angleDone = Slider("AA Angle", ref angle, 0f, 89f, "F0", "°", 1f);
+            if (!Mathf.Approximately(angle, AntiAimModule.YawAngle)) AntiAimModule.YawAngle = angle;
+            if (angleDone) Plugin.CfgAntiAimAngle.Value = AntiAimModule.YawAngle;
         }
     }
 
@@ -775,22 +821,42 @@ public static class MenuRenderer
         v = Mathf.Clamp(val, min, max);
     }
 
+    // Dropdown — кнопка в координатах МЕНЮ. Overlay рисуется в DrawMenu.
     private static void Dropdown(string label, string[] options, int selected, Action<int> onSelect)
     {
         Rect r = Next(30f);
         Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), label, _sLeft, ColText);
 
-        Rect btn = new Rect(r.xMax - 8f - 150f, r.y + 3f, 150f, 24f);
+        // Кнопка в ЛОКАЛЬНЫХ координатах скролла
+        Rect localBtn = new Rect(r.xMax - 8f - 150f, r.y + 3f, 150f, 24f);
+
+        // Переводим в глобальные координаты (экранные), чтобы overlay рисовался поверх
+        Vector2 screenTL = GUI.matrix.MultiplyPoint3x4(new Vector3(localBtn.x, localBtn.y, 0));
+        Rect btnScreen = new Rect(screenTL.x, screenTL.y, localBtn.width * Scale(), localBtn.height * Scale());
+
+        // Внутри меню кнопка рисуется в локальных координатах (для отображения)
         int id = label.GetHashCode();
         bool open = _openDropdown == id;
 
-        if (Button(btn, options[selected] + (open ? " ▲" : " ▼"), open))
+        // Временный overlay-контекст: рисуем кнопку в локальных координатах
+        GUIStyle st = new GUIStyle(_sCenter) { };
+        bool clicked = false;
+
+        // Рисуем кнопку (в локальных координатах через DrawRect и Text)
+        Color fill = open ? new Color(ColAccent.r, ColAccent.g, ColAccent.b, 0.55f)
+                          : (Hover(localBtn) ? ColButtonHover : ColBlockBorder);
+        DrawRect(localBtn, fill, 6f);
+        Text(localBtn, options[selected] + (open ? " ▲" : " ▼"), _sCenter,
+             open ? Color.white : ColText);
+
+        // Клик по кнопке
+        if (Click(localBtn))
         {
             if (open) _openDropdown = -1;
             else
             {
                 _openDropdown = id;
-                _dropdownRect = btn;
+                _dropdownBtnRect = btnScreen;
                 _dropdownOptions = options;
                 _dropdownSelected = selected;
                 _dropdownCallback = onSelect;
