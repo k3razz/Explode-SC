@@ -41,8 +41,6 @@ public static class MenuRenderer
 
     private static readonly string[] BoneNames = { "Neck", "Head", "Chest" };
     private static readonly string[] ModeNames = { "Hold", "Toggle" };
-    private static readonly string[] AA_YawNames = { "Up", "Down" };
-    private static readonly string[] AA_DirNames = { "Left", "Right", "Forward", "Backward" };
 
     private static Texture2D _white, _circle, _ring;
     private static readonly Dictionary<int, GUIStyle> _fillStyles = new();
@@ -403,7 +401,7 @@ public static class MenuRenderer
         tabY += 36f;
         if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Legit", 1)) SetSection(1);
         tabY += 36f;
-        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Rage", 2)) SetSection(2);
+        if (SectionButton(new Rect(tabX, tabY, TabWidth, 32f), "Movement", 2)) SetSection(2);
         tabY += 36f;
 
         tabY += 8f;
@@ -417,7 +415,6 @@ public static class MenuRenderer
         Rect view = new Rect(ContentX, cy, BaseWidth - ContentX - Pad, BaseHeight - cy - Pad);
         DrawScrollable(view, Mathf.Clamp(UiState.MenuSection, 0, SectionCount - 1));
 
-        // Draw dropdown on TOP of everything
         DrawDropdownOverlay();
 
         GUI.matrix = oldMatrix;
@@ -556,7 +553,7 @@ public static class MenuRenderer
         {
             case 0: DrawEspBlock(); break;
             case 1: DrawAimBlock(); break;
-            case 2: DrawRageBlock(); break;
+            case 2: DrawMovementBlock(); break;
             default: DrawHudBlock(); break;
         }
 
@@ -677,34 +674,19 @@ public static class MenuRenderer
         }
     }
 
-    private static void DrawRageBlock()
+    private static void DrawMovementBlock()
     {
-        BlockTitle("RAGE");
-        ToggleRow("Anti-Aim", ref AntiAimModule.Enabled);
-        if (Plugin.CfgAntiAimEnabled != null) Plugin.CfgAntiAimEnabled.Value = AntiAimModule.Enabled;
+        BlockTitle("MOVEMENT");
+        ToggleRow("Bunnyhop", ref BunnyhopModule.Enabled);
+        if (Plugin.CfgBunnyhopEnabled != null) Plugin.CfgBunnyhopEnabled.Value = BunnyhopModule.Enabled;
 
-        if (AntiAimModule.Enabled)
+        if (BunnyhopModule.Enabled)
         {
             Space(4f);
-
-            int yawIdx = AntiAimModule.Yaw == AntiAimYaw.Up ? 0 : 1;
-            Dropdown("AA Yaw", AA_YawNames, yawIdx, (i) =>
-            {
-                AntiAimModule.Yaw = i == 0 ? AntiAimYaw.Up : AntiAimYaw.Down;
-                Plugin.CfgAntiAimYaw.Value = AntiAimModule.Yaw.ToString();
-            });
-
-            int dirIdx = (int)AntiAimModule.Direction;
-            Dropdown("AA Dir", AA_DirNames, dirIdx, (i) =>
-            {
-                AntiAimModule.Direction = (AntiAimDir)i;
-                Plugin.CfgAntiAimDir.Value = AntiAimModule.Direction.ToString();
-            });
-
-            float angle = AntiAimModule.YawAngle;
-            bool angleDone = Slider("AA Angle", ref angle, 0f, 89f, "F0", "°", 1f);
-            if (!Mathf.Approximately(angle, AntiAimModule.YawAngle)) AntiAimModule.YawAngle = angle;
-            if (angleDone) Plugin.CfgAntiAimAngle.Value = AntiAimModule.YawAngle;
+            float mult = BunnyhopModule.Multiplier;
+            bool multDone = Slider("Speed Multiplier", ref mult, 1.1f, 3f, "F2", "x", 0.1f);
+            if (!Mathf.Approximately(mult, BunnyhopModule.Multiplier)) BunnyhopModule.Multiplier = mult;
+            if (multDone) Plugin.CfgBunnyhopMultiplier.Value = BunnyhopModule.Multiplier;
         }
     }
 
@@ -822,10 +804,8 @@ public static class MenuRenderer
         Rect r = Next(30f);
         Text(new Rect(r.x + 8f, r.y, r.width / 2f, r.height), label, _sLeft, ColText);
 
-        // Кнопка в ЛОКАЛЬНЫХ координатах скролла
         Rect localBtn = new Rect(r.xMax - 8f - 150f, r.y + 3f, 150f, 24f);
 
-        // Переводим в экранные координаты (для overlay)
         Vector3 screenTL = GUI.matrix.MultiplyPoint3x4(new Vector3(localBtn.x, localBtn.y, 0));
         Rect btnScreen = new Rect(screenTL.x, screenTL.y, localBtn.width * Scale(), localBtn.height * Scale());
 
