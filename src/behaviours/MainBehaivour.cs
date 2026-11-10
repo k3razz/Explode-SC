@@ -257,7 +257,6 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            // Anti-Aim
             if (AntiAimModule.Enabled)
             {
                 var pm = FindPlayerManager();
