@@ -97,10 +97,8 @@ public class EspBehaviour : MonoBehaviour
             UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, MenuRenderer.MinScale, MenuRenderer.MaxScale);
             UiState.HudWatermark = Plugin.CfgHudWatermark.Value;
 
-            AntiAimModule.Enabled = Plugin.CfgAntiAimEnabled.Value;
-            if (Enum.TryParse(Plugin.CfgAntiAimYaw.Value, out AntiAimYaw yaw)) AntiAimModule.Yaw = yaw;
-            if (Enum.TryParse(Plugin.CfgAntiAimDir.Value, out AntiAimDir dir)) AntiAimModule.Direction = dir;
-            AntiAimModule.YawAngle = Plugin.CfgAntiAimAngle.Value;
+            BunnyhopModule.Enabled = Plugin.CfgBunnyhopEnabled.Value;
+            BunnyhopModule.Multiplier = Plugin.CfgBunnyhopMultiplier.Value;
 
             if (!KeybindState.IntroPlayed)
             {
@@ -127,7 +125,7 @@ public class EspBehaviour : MonoBehaviour
     void OnDestroy()
     {
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
-        AntiAimModule.Clear();
+        BunnyhopModule.Clear();
         if (Instance == this) Instance = null;
     }
 
@@ -217,6 +215,7 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
+            // Aimbot
             if (AimbotModule.Enabled)
             {
                 if (_cam == null) _cam = Camera.main;
@@ -257,14 +256,15 @@ public class EspBehaviour : MonoBehaviour
                 }
             }
 
-            if (AntiAimModule.Enabled)
+            // Bunnyhop
+            if (BunnyhopModule.Enabled)
             {
                 var pm = FindPlayerManager();
                 if (pm != null)
                 {
                     var localPlayer = ReadLocalPlayerFromPm(pm);
                     if (localPlayer != null)
-                        AntiAimModule.Update(localPlayer);
+                        BunnyhopModule.Update(localPlayer);
                 }
             }
         }
