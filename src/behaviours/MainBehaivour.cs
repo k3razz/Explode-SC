@@ -27,6 +27,9 @@ public class EspBehaviour : MonoBehaviour
     private static MemberInfo _playerTeamMember;
     private static Il2CppSystem.Type _playerManagerType;
     private int _localTeam = -1;
+    private float _teamCheckTimer;
+    private const float TeamCheckInterval = 10.0f;
+    private string _lastMapName = "";
 
     private Component _cachedPm;
     private float _pmRetryTimer;
@@ -94,6 +97,11 @@ public class EspBehaviour : MonoBehaviour
             UiState.MenuScale = Mathf.Clamp(Plugin.CfgMenuScale.Value, MenuRenderer.MinScale, MenuRenderer.MaxScale);
             UiState.HudWatermark = Plugin.CfgHudWatermark.Value;
 
+            AntiAimModule.Enabled = Plugin.CfgAntiAimEnabled.Value;
+            if (Enum.TryParse(Plugin.CfgAntiAimYaw.Value, out AntiAimYaw yaw)) AntiAimModule.Yaw = yaw;
+            if (Enum.TryParse(Plugin.CfgAntiAimDir.Value, out AntiAimDir dir)) AntiAimModule.Direction = dir;
+            AntiAimModule.YawAngle = Plugin.CfgAntiAimAngle.Value;
+
             if (!KeybindState.IntroPlayed)
             {
                 KeybindState.IntroPlayed = true;
@@ -119,6 +127,7 @@ public class EspBehaviour : MonoBehaviour
     void OnDestroy()
     {
         try { if (_whiteTex != null) Destroy(_whiteTex); } catch { }
+        AntiAimModule.Clear();
         if (Instance == this) Instance = null;
     }
 
@@ -155,6 +164,27 @@ public class EspBehaviour : MonoBehaviour
                     (Screen.width - Screen.width * UiState.MenuScale) / 2f,
                     (Screen.height - Screen.height * UiState.MenuScale) / 2f);
 
+            try
+            {
+                string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+                if (currentScene != _lastMapName)
+                {
+                    _lastMapName = currentScene;
+                    _localTeam = -1;
+                    _cachedPm = null;
+                    Plugin.LogSource?.LogInfo($"[ESP] Scene changed to '{currentScene}', localTeam reset.");
+                }
+            }
+            catch { }
+
+            _teamCheckTimer += Time.deltaTime;
+            if (_teamCheckTimer >= TeamCheckInterval)
+            {
+                _teamCheckTimer = 0f;
+                _cachedPm = null;
+                UpdateLocalTeam();
+            }
+
             _holderCheckTimer += Time.deltaTime;
             if (_holderCheckTimer >= HolderCheckInterval)
             {
@@ -187,43 +217,56 @@ public class EspBehaviour : MonoBehaviour
     {
         try
         {
-            if (!AimbotModule.Enabled) return;
-            if (_cam == null) _cam = Camera.main;
-            if (_cam == null) return;
-            AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
-
-            if (!KeybindState.AimbotActive) return;
-            if (!AimbotModule.HasTarget) return;
-
-            var cur = AimbotModule.CurrentTarget;
-            if (!AimbotModule.AimOnTeammates && cur != null && _localTeam > 0 && cur.Team > 0 && cur.Team == _localTeam)
-                return;
-
-            float angleX = AimbotModule.TargetAngleX;
-            float angleY = AimbotModule.TargetAngleY;
-
-            float angleMag = Mathf.Sqrt(angleX * angleX + angleY * angleY);
-            if (angleMag > AimbotModule.Fov) return;
-
-            float sens = Mathf.Clamp(AimbotModule.Sensitivity, 0.01f, 3f);
-            float px = angleX * sens;
-            float py = angleY * sens;
-
-            const float MaxStep = 150f;
-            if (px > MaxStep) px = MaxStep;
-            if (px < -MaxStep) px = -MaxStep;
-            if (py > MaxStep) py = MaxStep;
-            if (py < -MaxStep) py = -MaxStep;
-
-            int dx = Mathf.RoundToInt(px);
-            int dy = Mathf.RoundToInt(py);
-
-            if (dx == 0 && Mathf.Abs(px) > 0.01f) dx = px > 0 ? 1 : -1;
-            if (dy == 0 && Mathf.Abs(py) > 0.01f) dy = py > 0 ? 1 : -1;
-
-            if (dx != 0 || dy != 0)
+            if (AimbotModule.Enabled)
             {
-                MouseEmulator.Move(dx, dy);
+                if (_cam == null) _cam = Camera.main;
+                if (_cam != null)
+                {
+                    AimbotModule.Update(_cam, _localTeam, EspModule.TrackedDict);
+
+                    if (KeybindState.AimbotActive && AimbotModule.HasTarget)
+                    {
+                        var cur = AimbotModule.CurrentTarget;
+                        if (!AimbotModule.AimOnTeammates && cur != null && _localTeam > 0 && cur.Team > 0 && cur.Team == _localTeam)
+                        {
+                            // skip
+                        }
+                        else
+                        {
+                            float angleX = AimbotModule.TargetAngleX;
+                            float angleY = AimbotModule.TargetAngleY;
+                            float sens = Mathf.Clamp(AimbotModule.Sensitivity, 0.01f, 3f);
+                            float px = angleX * sens;
+                            float py = angleY * sens;
+
+                            const float MaxStep = 150f;
+                            if (px > MaxStep) px = MaxStep;
+                            if (px < -MaxStep) px = -MaxStep;
+                            if (py > MaxStep) py = MaxStep;
+                            if (py < -MaxStep) py = -MaxStep;
+
+                            int dx = Mathf.RoundToInt(px);
+                            int dy = Mathf.RoundToInt(py);
+
+                            if (dx == 0 && Mathf.Abs(px) > 0.01f) dx = px > 0 ? 1 : -1;
+                            if (dy == 0 && Mathf.Abs(py) > 0.01f) dy = py > 0 ? 1 : -1;
+
+                            if (dx != 0 || dy != 0) MouseEmulator.Move(dx, dy);
+                        }
+                    }
+                }
+            }
+
+            // Anti-Aim
+            if (AntiAimModule.Enabled)
+            {
+                var pm = FindPlayerManager();
+                if (pm != null)
+                {
+                    var localPlayer = ReadLocalPlayerFromPm(pm);
+                    if (localPlayer != null)
+                        AntiAimModule.Update(localPlayer);
+                }
             }
         }
         catch (Exception e) { LogThrottled("aim_ex", $"[ESP] LateUpdate EX: {e.Message}", true); }
@@ -646,9 +689,9 @@ public class EspBehaviour : MonoBehaviour
             ResolveTypes();
             if (_botType == null && _playerType == null) return;
             UpdateLocalTeam();
-            
+
             AimbotModule.ClearCaches();
-            
+
             EspModule.SeenList.Clear();
             ScanTypeInternal(_botType, true, "Bot");
             ScanTypeInternal(_playerType, false, "Player");
