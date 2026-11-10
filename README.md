@@ -4,7 +4,7 @@
 > BunnyHop currently doesnt works
 > Module setting dropdown shows incorrectly 
 
-> [!ERROR]
+> [!BUG]
 > BunnyHop currently doesnt works
 > Module setting dropdown shows incorrectly 
 
