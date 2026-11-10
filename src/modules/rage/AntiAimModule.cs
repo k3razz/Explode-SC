@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 using System;
 using System.Collections.Generic;
 using Il2CppInterop.Runtime.InteropTypes;
@@ -27,9 +28,15 @@ public static class AntiAimModule
     {
         if (!Enabled || localPlayer == null) return;
 
-        if (Input.GetMouseButtonDown(0) || KeybindState.AimbotActive)
+        // Проверяем именно ЛКМ (независимо от бинда аима)
+        bool shooting = false;
+        var mouse = Mouse.current;
+        if (mouse != null)
+            shooting = mouse.leftButton.isPressed;
+
+        if (shooting)
         {
-            _disableTimer = 0.05f;
+            _disableTimer = 0.05f; // 50 мс
             Restore();
             return;
         }
