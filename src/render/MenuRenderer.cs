@@ -63,7 +63,6 @@ public static class MenuRenderer
     private static int _introFs;
     private static float _introWE, _introWR;
 
-    // Dropdown state
     private static int _openDropdown = -1;
     private static Rect _dropdownBtnRect;
     private static string[] _dropdownOptions;
@@ -576,17 +575,14 @@ public static class MenuRenderer
         }
     }
 
-    // Dropdown overlay рисуется в координатах МЕНЮ (не скролла), чтобы быть поверх
     private static void DrawDropdownOverlay()
     {
         if (_openDropdown == -1 || _dropdownOptions == null) return;
 
         Event e = Event.current;
 
-        // Кнопка dropdown (в координатах меню)
         Rect btn = _dropdownBtnRect;
 
-        // Список под кнопкой
         float itemH = 22f;
         float listH = _dropdownOptions.Length * itemH + 4f;
         Rect listRect = new Rect(btn.x, btn.yMax + 2f, btn.width, listH);
@@ -821,7 +817,6 @@ public static class MenuRenderer
         v = Mathf.Clamp(val, min, max);
     }
 
-    // Dropdown — кнопка в координатах МЕНЮ. Overlay рисуется в DrawMenu.
     private static void Dropdown(string label, string[] options, int selected, Action<int> onSelect)
     {
         Rect r = Next(30f);
@@ -830,26 +825,19 @@ public static class MenuRenderer
         // Кнопка в ЛОКАЛЬНЫХ координатах скролла
         Rect localBtn = new Rect(r.xMax - 8f - 150f, r.y + 3f, 150f, 24f);
 
-        // Переводим в глобальные координаты (экранные), чтобы overlay рисовался поверх
-        Vector2 screenTL = GUI.matrix.MultiplyPoint3x4(new Vector3(localBtn.x, localBtn.y, 0));
+        // Переводим в экранные координаты (для overlay)
+        Vector3 screenTL = GUI.matrix.MultiplyPoint3x4(new Vector3(localBtn.x, localBtn.y, 0));
         Rect btnScreen = new Rect(screenTL.x, screenTL.y, localBtn.width * Scale(), localBtn.height * Scale());
 
-        // Внутри меню кнопка рисуется в локальных координатах (для отображения)
         int id = label.GetHashCode();
         bool open = _openDropdown == id;
 
-        // Временный overlay-контекст: рисуем кнопку в локальных координатах
-        GUIStyle st = new GUIStyle(_sCenter) { };
-        bool clicked = false;
-
-        // Рисуем кнопку (в локальных координатах через DrawRect и Text)
         Color fill = open ? new Color(ColAccent.r, ColAccent.g, ColAccent.b, 0.55f)
                           : (Hover(localBtn) ? ColButtonHover : ColBlockBorder);
         DrawRect(localBtn, fill, 6f);
         Text(localBtn, options[selected] + (open ? " ▲" : " ▼"), _sCenter,
              open ? Color.white : ColText);
 
-        // Клик по кнопке
         if (Click(localBtn))
         {
             if (open) _openDropdown = -1;
