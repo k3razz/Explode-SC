@@ -48,6 +48,11 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgMenuScale;
     public static ConfigEntry<bool> CfgHudWatermark;
 
+    // Возвращены для совместимости с MediaRenderer.cs
+    public static ConfigEntry<bool> CfgMediaEnabled;
+    public static ConfigEntry<float> CfgMediaX;
+    public static ConfigEntry<float> CfgMediaY;
+
     public override void Load()
     {
         Instance = this;
@@ -91,6 +96,11 @@ public class Plugin : BasePlugin
             CfgMenuScale = ConfigFile.Bind("Hud", "MenuScale", 1.0f,
                 "Menu size as fraction of screen (0.25 = 25%, 2.0 = 200%).");
             CfgHudWatermark = ConfigFile.Bind("Hud", "Watermark", true);
+
+            // Медиа-плеер (заглушка, но конфиги нужны для компиляции)
+            CfgMediaEnabled = ConfigFile.Bind("Media", "Enabled", false);
+            CfgMediaX = ConfigFile.Bind("Media", "X", -1f);
+            CfgMediaY = ConfigFile.Bind("Media", "Y", -1f);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
