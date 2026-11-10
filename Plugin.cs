@@ -52,11 +52,9 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgMediaX;
     public static ConfigEntry<float> CfgMediaY;
 
-    // Anti-Aim
-    public static ConfigEntry<bool> CfgAntiAimEnabled;
-    public static ConfigEntry<string> CfgAntiAimYaw;
-    public static ConfigEntry<string> CfgAntiAimDir;
-    public static ConfigEntry<float> CfgAntiAimAngle;
+    // Movement
+    public static ConfigEntry<bool> CfgBunnyhopEnabled;
+    public static ConfigEntry<float> CfgBunnyhopMultiplier;
 
     public override void Load()
     {
@@ -106,10 +104,8 @@ public class Plugin : BasePlugin
             CfgMediaX = ConfigFile.Bind("Media", "X", -1f);
             CfgMediaY = ConfigFile.Bind("Media", "Y", -1f);
 
-            CfgAntiAimEnabled = ConfigFile.Bind("AntiAim", "Enabled", false);
-            CfgAntiAimYaw = ConfigFile.Bind("AntiAim", "Yaw", "Up");
-            CfgAntiAimDir = ConfigFile.Bind("AntiAim", "Dir", "Backward");
-            CfgAntiAimAngle = ConfigFile.Bind("AntiAim", "Angle", 89f);
+            CfgBunnyhopEnabled = ConfigFile.Bind("Movement", "Bunnyhop", false);
+            CfgBunnyhopMultiplier = ConfigFile.Bind("Movement", "BunnyhopMultiplier", 1.5f);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
