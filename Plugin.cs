@@ -48,10 +48,15 @@ public class Plugin : BasePlugin
     public static ConfigEntry<float> CfgMenuScale;
     public static ConfigEntry<bool> CfgHudWatermark;
 
-    // Возвращены для совместимости с MediaRenderer.cs
     public static ConfigEntry<bool> CfgMediaEnabled;
     public static ConfigEntry<float> CfgMediaX;
     public static ConfigEntry<float> CfgMediaY;
+
+    // Anti-Aim
+    public static ConfigEntry<bool> CfgAntiAimEnabled;
+    public static ConfigEntry<string> CfgAntiAimYaw;
+    public static ConfigEntry<string> CfgAntiAimDir;
+    public static ConfigEntry<float> CfgAntiAimAngle;
 
     public override void Load()
     {
@@ -97,10 +102,14 @@ public class Plugin : BasePlugin
                 "Menu size as fraction of screen (0.25 = 25%, 2.0 = 200%).");
             CfgHudWatermark = ConfigFile.Bind("Hud", "Watermark", true);
 
-            // Медиа-плеер (заглушка, но конфиги нужны для компиляции)
             CfgMediaEnabled = ConfigFile.Bind("Media", "Enabled", false);
             CfgMediaX = ConfigFile.Bind("Media", "X", -1f);
             CfgMediaY = ConfigFile.Bind("Media", "Y", -1f);
+
+            CfgAntiAimEnabled = ConfigFile.Bind("AntiAim", "Enabled", false);
+            CfgAntiAimYaw = ConfigFile.Bind("AntiAim", "Yaw", "Up");
+            CfgAntiAimDir = ConfigFile.Bind("AntiAim", "Dir", "Backward");
+            CfgAntiAimAngle = ConfigFile.Bind("AntiAim", "Angle", 89f);
 
             TeamFilter.ShowTr = CfgShowTr.Value;
             TeamFilter.ShowCt = CfgShowCt.Value;
