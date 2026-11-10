@@ -21,7 +21,6 @@ public static class AntiAimModule
     private static Quaternion _originalHeadRot;
     private static Quaternion _originalSpineRot;
     private static Quaternion _originalNeckRot;
-    private static bool _isActive = false;
     private static float _disableTimer = 0f;
 
     public static void Update(Component localPlayer)
@@ -107,7 +106,6 @@ public static class AntiAimModule
         _headTransform = null;
         _neckTransform = null;
         _spineTransform = null;
-        _isActive = false;
         _disableTimer = 0f;
     }
 }
