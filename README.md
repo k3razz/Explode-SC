@@ -1,17 +1,20 @@
 # The project is in beta test!
 
 > [!WARNING]
-> BunnyHop currently doesnt works
-> Module setting dropdown shows incorrectly 
+> test
 
 > [!CAUTION]
-> Прямое удаление этой таблицы приведет к потере базы данных.
+> test
 
 > [!IMPORTANT]
-> Обязательно сохраните резервную копию перед продолжением.
+> test
 
 > [!NOTE]
-> Полезная информация по использованию.
+> test
 
 > [!TIP]
-> Используйте сочетание клавиш для ускорения работы.
+> test
+
+> [!CAUNTION]
+> BunnyHop currently doesnt works
+> Module setting dropdown shows incorrectly 
